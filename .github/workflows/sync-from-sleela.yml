@@ -1,0 +1,72 @@
+name: Sync sister repository from SLeeLa
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-from-sleela.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-from-sleela
+  cancel-in-progress: false
+
+jobs:
+  prepare-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out backup repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Shallow-clone SLeeLa master
+        run: git clone --depth 2 --single-branch --branch master https://github.com/mearvk/SLeeLa.git ../SLeeLa-source
+
+      - name: Prepare sync pull requests for main and master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="$GITHUB_WORKSPACE/../SLeeLa-source"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for target in main master; do
+            if ! git show-ref --verify --quiet "refs/remotes/origin/$target"; then
+              echo "Skipping missing target branch: $target"
+              continue
+            fi
+
+            branch="sync/sleela-master-$target-$RUN_ID"
+            git switch --force-create "$branch" "origin/$target"
+
+            # Mirror source files while retaining this backup-only automation workflow.
+            rsync -a --delete \
+              --exclude='/.git' \
+              --exclude='/.github/workflows/sync-from-sleela.yml' \
+              "$source_dir/" "$GITHUB_WORKSPACE/"
+
+            git add -A
+            if git diff --cached --quiet; then
+              echo "No source changes to propose for $target"
+              continue
+            fi
+
+            git commit -m "Sync from SLeeLa master (shallow depth 2)"
+            git push --force-with-lease origin "$branch"
+            gh pr create \
+              --repo "$GH_REPO" \
+              --base "$target" \
+              --head "$branch" \
+              --title "Sync $target from SLeeLa master" \
+              --body "Automated shallow-depth-2 mirror of https://github.com/mearvk/SLeeLa/tree/master. The sync is proposed as a pull request so backup-only differences can be reviewed before merging."
+          done
