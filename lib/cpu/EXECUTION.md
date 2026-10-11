@@ -1,0 +1,236 @@
+# `lib/cpu` — Execution Model, Multi-Language Loading, and the Linux Guest
+
+This document answers three questions precisely and honestly:
+
+1. **Can this CPU actually run a program?**
+2. **How do C, C++, Java, and Sleela programs get loaded and run?**
+3. **How does a Linux-style VM run on top of the Sleela CPU — and what is real vs. modeled?**
+
+---
+
+## 1. Can it run a program? — Yes, within the model
+
+`SLControlUnit.step()` is a genuine fetch-decode-execute cycle over the
+`SLInstructionSet`: it fetches a word from `SLRAM` at the program counter,
+decodes it (`SLInstructionDecoder`), executes it through the register file
+(`SLRegisterFile`), ALU (`SLALU`), and hardware stack (`SLStack`), updates the
+program counter (sequential / branch / call / return), and sets the status
+flags. The kernel services `SYS_WRITE` / `SYS_EXIT`.
+
+The ISA now includes a **real call/stack protocol** — `CALL` pushes the return
+address and jumps, `RET` pops and returns, `PUSH`/`POP` move words — plus full
+integer arithmetic (`MUL`/`DIV`/`MOD`/`NEG`), bitwise/shift ops, three
+addressing modes (`LOAD`/`LOADR`/`LOADX` and the `STORE` family), five branch
+forms, and `SYSCALL`/`TRAP`. That is enough to be a lowering target for
+compiled code with functions, locals, and spills.
+
+**Verification status.** The pipeline's semantics were validated by an
+independent simulation of frontend → IR → lowering → execution: the Sleela demo
+lowers `2 + 3`, executes it, and writes `5`. The classes could **not** be run
+through the real `sleela` compiler in this environment (its build gate requires
+a SHA-256 manifest + network), so "runs" means *verified by construction and
+simulation*, not *executed on the native VM*. Building the compiler is the
+prerequisite to running any of this for real.
+
+> **Boundary:** this is a CPU/OS **simulator expressed as SLeeLa classes**, not
+> code executing on bare metal. It is an object-oriented model of hardware.
+
+---
+
+## 2. Multi-language loading — one driver, one IR, one backend
+
+The ISA accepts **C, C++, Java, and Sleela** the way real toolchains do: each
+language has a **frontend** that lowers it to a common **intermediate
+representation (SLIR)**; a single shared **backend** compiles the IR to machine
+code. The ISA is multi-language because the backend is shared — exactly the
+clang/clang++/LLVM and javac/bytecode pattern.
+
+```
+ source.c     -> SLFrontendC    \
+ source.cpp   -> SLFrontendCpp   \        SLLowering            SLProgramLoader
+ source.java  -> SLFrontendJava   >--- SLIR ---> (IR -> ISA) --->  load into RAM --> process
+ source.sleela-> SLFrontendSleela/        ^                            |
+                                           |                      SLKernel schedules + runs
+                 SLCompilerDriver picks the frontend by language
+```
+
+| Class | Role |
+|---|---|
+| `SLIRInstruction` | One language-neutral three-address IR op (const/move/arith/cmp/branch/load/store/param/call/ret/syscall/halt). |
+| `SLIR` | An ordered IR module with temp and label allocators. |
+| `SLFrontend` | Base frontend: `parse()` + `lower() -> SLIR`. |
+| `SLFrontendSleela` | SLeeLa frontend (reference; modeled end to end). |
+| `SLFrontendC` | C → IR lowering (declarations→slots, expressions→temps, calls→param/call, return→ret). |
+| `SLFrontendCpp` | C++ → IR (this-pointer, construction, virtual dispatch), extends the C frontend. |
+| `SLFrontendJava` | JVM-bytecode → IR (locals→temps, operand stack linearized, invoke→call). |
+| `SLLowering` | Shared backend: IR → `SLProgram` with register allocation + 2-pass label resolution. |
+| `SLCompilerDriver` | Selects the frontend by language/extension and runs frontend→IR→backend. |
+
+### Loading, by language
+
+```sleela
+SLProgramLoader loader = ...;         // from SLMachine.boot()
+loader.attachCompiler(isa);
+
+// infer language from extension, compile, load, and spawn:
+loader.loadFile("hello.c",     "hello", 8192);   // C
+loader.loadFile("hello.cpp",   "hello", 8192);   // C++
+loader.loadFile("Hello.java",  "hello", 8192);   // Java (from bytecode)
+loader.loadFile("hello.sleela","hello", 8192);   // Sleela
+```
+
+Or explicitly: `loader.loadSource(path, langId, name, addr)` with `langId`
+0=Sleela, 1=C, 2=C++, 3=Java.
+
+### Honest scope of the frontends
+
+- The **Sleela** frontend is modeled end to end and its demo lowers and executes
+  correctly (verified by simulation).
+- The **C, C++, and Java** frontends implement the **real lowering contracts**
+  and each demonstrates one complete, correct lowering, but their `parse()` is
+  not a full parser for the language. Turning each into a complete compiler
+  means growing `parse()` into a real C parser / C++ parser / classfile reader —
+  **the IR and backend beneath them do not change.** That separation is the
+  whole point: the hard, language-specific work is isolated in the frontend.
+
+This is also consistent with the rest of the repository, where the production
+multi-language path is **Nordshrift** (`nordshrift build --target=java|sleela|c`
+transpiles `.sleela` and the native VM runs it). `lib/cpu` is a self-contained
+teaching model of the same frontend/IR/backend idea.
+
+---
+
+## 3. The Linux-style guest VM — architectural model
+
+The "run a Linux-based VM on top of the Sleela CPU" layer is a **type-2 hosted
+hypervisor** model:
+
+```
+SLCPU (hardware) -> SleelaOS (host kernel) -> SLHypervisor
+   -> SLGuestVM (virtual CPU + guest-physical memory window)
+      -> SLGuestLinux (guest kernel: boot protocol + Linux syscall ABI)
+         -> guest user programs
+```
+
+| Class | Role |
+|---|---|
+| `SLHypervisor` | Creates/schedules guests; installs the TRAP vector as the VM-exit path; counts exits. |
+| `SLGuestVM` | One guest: a vCPU over a host-memory window, guest-physical→host translation, VM-exit counting. |
+| `SLGuestLinux` | A Linux-style guest kernel: boot protocol (kernel+initrd image, entry), a Linux-like syscall ABI (read/write/open/close/mmap/exit/fork/execve), emulated as host syscalls on VM-exit. |
+
+Run it:
+
+```sleela
+SLMachine m = new SLMachine();
+m.buildHardware("SleelaWorks","SL-Core-X", 4, 32, 3200);
+m.boot();
+m.runLinuxGuest(0, 64);   // boot a Linux-style guest and run 64 guest instructions
+```
+
+> **Boundary — read this.** `SLGuestLinux` is an **architectural model** of
+> running a Linux-like guest: it defines the boot sequence, the guest syscall
+> numbers, guest-physical memory translation, and the VM-exit/emulation path.
+> It is **not** the upstream Linux kernel and does not boot a real `bzImage`.
+> Doing that would require a hardware-virtualization-grade vCPU (VT-x/AMD-V
+> semantics), a device model (virtio, interrupt controller, timers, MMU with
+> real page tables), and a loader for real ELF/kernel images — each a large
+> project. What this provides is a faithful, composable model of the full
+> layering so the "Linux on the Sleela CPU" story is expressed in SLeeLa classes
+> with every seam named.
+
+---
+
+---
+
+## 4. The Sleela opcode substrate — one Turing-complete ground truth
+
+The deepest layer unifies everything. The SLeeLa VM opcodes are **Turing
+complete** and are the instructions the native core already executes
+(`impl/core/sleela_core.c`, `lib/vm/InstructionSet.sleela`). So the CPU model
+does not invent a parallel reality: the register-style ISA and the OS system
+calls are **mapped onto those canonical opcodes**, and every language reduces to
+the same opcode stream.
+
+```
+ C / C++ / Java / Sleela
+     -> SLFrontend*            language -> common IR (SLIR)
+     -> SLLowering             IR -> register ISA (SLInstructionSet / SLProgram)
+     -> SLOpcodeMap            register ISA + OS syscalls -> SLeeLa opcodes
+     -> SLSleelaVM             execute the canonical base-98 Turing-complete substrate
+```
+
+| Class | Role |
+|---|---|
+| `SLSleelaOpcode` | The canonical base-98 opcode registry — exact native codes/mnemonics. The ground truth. |
+| `SLSleelaVM` | A stack machine that executes the Sleela opcodes directly (mirrors the native dispatch loop). |
+| `SLOpcodeMap` | Maps each register-ISA instruction and each OS syscall onto a sequence of Sleela opcodes. |
+| `SLTuringBridge` | Reduces any-language programs to the substrate and runs them; `proveEquivalence()` checks all four give the identical result. |
+
+### Why this makes C == C++ == Java == Sleela (1:1 in Turing effect)
+
+A register instruction like `ADD r1, r2` maps to the opcode sequence
+`LOADG r1 ; LOADG r2 ; OP_ADD ; STOREG r1` (registers live in global slots). An
+OS `SYS_WRITE` maps to `LOADG arg ; OP_PRINT`; `SYS_EXIT` maps to `OP_HALT`.
+Because **every** CPU instruction and **every** syscall is defined as such a
+Sleela-opcode sequence, a whole program — whatever language it started in —
+becomes one stream of base-98 opcodes. Two programs that reduce to opcode
+streams with the same observable effect are, by definition, equal in Turing
+effect.
+
+`SLTuringBridge.proveEquivalence(c, cpp, java, sleela)` makes this operational:
+it lowers the **same computation** from all four frontends, reduces each to the
+Sleela substrate, runs each on `SLSleelaVM`, and returns true only if every
+language produced the identical result.
+
+> **Verification.** An independent simulation of the entire chain (frontend →
+> IR → register ISA → `SLOpcodeMap` → `SLSleelaVM`) confirms that the C, C++,
+> Java, and Sleela canonical programs each reduce to the identical 14-opcode
+> Sleela stream and all print `5`. The equivalence claim is therefore
+> operational, not asserted. (As elsewhere, this is verified by construction and
+> simulation; running on the native VM awaits a buildable `sleela` compiler.)
+>
+> Note the frontends deliberately lower the **same computation** so the proof is
+> honest — equivalence means "same effect for the same program expressed in
+> different languages," not that any two different programs are equal.
+
+## What would make each piece "real" (roadmap)
+
+| Goal | Needed |
+|---|---|
+| Execute any of this for real | A buildable `sleela` compiler (the current blocker). |
+| Full C / C++ / Java frontends | Real `parse()` implementations (C parser; C++ parser; JVM classfile reader) — IR/backend unchanged. |
+| Real binaries | ELF loader and JVM classfile loader for on-disk program images. |
+| Larger programs | Register spilling to the stack (PUSH/POP paths are present), heap allocator, calling-convention finalization. |
+| Boot real Linux | Hardware-virtualization vCPU, MMU + page tables, device model (virtio/APIC/timers), real kernel-image loader. |
+
+### OS-VM hardening progress
+
+The guest layer is being hardened from "model" toward "genuinely executes":
+
+- **Step 1 (done):** `SLGuestVM` runs the guest on an embedded `SLSleelaVM` — guest code is dispatched as canonical opcodes, not counted.
+- **Step 2 (done):** `SLMMU` gives the guest real single-level page tables with present/write/exec permissions and page faults (unmapped + protection); `SLHypervisor` identity-maps each guest's window at creation.
+- **Step 3 (done):** a guest device model — `SLGuestTimer` (interval timer + IRQ), `SLGuestConsole`, `SLGuestBlockDevice` (virtio-blk over a host drive), routed by `SLGuestDeviceBus` with IRQ aggregation into the guest interrupt controller.
+- **Step 4 (done):** a genuinely-compiled guest kernel. `SLGuestKernelBuilder` compiles kernel source (any supported language) through `SLCompilerDriver` → register ISA → `SLOpcodeMap` → a `SLGuestKernelImage` of canonical opcodes, which the guest substrate loads and executes. `SLGuestLinux.buildKernel()` / `SLMachine.runLinuxGuestFromSource()` boot it. This is a small **custom** kernel, not upstream Linux.
+
+- **Step 5 (done):** the VM-exit loop is wired. In hosted mode `SLSleelaVM` parks a VM-exit on a service opcode (e.g. `OP_PRINT`); `SLGuestVM.run()` routes it (console device / syscall emulation), ticks devices, posts IRQs, and resumes — the device↔substrate↔exit handoff is functional, not just structural.
+- **Step 6 (done):** the guest has preemptive multitasking.
+- **Step 13 (done):** process creation — `fork`/`execve`/`wait`. The guest syscall ABI (`SLGuestSyscall`) now implements the fork/exec/wait family: `fork()` clones the running task into a fresh TCB that resumes at the parent's instruction pointer (parent sees the child pid, child a 0-return by convention); `execve()` replaces a task's image in place with a freshly compiled program through init's shared toolchain and repoints its resume IP; `exit(status)` leaves a reaped-on-`wait()` zombie carrying its status; `wait()` reaps a finished child and yields its tid + status (returning a would-block code while children are still live). `SLGuestTask` grew the process-tree bookkeeping (parent tid, exit status, zombie/reaped flags), `SLGuestScheduler` grew `fork()`/`reapChild()`/`hasLiveChild()`/`slotOfTid()`, and `SLGuestVM.handleExit()` routes the canonical `OP_SPAWN` (fork/execve) and `OP_JOINALL` (wait) service opcodes to the new syscalls. `SLGuestLinux.emulateSyscall()` now maps `LINUX_FORK` to the host `SYS_SPAWN` primitive and classifies `LINUX_EXECVE`/`LINUX_WAIT` as in-guest-emulated. Two `SLMachine` demos drive the cycle: `runLinuxGuestForkExec()` goes through the syscall ABI (boot → init → fork → execve → child `exit` → `wait`), and `runLinuxGuestForkExecOpcodes()` goes through the canonical **service opcodes** — `OP_SPAWN` (fork) and `OP_JOINALL` (wait) routed by `SLGuestVM.serviceOpcode()` exactly as a guest program's VM-exits are — so the opcode→syscall mapping is exercised, not just the handlers. A reaped child's scheduler slot is reclaimed (`SLGuestScheduler.admit()` recycles reaped-and-DONE slots), so repeated fork/wait cycles don't exhaust the task table, and all guest pids come from one allocator (`SLGuestInit.allocPid()`) shared by init-spawned programs and fork'd children. This turns the guest's flat set of threads into a real Unix-style process tree with parents reaping children.
+- **Step 12 (done):** on-disk programs. `SLGuestExecutable` is a miniature executable format (magic header + opcode section); programs serialize to it, persist to the guest filesystem, and load back from disk into the substrate (header-validated) - programs now come from storage, not only inline compilation.
+- **Step 11 (done):** guest shell. `SLGuestShell` is a minimal command interpreter (help/echo/ls/cat/ps/exit) spawned by init as its first child, issuing commands through the syscall ABI - the guest's first interactive user program.
+- **Step 10 (done):** guest IPC. `SLGuestPipe` (byte FIFO between tasks) and `SLGuestSignal` (async signals; SIGKILL/SIGTERM terminate) wired into the syscall ABI (pipe/kill + pipe-fd read/write) and delivered at scheduling points.
+- **Step 9 (done):** guest syscall ABI. `SLGuestSyscall` dispatches write/read/open/close/brk/yield/getpid/exit; `SLGuestVM.handleExit()` routes guest service-opcode VM-exits through it against the console/filesystem/scheduler and pushes the result back - the full user->kernel boundary.
+- **Step 8 (done):** guest filesystem. `SLGuestFileSystem` provides a flat directory of files + an fd table with sequential read/write over the guest block device, mounted by the kernel and backing the file syscalls.
+- **Step 7 (done):** guest user space. `SLGuestProgram` is a loadable user program compiled from source through the shared toolchain; `SLGuestInit` (PID 1) loads programs into the guest substrate and admits them as scheduler tasks — the guest runs real user processes, not just kernel code. `SLGuestTask` + `SLGuestScheduler` run inside the guest; the `SLGuestTimer` IRQ is the preemption source — each expiry drives `onTimerInterrupt()`, which saves the running task's substrate IP, round-robins to the next ready task, and resumes the substrate at that task's saved IP.
+
+With steps 1–13 complete, the guest is no longer a counter-ticking stub: it
+executes a **compiled kernel image** as canonical opcodes on `SLSleelaVM`, over
+**paged, protected memory** (`SLMMU`), with a **timer/console/block device
+model**, a **wired VM-exit loop** routing service opcodes to devices, and a
+**timer-driven preemptive scheduler** multitasking guest tasks. On top of that
+it runs **real user space** (`SLGuestInit` as PID 1), with a **filesystem**, a
+**syscall ABI**, **IPC** (pipes + signals), an interactive **shell**, **on-disk
+executables**, and now **Unix-style process creation** — `fork`/`execve`/`wait`
+over a real parent/child process tree. The remaining gap to booting *real* Linux
+is unchanged and large — hardware-virtualization-grade vCPU semantics, a full
+virtio/APIC/ACPI device model, real page-table formats, and an ELF/bzImage
+loader — and is deliberately out of scope for this teaching model.

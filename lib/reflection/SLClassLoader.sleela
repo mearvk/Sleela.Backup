@@ -1,0 +1,15 @@
+/*
+ * lib/reflection/SLClassLoader.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library type SLClassLoader used within the reflection library family.
+ */
+#sleela 1.3
+// Unified SLeeLa reflection/class-loader front-end.
+class SLClassLoader {
+  String name; String type; String libraryRoot; int count;
+  void configure(String n,String t){name=n;type=t;libraryRoot="/lib";}
+  void configureLibrary(String root){libraryRoot=root;}
+  void register(){count=count+1;}
+  void discover(int symbols){count=symbols;}
+  String getName(){return name;} String getType(){return type;} String root(){return libraryRoot;} int symbolCount(){return count;}
+}

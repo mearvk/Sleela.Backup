@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # Sleela Data Structures — C / C++ / Sleela
 
 This directory establishes a small, explicit data-structure layer corresponding to the Java-like model used by the historical Java implementation and the current Sleela C/C++ execution core.
@@ -41,6 +50,13 @@ The C ABI remains the execution boundary described by `impl/core/sleela_core.h`.
 - `data_structures.sleela` — Sleela semantic model.
 - `DATA_STRUCTURES.md` — correspondence and invariants.
 
-## Limits
+## Arrays
 
-The Sleela surface currently has no first-class array literal or allocation syntax. Therefore the Sleela artifact deliberately models the semantic contracts and operations without pretending that unsupported surface syntax is executable. The C/C++ layers provide the concrete storage implementations.
+The Sleela surface now has a first-class **array** type: a dynamic, growable,
+zero-indexed sequence written `T[]`, created with `new T[n]`, read/written with
+`a[i]`, and operated on with the `arrayNew` / `arrayLength` / `arrayGet` /
+`arraySet` / `arrayPush` built-ins. See [`STRUCTS.md`](../STRUCTS.md#arrays) for
+the full surface and the `SL_ARRAY` / `OP_ARR*` implementation. Earlier
+collection structures (list/stack/queue/map) remain modelled as the semantic
+`struct`-based contracts in `data_structures.sleela`; arrays are the primitive
+sequence those higher structures can be expressed over.

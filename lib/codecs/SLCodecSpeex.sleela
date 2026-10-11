@@ -1,0 +1,73 @@
+/*
+ * lib/codecs/SLCodecSpeex.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Speex codec class — the SLeeLa-facing handle to codec id 9.
+ */
+#sleela 1.3
+// Family: codecs. Individual codec class for Speex:
+// Speex (Xiph), speech. Mirrors codecs/codecs/speex/ and the registry entry in
+// sleela_codec_manager.h. SLeeLa never calls a codec directly; the
+// SLCodecLoader loads this plugin by id and dispatches decode/encode. This
+// class is the metadata + capability contract for that plugin.
+//
+// Handler state codes: 0 native, 1 backend, 2 recognized, 3 container, 4 event.
+class SLCodecSpeex {
+  // Registry identity (mirrors sleela_codec_handler).
+  int id() { return 9; }
+  String name() { return "Speex"; }
+  String mime() { return "audio/ogg"; }
+  String extensions() { return ".spx,.ogg"; }
+
+  // Capability state: 1 == backend.
+  int state() { return 1; }
+  String stateName() { return "backend"; }
+
+  // Direction support advertised by the plugin vtable.
+  boolean canDecode() { return true; }
+  boolean canEncode() { return true; }
+
+  // Native codecs implement encode/decode in-package (no external backend);
+  // a backend codec reports its honest state and fails cleanly from
+  // decode/encode until an approved backend adapter is registered.
+  boolean isNative() { return false; }
+  boolean needsBackend() { return true; }
+
+  // ---- Descriptive metadata (version 1.11 nested-friendly accessors) ----
+  // Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+  // or catalog can read and (where appropriate) override each codec's record.
+  // Values are faithful to the codec's real origin where publicly known.
+  String metaVersion = "1.0.0";
+  int metaId = 9;
+  String metaAuthor = "Jean-Marc Valin / Xiph.Org";
+  String metaDate = "2026-09-28";
+  String metaCopyright = "BSD (reference libspeex)";
+  String metaTrademark = "Speex";
+  String metaCorporation = "Xiph.Org Foundation";
+  String metaOrigin = "Canada";
+  String metaBirthDate = "2002";
+  int metaScienceRating = 7;        // maturity/robustness on a 1..10 scale
+  String metaNationalSchedule = "Xiph.Org (deprecated for Opus)";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+}

@@ -44,7 +44,8 @@ CPPFLAGS += -Ifrontend $(SUBJECT_INCLUDES) -I../bash
 LDFLAGS ?= $(THREADFLAG)
 LIBS ?= $(PLATFORM_LIBS)
 BUILD := build
-STAGE := $(BUILD)/SLeeLa
+PYTHON ?= python3
+STAGE := $(BUILD)/sleela-package
 STAGE_BIN := $(STAGE)/bin
 STAGE_CONFIG := $(STAGE)/Config
 STAGE_OPTIONS := $(STAGE)/Options
@@ -70,6 +71,8 @@ MEDIA_FORMATS_OBJ := $(BUILD)/sleela_media_formats.o
 MEDIA_SMOKE := $(BUILD)/media_smoke
 AUDIO_MIXER_OBJ := $(BUILD)/sleela_audio_mixer.o
 AUDIO_MIXER_SMOKE := $(BUILD)/audio_mixer_smoke
+AUDIO_NATIVE_OBJ := $(BUILD)/sleela_audio_bridge.o
+AUDIO_CPP_OBJ := $(BUILD)/sleela_audio.o
 AI_OBJ := $(BUILD)/sleela_ai.o
 AI_SMOKE := $(BUILD)/ai_smoke
 REGEX_OBJ := $(BUILD)/sleela_regex.o
@@ -89,6 +92,7 @@ BESTOF_OBJ := $(BUILD)/sleela_bestof.o
 PATH_OBJ := $(BUILD)/sleela_path.o
 TERMINAL_OBJ := $(BUILD)/sleela_terminal.o
 LIBRARY_OBJ := $(BUILD)/sleela_library.o
+OS_OBJ := $(BUILD)/sleela_os.o
 TIME_OBJ := $(BUILD)/sleela_time.o
 MEMORY_OBJ := $(BUILD)/sleela_memory.o
 MEMMGR_OBJ := $(BUILD)/sleela_memmgr.o
@@ -100,6 +104,8 @@ DESIGN_ACTIVITY_OBJ := $(BUILD)/sleela_design_activity.o
 GC_OBJ := $(BUILD)/garbage_collector.o
 SECURITY_OBJ := $(BUILD)/security_supervisor.o
 PARAMETERS_OBJ := $(BUILD)/Parameters.o
+JAVA_RUNTIME_PROBE_OBJ := $(BUILD)/java_runtime_probe.o
+JAVA_RUNTIME_BRIDGE_OBJ := $(BUILD)/java_runtime_bridge.o
 CHEMISTRY_OBJ := $(BUILD)/chemistry.o
 FINANCIAL_OBJ := $(BUILD)/financial.o
 ASTRO_MATH_OBJ := $(BUILD)/astrophysics_math.o
@@ -110,8 +116,8 @@ SOC_MATH_OBJ := $(BUILD)/sociology_math.o
 SOC_OBJ := $(BUILD)/sociology.o
 SOC_SMOKE := $(BUILD)/sociology_smoke
 CORE_SRC := core/sleela_artifact.c
-FE_SRC := frontend/lexer.cpp frontend/parser.cpp frontend/semantic.cpp frontend/compiler.cpp \
-          frontend/version.cpp frontend/artifact.cpp frontend/annotation_pipeline.cpp \
+FE_SRC := frontend/lexer.cpp frontend/parser.cpp frontend/java_equivalence.cpp frontend/semantic.cpp frontend/compiler.cpp \
+          frontend/version.cpp frontend/artifact.cpp frontend/annotation_pipeline.cpp frontend/library_index.cpp frontend/dynamite.cpp frontend/permissible.cpp \
           annotation/Annotation.cpp annotation/ForwardingAnnotation.cpp annotation/AnnotationForwarder.cpp \
           annotation/AnnotationInterpreter.cpp annotation/AnnotationRuntime.cpp \
           subjects/native/native_api.cpp \
@@ -125,9 +131,30 @@ HTTP_SERVER_OBJ := $(BUILD)/http_server.o
 HTTP_SERVER_CLI_OBJ := $(BUILD)/http_server_cli.o
 HTTP2_SERVER_OBJ := $(BUILD)/http2_server.o
 HTTP3_SERVER_OBJ := $(BUILD)/http3_server.o
-SKYA_ENGINE_OBJ := $(BUILD)/skya_engine.o
-SKYA_POLICY_OBJ := $(BUILD)/skya_policy.o
-SKYA_BRIDGE_OBJ := $(BUILD)/skya_sleela_bridge.o
+
+# ---------------------------------------------------------------------------
+# Vendored nghttp2 (HTTP/2 library used by the grade-2 server).
+# The library source is committed as ../include/nghttp2-1.70.0.zip so the build
+# does not depend on a system-installed libnghttp2. It is unpacked under build/,
+# its generated version header is produced from the shipped template, and the
+# core library sources are compiled into a static archive we link directly.
+# This keeps the build self-contained on Linux, macOS, and (MinGW) Windows.
+# ---------------------------------------------------------------------------
+NGHTTP2_VERSION := 1.70.0
+NGHTTP2_VERSION_NUM := 0x014600
+NGHTTP2_ZIP := ../include/nghttp2-$(NGHTTP2_VERSION).zip
+NGHTTP2_DIR := $(BUILD)/nghttp2-$(NGHTTP2_VERSION)
+NGHTTP2_INC := $(NGHTTP2_DIR)/lib/includes
+NGHTTP2_VERHDR := $(NGHTTP2_INC)/nghttp2/nghttp2ver.h
+NGHTTP2_LIB := $(BUILD)/libnghttp2.a
+# Build-time feature defines for the vendored sources (no autotools config.h).
+# On POSIX, pull in the byte-order helpers (htonl/htons) via arpa/inet.h and
+# netinet/in.h; on Windows (MinGW) nghttp2_net.h provides _byteswap_* shims.
+ifeq ($(PLATFORM),windows)
+  NGHTTP2_DEFS := -DNGHTTP2_STATICLIB
+else
+  NGHTTP2_DEFS := -DNGHTTP2_STATICLIB -DHAVE_ARPA_INET_H=1 -DHAVE_NETINET_IN_H=1
+endif
 NS_SRC := nordshrift/sst_lexer.cpp nordshrift/sst_parser.cpp \
           nordshrift/source_resolve.cpp nordshrift/lowering.cpp nordshrift/sleela_emit.cpp \
           nordshrift/object_compat.cpp nordshrift/subject_model.cpp nordshrift/input_object.cpp \
@@ -140,9 +167,23 @@ NS_OBJ += $(LEDGER_CORE_OBJ)
 # The subset of Nordshrift the `sleela` binary links for its `nordshrift`
 # round-trip subcommand: only the emitter (transpile a Sleela Program to a
 # target). It deliberately EXCLUDES nordshrift.cpp (which has its own main()).
-NS_EMIT_OBJ := $(BUILD)/ns_sleela_emit.o
+NS_EMIT_OBJ := $(BUILD)/ns_sleela_emit.o $(BUILD)/ns_lowering.o
+# Preferred-router policy (used by the native HTTP servers the `sleela` binary
+# links). Lives under ../preferred-routers.
+PREFERRED_ROUTER_OBJ := $(BUILD)/preferred_router.o
 VERIFY_TOOL := ../tools/verify-before-execution.py
-VERIFY_MANIFEST ?= $(SLEELA_SHA256_MANIFEST)
+# Resolve the trusted manifest for both root-dispatched and direct builds.
+# A stale template value (/path/to/...) is not a real installation path; use
+# the repository-relative manifest instead. Real explicit paths remain honored.
+ifneq ($(filter /path/to/%,$(SLEELA_SHA256_MANIFEST) $(VERIFY_MANIFEST)),)
+  VERIFY_MANIFEST := ../security/sha256-manifest.json
+else ifeq ($(origin VERIFY_MANIFEST),undefined)
+  ifneq ($(strip $(SLEELA_SHA256_MANIFEST)),)
+    VERIFY_MANIFEST := $(SLEELA_SHA256_MANIFEST)
+  else
+    VERIFY_MANIFEST := ../security/sha256-manifest.json
+  endif
+endif
 VERIFY_ARGS = --manifest "$(VERIFY_MANIFEST)" --root "$(CURDIR)/.."
 # Python launcher differs between Windows and POSIX shells. Keep the security
 # gate in the build itself, but select a launcher that exists on each platform.
@@ -151,9 +192,9 @@ ifeq ($(OS),Windows_NT)
 else
   PYTHON ?= python3
 endif
-ALL_OBJECTS := $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(MEDIA_OBJ) $(MEDIA_FORMATS_OBJ) $(AUDIO_MIXER_OBJ) $(AI_OBJ) $(DESIGN_ACTIVITY_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(NS_OBJ) $(THREAD_SMOKE) $(SOCKET_SMOKE) $(SYNCHRO_SMOKE) $(MUNCTION_SMOKE) $(BESTOF_SMOKE) $(IO_PLATFORM_SMOKE) $(NET_PLATFORM_SMOKE) $(PATH_PLATFORM_SMOKE) $(TERMINAL_PLATFORM_SMOKE) $(LIBRARY_PLATFORM_SMOKE) $(PIXEL_TERMINAL_SMOKE) $(THREAD_PLATFORM_SMOKE)
+ALL_OBJECTS := $(CORE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(MEDIA_OBJ) $(MEDIA_FORMATS_OBJ) $(AUDIO_MIXER_OBJ) $(AI_OBJ) $(DESIGN_ACTIVITY_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(VM_CONFIG_OBJ) $(CONFIG_LOCATION_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(NS_OBJ) $(THREAD_SMOKE) $(SOCKET_SMOKE) $(SYNCHRO_SMOKE) $(MUNCTION_SMOKE) $(BESTOF_SMOKE) $(IO_PLATFORM_SMOKE) $(NET_PLATFORM_SMOKE) $(PATH_PLATFORM_SMOKE) $(TERMINAL_PLATFORM_SMOKE) $(LIBRARY_PLATFORM_SMOKE) $(PIXEL_TERMINAL_SMOKE) $(THREAD_PLATFORM_SMOKE)
 
-.PHONY: all test-platform stage package build-verified rebuild-verified clean test test-sleela test-version test-nordshrift test-nordshrift-compiler test-nordshrift-semantic test-nordshrift-e2e test-nordshrift-compat test-runtime-artifact-abi test-threads test-thread-platform test-network test-network-platform test-synchro test-munction test-bestof test-io-platform test-path-platform test-terminal-platform test-library-platform test-time-platform test-pixel-terminal test-catalog test-chemistry test-financial test-math test-physics test-economics test-inference test-subjects verify-security build-runtime test-runtime test-memmgr test-memmgr-grades test-system-monitor test-media test-audio-mixer test-ai test-regex test-astrophysics test-sociology test-design-activity
+.PHONY: all test-platform stage package build-verified rebuild-verified clean test test-java-runtime test-sleela test-version test-nordshrift test-nordshrift-compiler test-nordshrift-semantic test-nordshrift-e2e test-nordshrift-compat test-runtime-artifact-abi test-threads test-thread-platform test-network test-network-platform test-synchro test-munction test-bestof test-io-platform test-path-platform test-terminal-platform test-library-platform test-time-platform test-pixel-terminal test-catalog test-chemistry test-financial test-math test-physics test-economics test-inference test-subjects verify-security build-runtime test-runtime test-memmgr test-memmgr-grades test-system-monitor test-media test-audio-mixer test-ai test-regex test-astrophysics test-sociology test-design-activity test-unsigned-integer
 
 all: verify-security $(SLEELA_BIN) $(NORDSHRIFT_BIN) stage
 
@@ -167,10 +208,13 @@ stage: verify-security $(SLEELA_BIN) $(NORDSHRIFT_BIN)
 	@cp $(SLEELA_BIN) $(STAGE_BIN)/
 	@cp $(NORDSHRIFT_BIN) $(STAGE_BIN)/
 	@cp ../sleela.conf.example $(STAGE_CONFIG)/sleela.conf
-	@cp ../MEMORY_MANAGER.md $(STAGE_DOCS)/MEMORY_MANAGER.md
+	@cp ../config/vm.conf $(STAGE_CONFIG)/vm.conf
+	@cp ../config/config-location.conf $(STAGE_CONFIG)/config-location.conf
+	@cp ../MEMORY_MANAGER.md $(STAGE_DOCS)/MEMORY_MANAGER.md 2>/dev/null || true
 	@cp ../PURPOSE.md $(STAGE_DOCS)/PURPOSE.md 2>/dev/null || true
 	@printf '%s\n' '# SLeeLa Build Options' '' 'The staged runtime uses the defaults in Config/sleela.conf.' '' 'Available command-line memory options:' '' '  --memory-manager       Use the default 2 GiB ceiling' '  --memory-manager=SIZE  Set 256M through 2G' '  --mm=SIZE              Short form of --memory-manager=SIZE' > $(STAGE_OPTIONS)/OPTIONS.md
-	@printf '%s\n' '# SLeeLa Runtime Layout' '' 'bin/       Executables' 'Config/    Consolidated default configuration' 'Options/   Runtime/build option reference' 'lib/       Reserved for runtime libraries' 'docs/      Runtime documentation' > $(STAGE)/README.md
+	@printf '%s\n' '# SLeeLa Runtime Layout' '' 'bin/       Executables' 'Config/    Consolidated default configuration (including VM generation)' 'Options/   Runtime/build option reference' 'lib/       Reserved for runtime libraries' 'docs/      Runtime documentation' > $(STAGE)/README.md
+	@printf '%s\n' '# SLeeLa VM Selection' '' 'Config/vm.conf selects VM generation 1-11.' 'Selection precedence: CLI, SLEELA_VM_VERSION, Config/vm.conf, compiled default.' > $(STAGE_DOCS)/VM-SELECTION.md
 	@echo "=== staged SLeeLa runtime: $(STAGE) ==="
 
 package: stage
@@ -192,18 +236,24 @@ verify-security:
 # rules link with $^, and a phony target name would leak onto the link line).
 $(ALL_OBJECTS): | verify-security
 
-$(SLEELA_BIN): $(SKYA_ENGINE_OBJ) $(SKYA_POLICY_OBJ) $(SKYA_BRIDGE_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(NS_EMIT_OBJ)
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS) -lnghttp2
-$(NORDSHRIFT_BIN): $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(NS_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(CATALOG_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ)
+$(SLEELA_BIN): $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(NS_EMIT_OBJ) $(PREFERRED_ROUTER_OBJ) $(NGHTTP2_LIB)
+	$(CXX) $(CXXFLAGS) $(filter-out $(NGHTTP2_LIB),$^) -o $@ $(LDFLAGS) $(LIBS) $(NGHTTP2_LIB)
+$(AUDIO_NATIVE_OBJ): core/sleela_audio_bridge.cpp core/sleela_audio_bridge.h ../audio/cpp/include/sleela_audio.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Icore -I.. -c $< -o $@
+
+$(AUDIO_CPP_OBJ): ../audio/cpp/src/sleela_audio.cpp ../audio/cpp/include/sleela_audio.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -I../audio/cpp/include -c $< -o $@
+
+$(NORDSHRIFT_BIN): $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(NS_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(CATALOG_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
 $(THREAD_PLATFORM_SMOKE): core/thread_platform_smoke.c $(THREAD_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -Icore core/thread_platform_smoke.c $(THREAD_OBJ) -o $@ $(LDFLAGS) $(LIBS)
 # sleela_core.o (sleela_artifact.c) calls into the OS-abstraction backends
 # (net/io/path/library/terminal), so any target that links the core must also
 # link those objects, not just the core + time.
-$(THREAD_SMOKE): core/thread_smoke.c $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ)
+$(THREAD_SMOKE): core/thread_smoke.c $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(GC_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
-$(SOCKET_SMOKE): core/socket_smoke.c $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ)
+$(SOCKET_SMOKE): core/socket_smoke.c $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(GC_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
 $(SYNCHRO_SMOKE): core/synchro_smoke.c $(SYNCHRO_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -Icore core/synchro_smoke.c $(SYNCHRO_OBJ) -o $@ $(LDFLAGS) $(LIBS)
@@ -241,6 +291,8 @@ $(TERMINAL_OBJ): core/sleela_terminal.c core/sleela_terminal.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c core/sleela_terminal.c -o $@
 $(LIBRARY_OBJ): core/sleela_library.c core/sleela_library.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c core/sleela_library.c -o $@
+$(OS_OBJ): core/sleela_os.c core/sleela_os.h core/sleela_platform.h | $(BUILD)
+	$(CC) $(CFLAGS) -Icore -c core/sleela_os.c -o $@
 $(TIME_OBJ): core/sleela_time.c core/sleela_time.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c core/sleela_time.c -o $@
 $(MEMORY_OBJ): core/sleela_memory.c core/sleela_memory.h | $(BUILD)
@@ -302,11 +354,18 @@ $(PIXEL_TERMINAL_SMOKE): ../bash/pixel_terminal_smoke.cpp ../bash/pixel_terminal
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) ../bash/pixel_terminal_smoke.cpp $(PIXEL_TERMINAL_OBJ) -o $@ $(LDFLAGS) $(LIBS)
 $(GC_OBJ): ../runtime/garbage_collector.c ../runtime/garbage_collector.h | $(BUILD)
 	$(CC) $(CFLAGS) -c ../runtime/garbage_collector.c -o $@
+$(VM_CONFIG_OBJ): ../runtime/vm_config.c ../runtime/vm_config.h | $(BUILD)
+	$(CC) $(CFLAGS) -c ../runtime/vm_config.c -o $@
+$(VM_CONFIG_SMOKE): ../runtime/vm_config_smoke.c ../runtime/vm_config.h $(VM_CONFIG_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -I../runtime ../runtime/vm_config_smoke.c $(VM_CONFIG_OBJ) -o $@ $(LDFLAGS) $(LIBS)
+test-vm-config: $(VM_CONFIG_SMOKE)
+	@echo "=== SLeeLa VM generation configuration ==="; (cd .. && $(VM_CONFIG_SMOKE))
+
 $(SECURITY_OBJ): ../runtime/security_supervisor.c ../runtime/security_supervisor.h | $(BUILD)
 	$(CC) $(CFLAGS) -c ../runtime/security_supervisor.c -o $@
 $(PARAMETERS_OBJ): ../runtime/Parameters.c ../runtime/Parameters.h | $(BUILD)
 	$(CC) $(CFLAGS) -c ../runtime/Parameters.c -o $@
-$(CORE_OBJ): $(CORE_SRC) core/sleela_core.c core/sleela_core.h core/sleela_thread.h core/pthread.h core/sleela_synchro.h core/sleela_munction.h core/sleela_bestof.h | $(BUILD)
+$(CORE_OBJ): $(CORE_SRC) core/sleela_core.c core/sleela_core.h ../runtime/garbage_collector.h core/sleela_thread.h core/pthread.h core/sleela_synchro.h core/sleela_munction.h core/sleela_bestof.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c $(CORE_SRC) -o $@
 $(CHEMISTRY_OBJ): subjects/chemistry/chemistry.cpp subjects/chemistry/chemistry.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c subjects/chemistry/chemistry.cpp -o $@
@@ -340,6 +399,20 @@ test-sociology: $(SOC_SMOKE) $(SOC_OBJ)
 
 $(BUILD)/physics_native.o: subjects/physics/physics_native.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/astrophysics_native.o: subjects/astrophysics/astrophysics_native.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/sociology_native.o: subjects/sociology/sociology_native.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/Annotation.o: annotation/Annotation.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/ForwardingAnnotation.o: annotation/ForwardingAnnotation.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/AnnotationForwarder.o: annotation/AnnotationForwarder.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/AnnotationInterpreter.o: annotation/AnnotationInterpreter.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+$(BUILD)/AnnotationRuntime.o: annotation/AnnotationRuntime.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 $(BUILD)/economics_native.o: subjects/economics/economics_native.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 $(BUILD)/inference_native.o: subjects/inference/inference_native.cpp | $(BUILD)
@@ -362,32 +435,65 @@ $(BUILD)/http_server.o: ../http-servers/common/http_server.cpp ../http-servers/c
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c ../http-servers/common/http_server.cpp -o $@
 $(BUILD)/http_server_cli.o: frontend/http_server_cli.cpp frontend/http_server_cli.h ../http-servers/common/http_server.h ../http-servers/2/http2/http2_server.h ../http-servers/3/http3/http3_server.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c frontend/http_server_cli.cpp -o $@
-$(BUILD)/http2_server.o: ../http-servers/2/http2/http2_server.cpp ../http-servers/2/http2/http2_server.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c ../http-servers/2/http2/http2_server.cpp -o $@
+$(BUILD)/http2_server.o: ../http-servers/2/http2/http2_server.cpp ../http-servers/2/http2/http2_server.h $(NGHTTP2_VERHDR) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -I$(NGHTTP2_INC) -DNGHTTP2_STATICLIB -c ../http-servers/2/http2/http2_server.cpp -o $@
+
+# --- Vendored nghttp2 static library ----------------------------------------
+# Unpack the committed source tree once; the stamp file guards re-extraction.
+$(NGHTTP2_DIR)/.unpacked: $(NGHTTP2_ZIP) | $(BUILD)
+	@echo "=== unpacking vendored nghttp2 $(NGHTTP2_VERSION) ==="
+	@rm -rf $(NGHTTP2_DIR)
+	@cd $(BUILD) && $(PYTHON) -c "import zipfile; zipfile.ZipFile('../$(NGHTTP2_ZIP)').extractall('.')"
+	@touch $@
+
+# Generate the version header from the shipped autotools/cmake template.
+$(NGHTTP2_VERHDR): $(NGHTTP2_DIR)/.unpacked
+	@sed -e 's/@PACKAGE_VERSION@/$(NGHTTP2_VERSION)/' \
+	     -e 's/@PACKAGE_VERSION_NUM@/$(NGHTTP2_VERSION_NUM)/' \
+	     $(NGHTTP2_DIR)/lib/includes/nghttp2/nghttp2ver.h.in > $@
+
+# Compile the core library sources (lib/*.c) into a static archive. The sources
+# are built standalone (no config.h; HAVE_CONFIG_H is left undefined) with
+# NGHTTP2_STATICLIB so no symbol-visibility/DLL attributes are emitted.
+$(NGHTTP2_LIB): $(NGHTTP2_VERHDR)
+	@echo "=== building vendored libnghttp2.a ==="
+	@$(CC) $(CFLAGS) $(NGHTTP2_DEFS) -I$(NGHTTP2_INC) -I$(NGHTTP2_DIR)/lib \
+	    -c $(NGHTTP2_DIR)/lib/*.c
+	@mv nghttp2_*.o sfparse.o $(BUILD)/ 2>/dev/null || true
+	@$(AR) rcs $@ $(BUILD)/nghttp2_*.o $(BUILD)/sfparse.o
+	@rm -f $(BUILD)/nghttp2_*.o $(BUILD)/sfparse.o
+$(PREFERRED_ROUTER_OBJ): ../preferred-routers/preferred_router.cpp ../preferred-routers/preferred_router.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c ../preferred-routers/preferred_router.cpp -o $@
 $(BUILD)/http3_server.o: ../http-servers/3/http3/http3_server.cpp ../http-servers/3/http3/http3_server.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c ../http-servers/3/http3/http3_server.cpp -o $@
 
-$(SKYA_ENGINE_OBJ): ../telephony-skya/native/skya_engine.cpp ../telephony-skya/native/skya_engine.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) -Icore -I.. -c $< -o $@
-$(SKYA_POLICY_OBJ): ../telephony-skya/native/skya_policy.cpp ../telephony-skya/native/skya_policy.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) -Icore -I.. -c $< -o $@
-$(SKYA_BRIDGE_OBJ): ../telephony-skya/native/skya_sleela_bridge.cpp ../telephony-skya/native/skya_sleela_bridge.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) -Icore -I.. -c $< -o $@
-
+$(JAVA_RUNTIME_PROBE_OBJ): ../runtime/java_runtime_probe.c ../runtime/java_runtime_probe.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(JAVA_RUNTIME_BRIDGE_OBJ): ../runtime/java_runtime_bridge.c ../runtime/java_runtime_bridge.h ../runtime/java_runtime_probe.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/driver.o: frontend/driver.cpp frontend/compiler.h frontend/artifact.h subjects/native/native_api.h subjects/chemistry/chemistry_api.h subjects/finance/financial_api.h frontend/http_server_cli.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 $(BUILD):
 	mkdir -p $(BUILD)
 
-test: verify-security test-system-monitor test-sleela test-design-activity test-regex test-version test-nordshrift test-nordshrift-compiler test-nordshrift-semantic test-nordshrift-e2e test-nordshrift-compat test-runtime-artifact-abi test-threads test-thread-platform test-network test-network-platform test-synchro test-munction test-bestof test-io-platform test-path-platform test-terminal-platform test-library-platform test-time-platform test-pixel-terminal test-catalog test-math test-physics test-economics test-inference test-chemistry test-financial test-astrophysics test-sociology test-runtime test-memmgr
+test: verify-security test-java-runtime test-java-authorship test-system-monitor test-sleela test-class-dispatch test-design-activity test-regex test-version test-nordshrift test-nordshrift-compiler test-nordshrift-semantic test-nordshrift-e2e test-nordshrift-compat test-runtime-artifact-abi test-threads test-thread-platform test-network test-network-platform test-synchro test-munction test-bestof test-io-platform test-path-platform test-terminal-platform test-library-platform test-time-platform test-pixel-terminal test-catalog test-math test-physics test-economics test-inference test-chemistry test-financial test-astrophysics test-sociology test-unsigned-integer test-runtime test-memmgr
 test-thread-platform: $(THREAD_PLATFORM_SMOKE)
 	@echo "=== OS-aware threading backend ==="; SLEELA_THREAD_PLATFORM=auto $(THREAD_PLATFORM_SMOKE)
 test-threads: $(THREAD_SMOKE)
 	@echo "=== core threading smoke (128 threads) ==="; $(THREAD_SMOKE) 128
+test-java-runtime: $(SLEELA_BIN)
+	@cd $(CURDIR)/.. && bash test-suites/java-runtime-probe.sh
+	@cd $(CURDIR)/.. && bash test-suites/java-runtime-bridge.sh
+
 test-sleela: $(SLEELA_BIN)
-	@export SLEELA_SHEET=$(CURDIR)/../SHEET.sheet; export SLEELA_SHA256_MANIFEST=$${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && for f in impl/examples/*.sleela; do echo "=== $$f ==="; $(CURDIR)/$(SLEELA_BIN) run $$f || exit 1; done
+	@export SLEELA_SHEET=$(CURDIR)/../SHEET.sheet; export SLEELA_SHA256_MANIFEST=${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && for f in impl/examples/*.sleela; do echo "=== $f ==="; $(CURDIR)/$(SLEELA_BIN) run $f || exit 1; done
+
+test-class-dispatch: $(SLEELA_BIN)
+	@cd $(CURDIR)/.. && bash impl/tests/class_dispatch/run_class_dispatch_tests.sh $(CURDIR)/$(SLEELA_BIN)
 test-version: $(SLEELA_BIN)
 	@export SLEELA_SHEET=$(CURDIR)/../SHEET.sheet; export SLEELA_SHA256_MANIFEST=$${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && bash impl/tests/version/run_version_tests.sh $(CURDIR)/$(SLEELA_BIN)
+test-syntax-1.8: $(SLEELA_BIN)
+	@export SLEELA_SHEET=$(CURDIR)/../SHEET.sheet; export SLEELA_SHA256_MANIFEST=$${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && bash tests/sleela-syntax-1.8/run_syntax_1_8_tests.sh $(CURDIR)/$(SLEELA_BIN)
 test-nordshrift: $(NORDSHRIFT_BIN)
 	@export SLEELA_SHA256_MANIFEST=${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && echo "=== check examples/nordshrift/subject-libraries.sst ===" && $(CURDIR)/$(NORDSHRIFT_BIN) check examples/nordshrift/subject-libraries.sst
 	@export SLEELA_SHA256_MANIFEST=$${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && for f in impl/nordshrift/examples/*.sst; do echo "=== check $$f ==="; $(CURDIR)/$(NORDSHRIFT_BIN) check $$f || exit 1; done
@@ -400,10 +506,9 @@ test-nordshrift-compat: $(NORDSHRIFT_BIN)
 	@bash ../impl/tests/nordshrift/run_cross_version_tests.sh $(NORDSHRIFT_BIN)
 
 test-nordshrift-e2e: $(NORDSHRIFT_BIN) $(SLEELA_BIN)
+	@cd $(CURDIR)/.. && bash impl/tests/nordshrift/run_end_to_end_tests.sh $(CURDIR)/$(NORDSHRIFT_BIN) $(CURDIR)/$(SLEELA_BIN)
 test-runtime-artifact-abi: $(SLEELA_BIN)
 	@cd $(CURDIR)/.. && bash impl/tests/version/run_artifact_abi_tests.sh $(CURDIR)/$(SLEELA_BIN)
-
-	@cd $(CURDIR)/.. && bash impl/tests/nordshrift/run_end_to_end_tests.sh $(CURDIR)/$(NORDSHRIFT_BIN) $(CURDIR)/$(SLEELA_BIN)
 
 test-network: $(SOCKET_SMOKE)
 	@echo "=== core networking smoke (TCP loopback) ==="; $(SOCKET_SMOKE)
@@ -438,9 +543,12 @@ define RUN_SUBJECT_VALUES
 	  f=impl/tests/subjects/$(1)_values.sleela; \
 	  echo "=== $(1) numeric assertions ($$f) ==="; \
 	  out="$$($(CURDIR)/$(SLEELA_BIN) run $$f 2>/dev/null)" || { echo "  FAIL ($$f did not run)"; exit 1; }; \
-	  printf '%s\n' "$$out" | grep -E '^(PASS|FAIL) '; \
-	  fails=$$(printf '%s\n' "$$out" | grep -c '^FAIL '); \
-	  passes=$$(printf '%s\n' "$$out" | grep -c '^PASS '); \
+	  printf '%s
+' "$$out" | grep -E '^(PASS|FAIL) '; \
+	  fails=$$(printf '%s
+' "$$out" | grep -c '^FAIL '); \
+	  passes=$$(printf '%s
+' "$$out" | grep -c '^PASS '); \
 	  expected=$$(grep -oE 'EXPECTED_PASS=[0-9]+' $$f | head -1 | cut -d= -f2); \
 	  if [ "$$fails" -ne 0 ]; then echo "  $(1): $$fails FAILED"; exit 1; fi; \
 	  if [ -n "$$expected" ] && [ "$$passes" -ne "$$expected" ]; then echo "  $(1): expected $$expected checks, got $$passes"; exit 1; fi; \
@@ -473,8 +581,15 @@ build-runtime: verify-security $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ)
 # reclamation, byte accounting, destructor invocation, and class/role quota
 # enforcement) rather than merely compiling them.
 RUNTIME_SMOKE := $(BUILD)/runtime_smoke
+GC_MODERN_SMOKE := $(BUILD)/gc_modern_smoke
+VM_CONFIG_OBJ := $(BUILD)/vm_config.o
+VM_CONFIG_SMOKE := $(BUILD)/vm_config_smoke
+CONFIG_LOCATION_OBJ := $(BUILD)/config_location.o
+CONFIG_LOCATION_SMOKE := $(BUILD)/config_location_smoke
 $(RUNTIME_SMOKE): tests/runtime/runtime_smoke.c $(GC_OBJ) $(SECURITY_OBJ) | verify-security $(BUILD)
 	$(CC) $(CFLAGS) -I../runtime tests/runtime/runtime_smoke.c $(GC_OBJ) $(SECURITY_OBJ) -o $@ $(LDFLAGS) $(LIBS)
+$(GC_MODERN_SMOKE): tests/runtime/gc_modern_smoke.c $(GC_OBJ) | verify-security $(BUILD)
+	$(CC) $(CFLAGS) -I../runtime tests/runtime/gc_modern_smoke.c $(GC_OBJ) -o $@ $(LDFLAGS) $(LIBS)
 
 # Cross-platform source smoke suite. These tests exercise the native
 # OS abstraction layer (threads, sockets, I/O, paths, terminal, loader, time).
@@ -488,8 +603,9 @@ test-platform: $(THREAD_PLATFORM_SMOKE) $(NET_PLATFORM_SMOKE) $(IO_PLATFORM_SMOK
 	@$(LIBRARY_PLATFORM_SMOKE)
 	@$(TIME_PLATFORM_SMOKE)
 
-test-runtime: $(RUNTIME_SMOKE)
+test-runtime: $(RUNTIME_SMOKE) $(GC_MODERN_SMOKE)
 	@echo "=== SLVM runtime services -- behavioral smoke ==="; $(RUNTIME_SMOKE)
+	@echo "=== SLeeLa modern generational/incremental GC smoke ==="; $(GC_MODERN_SMOKE)
 
 # Behavioral smoke test for the Memory Manager: links against the manager and
 # the OS allocator/thread objects and asserts real behavior (untracked-when-
@@ -508,3 +624,30 @@ test-design-activity: $(DESIGN_ACTIVITY_SMOKE)
 
 test-memmgr: $(MEMMGR_SMOKE)
 	@echo "=== SLeeLa Memory Manager -- behavioral smoke ==="; $(MEMMGR_SMOKE)
+
+JAVA_AUTHORSHIP_TEST := $(BUILD)/java_authorship_metadata.test
+test-java-authorship: $(SLEELA_BIN)
+	@echo "=== Java authorship transition metadata ==="
+	@export SLEELA_SHEET=$(CURDIR)/../SHEET.sheet; export SLEELA_SHA256_MANIFEST=$${SLEELA_SHA256_MANIFEST:-$(CURDIR)/../security/sha256-manifest.json}; cd $(CURDIR)/.. && $(CURDIR)/$(SLEELA_BIN) run impl/tests/java_transition/java_authorship_metadata.sleela
+
+
+test-java-generic: $(SLEELA_BIN)
+	@echo "=== Java generic signature transition ==="
+	@cd $(CURDIR)/.. && $(CURDIR)/$(SLEELA_BIN) run impl/tests/java_transition/generic_signatures.sleela
+
+test-java-declaration-metadata: $(SLEELA_BIN)
+	@echo "=== Java declaration annotation metadata ==="
+	@cd $(CURDIR)/.. && $(CURDIR)/$(SLEELA_BIN) run impl/tests/java_transition/declaration_metadata.sleela
+
+$(CONFIG_LOCATION_OBJ): ../runtime/config_location.c ../runtime/config_location.h | $(BUILD)
+	$(CC) $(CFLAGS) -c ../runtime/config_location.c -o $@
+$(CONFIG_LOCATION_SMOKE): ../runtime/config_location_smoke.c ../runtime/config_location.h $(CONFIG_LOCATION_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -I../runtime ../runtime/config_location_smoke.c $(CONFIG_LOCATION_OBJ) -o $@ $(LDFLAGS) $(LIBS)
+test-config-location: $(CONFIG_LOCATION_SMOKE)
+	@echo "=== SLeeLa configuration location policy ==="; (cd .. && $(CONFIG_LOCATION_SMOKE))
+
+UNSIGNED_INTEGER_TEST := $(BUILD)/unsigned_integer.test
+$(UNSIGNED_INTEGER_TEST): tests/unsigned_integer_test.cpp frontend/unsigned_integer.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -Ifrontend tests/unsigned_integer_test.cpp -o $@
+test-unsigned-integer: $(UNSIGNED_INTEGER_TEST)
+	@echo "=== SLeeLa arbitrary-width unsigned integer tests ==="; $(UNSIGNED_INTEGER_TEST)
