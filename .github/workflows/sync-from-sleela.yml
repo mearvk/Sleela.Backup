@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/sync-from-sleela.yml"
   workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: write
@@ -57,7 +59,7 @@ jobs:
               --exclude='/security/important-sha256-manifest.json' \
               "$source_dir/" "$GITHUB_WORKSPACE/"
 
-            git add -A
+            git add -A -f
             if git diff --cached --quiet; then
               echo "No source changes to propose for $target"
               continue
