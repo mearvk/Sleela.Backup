@@ -63,12 +63,8 @@ jobs:
 
             git commit -m "Sync from SLeeLa master (shallow depth 2)"
             git push --force-with-lease origin "$branch"
-            gh pr create \
-              --repo "$GH_REPO" \
-              --base "$target" \
-              --head "$branch" \
-              --title "Sync $target from SLeeLa master" \
-              --body "Automated shallow-depth-2 mirror of https://github.com/mearvk/SLeeLa/tree/master. The sync is proposed as a pull request so backup-only differences can be reviewed before merging."
+            echo "Branch pushed: https://github.com/$GH_REPO/tree/$branch"
+            echo "Create the review PR with the GitHub integration or repository UI; the default Actions token may not have permission to open PRs."
           done
 
 # This workflow keeps the sister repository reviewable by proposing changes as pull requests.
