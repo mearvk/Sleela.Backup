@@ -53,6 +53,8 @@ jobs:
             rsync -a --delete \
               --exclude='/.git' \
               --exclude='/.github/workflows/***' \
+              --exclude='/SHA256-DIGESTS.md' \
+              --exclude='/security/important-sha256-manifest.json' \
               "$source_dir/" "$GITHUB_WORKSPACE/"
 
             git add -A
