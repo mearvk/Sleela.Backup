@@ -1,0 +1,34 @@
+/*
+ * lib/os/SLClock.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines SLClock — the host system clock, as seen from the OS
+ *   family. It surfaces wall-clock and monotonic time through the VM's time
+ *   built-ins (timeUtcMillis / timeMonotonicNanos / timeHttpDate), which read
+ *   the real OS clock (QueryPerformanceCounter + system time on Windows,
+ *   clock_gettime on POSIX). SLClock belongs to /lib/os because time is an
+ *   operating-system service; it reuses the time substrate rather than
+ *   duplicating it.
+ *
+ * Family: os. Native VM/OS work crosses the explicit time/`os*` SLVM bridge.
+ */
+#sleela 1.5
+class SLClock {
+  int monoStart;   // monotonic reference captured at reset (nanoseconds)
+  void configure() { monoStart = 0; }
+
+  // Milliseconds since the Unix epoch (UTC wall-clock).
+  int nowMillis() { return timeUtcMillis(); }
+  // Monotonic nanoseconds (never goes backward; for durations).
+  int monotonicNanos() { return timeMonotonicNanos(); }
+  // An RFC 1123 HTTP date string for "now".
+  String httpDate() { return timeHttpDate(); }
+  // The host's configured time-zone location.
+  String location() { return timeLocation(); }
+
+  // Start a monotonic stopwatch.
+  void reset() { monoStart = timeMonotonicNanos(); }
+  // Elapsed nanoseconds since reset().
+  int elapsedNanos() { return timeMonotonicNanos() - monoStart; }
+  // Elapsed whole milliseconds since reset().
+  int elapsedMillis() { return (timeMonotonicNanos() - monoStart) / 1000000; }
+}

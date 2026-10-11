@@ -1,0 +1,12 @@
+/*
+ * lib/regex/RegexCapability.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library type RegexCapability used within the regex library family.
+ */
+#sleela 1.3
+class RegexCapability {
+  int value;
+  void clear(){value=0;}
+  void enable(int flag){value=value+flag;}
+  int get(){return value;}
+}

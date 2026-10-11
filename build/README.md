@@ -1,4 +1,36 @@
-# Skya Platform Builds
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
+# SLeeLa Build
+
+The `build/` tree documents and hosts product-specific native build entry points.
+Product source remains authoritative in its product directory; generated output
+is disposable.
+
+## Regex subsystem
+
+The SLeeLa Regex native implementation is under `regex/`.
+
+From the repository root:
+
+    make -C regex test
+
+Focused targets:
+
+    make -C regex c
+    make -C regex cpp
+    make -C regex clean
+
+See `build/REGEX.md` for the build boundary, toolchain notes, output path,
+and CI conformance target.
+
+## Skya Platform Builds
 
 Direct native build entry points for Skya on Linux, Windows 10+, and macOS.
 

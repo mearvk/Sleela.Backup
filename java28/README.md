@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # Sleela ↔ Java 28 SecureJDK Memory Integration
 
 This directory is the **integration link** that lets a Sleela program run

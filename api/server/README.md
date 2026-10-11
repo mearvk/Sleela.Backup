@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # Discord-1™ — SLeeLa Server Launcher — sleelas
 
 **Discord-1™** is the programmatic name for the native SLeeLa Server Launcher.
@@ -138,3 +147,15 @@ before launching Server.sleela. Set `SLEELA_HTTP_LOGICAL_PORT` and
 `SLEELA_HTTP_DOWNLOAD_SIZE` to validate the logical application PORT and
 transfer mode. HTTP 2.1 is used for Server Edition level 2 and HTTP 3.0 for
 level 3. The native firewall port remains separate from the logical PORT.
+
+## Unified Route Data
+
+This server consumes the SLeeLa unified route-data contract in
+route/ROUTE.DATA.json and route/ROUTE.DATA.md. Route records carry protocol,
+server surface, HTTP generation, VM generation/formal VM name, canonical
+configuration root, route identifier, target/resolution mode, capability,
+transport, port, and status. VM names are architectural metadata only and do
+not grant capabilities. Dynamic targets must use the shared resolver before
+acceptance. The VM identity is: /impl Core, /1 Foundation, /2 Operator,
+/3 Specialist, /4 Supervisor, /5 Manager, /6 Director, /7 Administrator,
+/8 Executive, /9 Authority, /10 Principal, /11 Sovereign.

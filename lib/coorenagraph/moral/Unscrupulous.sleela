@@ -1,0 +1,20 @@
+/*
+ * Unscrupulous.sleela
+ * COORENAGRAPH moral vocabulary.
+ * Part of speech: adjective
+ * Definition: Lacking moral principles or ethical restraint in pursuit of a goal.
+ */
+
+class Unscrupulous {
+    String term() {
+        return "Unscrupulous";
+    }
+
+    String partOfSpeech() {
+        return "adjective";
+    }
+
+    String definition() {
+        return "Lacking moral principles or ethical restraint in pursuit of a goal.";
+    }
+}
