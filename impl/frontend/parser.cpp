@@ -11,53 +11,357 @@ void Parser::error(const std::string& msg) const {const Token&t=cur();throw std:
 // Pre-pass: record every `struct Name` so that Name is recognised as a type
 // name throughout parsing, regardless of declaration order (C/C++-like: a
 // struct type may be referenced before or after its definition here).
-void Parser::collectStructNames(){for(size_t k=0;k+1<toks_.size();++k){if(toks_[k].kind==Tok::KwStruct&&toks_[k+1].kind==Tok::Ident)structNames_.insert(toks_[k+1].text);}}
-annotation::Annotation Parser::parseAnnotation(){
-    const Token& at=expect(Tok::At,"'@'");
-    const Token& name=expect(Tok::Ident,"annotation name");
-    if(name.line!=at.line) error("annotation name must follow '@' on the same line");
+void Parser::collectStructNames(){for(size_t k=0;k+1<toks_.size();++k){if(toks_[k].kind==Tok::KwStruct&&toks_[k+1].kind==Tok::Ident)structNames_.insert(toks_[k+1].text);}} 
+unsigned Parser::parseJavaModifiers(){
+    unsigned m=0;
+    bool again=true;
+    while(again){again=false;switch(cur().kind){
+        case Tok::KwPublic:m|=JavaPublic;break; case Tok::KwProtected:m|=JavaProtected;break;
+        case Tok::KwPrivate:m|=JavaPrivate;break; case Tok::KwStatic:m|=JavaStatic;break;
+        case Tok::KwFinal:m|=JavaFinal;break; case Tok::KwAbstract:m|=JavaAbstract;break;
+        case Tok::KwNative:m|=JavaNative;break; case Tok::KwSynchronized:m|=JavaSynchronized;break;
+        case Tok::KwVolatile:m|=JavaVolatile;break; case Tok::KwTransient:m|=JavaTransient;break;
+        case Tok::KwStrictfp:m|=JavaStrictfp;break; case Tok::KwSealed:m|=JavaSealed;break;
+        case Tok::KwNonSealed:m|=JavaNonSealed;break; case Tok::KwDefault:m|=JavaDefault;break;
+        default: continue;
+    } i_++; again=true;}
+    return m;
+}
+JavaTypeKind Parser::tokenTypeKind(Tok k) const {
+    if(k==Tok::KwInterface)return JavaTypeKind::Interface;
+    if(k==Tok::KwEnum)return JavaTypeKind::Enum;
+    if(k==Tok::KwRecord)return JavaTypeKind::Record;
+    return JavaTypeKind::Class;
+}
+std::string Parser::parseQualifiedName(){
+    std::string n=expect(Tok::Ident,"qualified name").text;
+    while(accept(Tok::Dot)) n+="."+expect(Tok::Ident,"identifier after '.'").text;
+    return n;
+}
+// Nested-class name mangling (syntax 1.11). The source spells a nested class
+// type with a dot ("Outer.Inner"), but the core VM reserves '.' for numeric
+// literals and uses it in no identifier, so a dotted name must never reach the
+// VM as a struct/function name. Every type name is normalised here by replacing
+// '.' with "__", giving the identifier-safe internal name "Outer__Inner". The
+// same transform is applied where nested classes are hoisted, so source
+// references and the registered class name always agree.
+std::string Parser::mangleTypeName(const std::string& t){
+    std::string out; out.reserve(t.size());
+    for(char ch:t){ if(ch=='.') out+="__"; else out.push_back(ch); }
+    return out;
+}
+std::vector<std::string> Parser::parseTypeList(Tok terminator){
+    std::vector<std::string> out;
+    if(check(terminator)) return out;
+    do { out.push_back(parseQualifiedName()); } while(accept(Tok::Comma));
+    return out;
+}
+std::vector<std::string> Parser::parseTypeParameters(){
+    std::vector<std::string> out; if(!accept(Tok::Lt)) return out;
+    do { std::string p=expect(Tok::Ident,"type parameter name").text;
+        if(accept(Tok::KwExtends)){ p += " extends "; p += parseGenericType(); while(accept(Tok::AndAnd)) p += " & " + parseGenericType(); }
+        out.push_back(p);
+    } while(accept(Tok::Comma)); expect(Tok::Gt,"'>'"); return out;
+}
+std::string Parser::parseGenericType(){
+    std::string t=parseQualifiedName();
+    if(accept(Tok::Lt)){ t += "<"; do {
+        if(accept(Tok::Question)){ t += "?"; if(accept(Tok::KwExtends)) t += " extends " + parseGenericType(); else if(accept(Tok::KwSuper)) t += " super " + parseGenericType(); }
+        else t += parseGenericType();
+    } while(accept(Tok::Comma)); expect(Tok::Gt,"'>'"); t += ">"; }
+    return t;
+}
+void Parser::parseThrows(std::vector<std::string>& out){
+    if(!accept(Tok::KwThrows)) return;
+    do { out.push_back(parseQualifiedName()); } while(accept(Tok::Comma));
+}
+annotation::Annotation Parser::parseAnnotation(annotation::UseSite site){
+    expect(Tok::At,"'@'");
+    std::string name=parseQualifiedName();
     std::string value;
-    while(!check(Tok::Eof)&&cur().line==at.line){
-        if(check(Tok::At)) error("annotation value cannot contain '@'");
-        value+=cur().text;
-        ++i_;
+    bool marker=true;
+    if(accept(Tok::LParen)){
+        marker=false; int depth=1;
+        while(depth>0 && !check(Tok::Eof)){
+            if(check(Tok::LParen)){ value += "("; ++depth; ++i_; }
+            else if(check(Tok::RParen)){ --depth; ++i_; if(depth>0) value += ")"; }
+            else { if(!value.empty()) value += " "; value += cur().text; ++i_; }
+        }
+        if(depth!=0) error("unterminated annotation '"+name+"'");
     }
-    if(value.empty()) error("annotation '@"+name.text+"' requires a value");
-    return annotation::Annotation{name.text,value};
+    return annotation::Annotation{name,value,site,marker};
+}
+std::vector<annotation::Annotation> Parser::parseAnnotations(annotation::UseSite site){
+    std::vector<annotation::Annotation> out;
+    while(check(Tok::At)) out.push_back(parseAnnotation(site));
+    return out;
+}
+std::vector<annotation::Annotation> Parser::parseTypeAnnotations(){
+    return parseAnnotations(annotation::UseSite::TypeUse);
 }
 Program Parser::parseProgram(){
     collectStructNames(); Program p; bool contentStarted=false;
     while(!check(Tok::Eof)){
         if(check(Tok::At)){
-            if(contentStarted) error("document annotations must precede imports, structs, and classes");
-            p.annotations.add(parseAnnotation());
-        } else if(accept(Tok::KwImport)){
-            contentStarted=true;
-            p.imports.push_back(expect(Tok::Ident,"module name").text);
-            expect(Tok::Semicolon,"';'");
-        } else if(check(Tok::KwStruct)){
-            contentStarted=true; p.structs.push_back(parseStruct());
-        } else if(check(Tok::KwClass)){
-            contentStarted=true; p.classes.push_back(parseClass());
-        } else error("expected annotation, 'import', 'struct', or 'class' at top level");
+            auto anns=parseAnnotations(annotation::UseSite::Declaration);
+            if(check(Tok::KwClass)||check(Tok::KwInterface)||check(Tok::KwEnum)||check(Tok::KwRecord)){
+                contentStarted=true; unsigned mods=parseJavaModifiers(); p.classes.push_back(parseClass(mods,std::move(anns)));
+            } else {
+                if(contentStarted) error("declaration annotations must precede their declaration");
+                for(auto &a:anns) p.annotations.add(std::move(a));
+            }
+        } else if(accept(Tok::KwImport)){ contentStarted=true;
+            bool parsedDynamite=false;
+            if(check(Tok::Ident)&&cur().text=="dynamite"&&peek(1).kind==Tok::Ident&&peek(1).text=="connector"){
+                i_+=2; std::string first; std::string path; bool named=false;
+                if(check(Tok::Ident)&&peek(1).kind==Tok::Assign){ first=cur().text; i_+=2; named=true; }
+                while(!check(Tok::Semicolon)&&!check(Tok::Eof)){ path += cur().text; ++i_; }
+                expect(Tok::Semicolon,"';'");
+                if(path.empty()) error("Dynamite Connector import requires a source path");
+                p.dynamiteImports.push_back({named?first:"",path}); parsedDynamite=true;
+            } else if(check(Tok::DoubleColon)){
+                size_t save=i_; ++i_;
+                if(check(Tok::Ident)&&cur().text=="dynamite"){ ++i_;
+                    if(check(Tok::DoubleColon)){ ++i_;
+                        if(check(Tok::Ident)&&cur().text=="connector"){ ++i_;
+                            if(check(Tok::DoubleColon)){ ++i_;
+                                std::string reference;
+                                if(check(Tok::Ident)&&peek(1).kind==Tok::DoubleColon){ reference=cur().text; i_+=2; }
+                                std::string path;
+                                while(!check(Tok::Semicolon)&&!check(Tok::Eof)){ path += cur().text; ++i_; }
+                                expect(Tok::Semicolon,"';'");
+                                if(path.empty()) error("Dynamite Connector import requires a source path");
+                                p.dynamiteImports.push_back({reference,path}); parsedDynamite=true;
+                            }
+                        }
+                    }
+                }
+                if(!parsedDynamite) i_=save;
+            }
+            if(!parsedDynamite && p.dynamiteImports.size()>1) {
+                // No-op: ordinary imports remain independent of Dynamite references.
+            }
+            if(!parsedDynamite && check(Tok::Ident)&&cur().text=="permissible"&&peek(1).kind==Tok::Ident&&peek(1).text=="connector") {
+                i_+=2; std::string first; std::string path; bool named=false;
+                if(check(Tok::Ident)&&peek(1).kind==Tok::Assign){first=cur().text;i_+=2;named=true;}
+                while(!check(Tok::Semicolon)&&!check(Tok::Eof)){path+=cur().text;++i_;}
+                expect(Tok::Semicolon,"';'"); if(path.empty()) error("Permissible Connector import requires a source path");
+                p.permissibleImports.push_back({named?first:"",path}); parsedDynamite=true;
+            } else if(!parsedDynamite && check(Tok::DoubleColon)) {
+                size_t save=i_; ++i_;
+                if(check(Tok::Ident)&&cur().text=="permissible"){++i_;
+                    if(check(Tok::DoubleColon)){++i_;
+                        if(check(Tok::Ident)&&cur().text=="connector"){++i_;
+                            if(check(Tok::DoubleColon)){++i_; std::string reference;
+                                if(check(Tok::Ident)&&peek(1).kind==Tok::DoubleColon){reference=cur().text;i_+=2;}
+                                std::string path; while(!check(Tok::Semicolon)&&!check(Tok::Eof)){path+=cur().text;++i_;}
+                                expect(Tok::Semicolon,"';'"); if(path.empty()) error("Permissible Connector import requires a source path");
+                                p.permissibleImports.push_back({reference,path}); parsedDynamite=true;
+                            }
+                        }
+                    }
+                }
+                if(!parsedDynamite)i_=save;
+            }
+            if(!parsedDynamite) {
+                p.imports.push_back(expect(Tok::Ident,"module name").text);
+                expect(Tok::Semicolon,"';'");
+            }
+        }
+        else if(check(Tok::KwExtends)){ contentStarted=true; p.documentExtensions.push_back(parseDocumentExtension()); }
+        else if(check(Tok::KwStruct)){ contentStarted=true; p.structs.push_back(parseStruct()); }
+        else {
+            unsigned mods=parseJavaModifiers();
+            if(check(Tok::KwClass)||check(Tok::KwInterface)||check(Tok::KwEnum)||check(Tok::KwRecord)){
+                contentStarted=true; p.classes.push_back(parseClass(mods));
+            } else error("expected annotation, import, struct, or Java type declaration at top level");
+        }
     }
     if(p.classes.empty()) error("program contains no classes");
+    // Append nested classes (syntax 1.11) hoisted during parseClass to the flat
+    // Program.classes list. Each is already named "Outer__Inner" and flagged, so
+    // the semantic analyzer and compiler treat it as an ordinary class. The
+    // "rule of two" has already bounded lexical nesting to depth 2; here we
+    // enforce the per-document cap of 42 nested classes and record the count.
+    if(hoistedNested_.size()>42) error("a single Sleela document may contain at most 42 nested classes (found "+std::to_string(hoistedNested_.size())+")");
+    p.nestedClassCount=(int)hoistedNested_.size();
+    for(auto& h:hoistedNested_) p.classes.push_back(std::move(h));
     return p;
 }
 StructDecl Parser::parseStruct(){expect(Tok::KwStruct,"'struct'");StructDecl s;s.name=expect(Tok::Ident,"struct name").text;expect(Tok::LBrace,"'{'");while(!check(Tok::RBrace)&&!check(Tok::Eof)){Field f;f.type=parseType();f.name=expect(Tok::Ident,"field name").text;expect(Tok::Semicolon,"';'");s.fields.push_back(std::move(f));}expect(Tok::RBrace,"'}'");return s;}
-ClassDecl Parser::parseClass(){expect(Tok::KwClass,"'class'");ClassDecl c;c.name=expect(Tok::Ident,"class name").text;expect(Tok::LBrace,"'{'");while(!check(Tok::RBrace)&&!check(Tok::Eof)){size_t save=i_;bool isStatic=accept(Tok::KwStatic);bool isProtected=accept(Tok::KwProtected);if(!isTypeStart())error("expected a type for a field or method");i_++;if(!check(Tok::Ident))error("expected a field or method name");Tok after=peek(1).kind;i_=save;if(after==Tok::LParen)c.methods.push_back(parseMethod(isStatic,isProtected));else c.fields.push_back(parseField(isStatic,isProtected));}expect(Tok::RBrace,"'}'");return c;}
-Field Parser::parseField(bool isStatic,bool isProtected){Field f;f.isStatic=isStatic;f.isProtected=isProtected;f.type=parseType();f.name=expect(Tok::Ident,"field name").text;if(accept(Tok::Assign))f.init=parseExpr();expect(Tok::Semicolon,"';'");return f;}
+// Document extension (syntax 1.10):
+//   extends to <Target> <grouper> ;
+//   extends to { <Target> (, <Target>)* } <grouper> [<Server>] ;
+// `to` and the grouper (linear | group | services) are ordinary identifiers,
+// not keywords, so they stay free elsewhere. Recognition is anchored on the
+// top-level `extends` token (which is only valid inside a class otherwise).
+DocumentExtension Parser::parseDocumentExtension(){
+    expect(Tok::KwExtends,"'extends'");
+    if(!(check(Tok::Ident)&&cur().text=="to")) error("document extension expects 'extends to ...'");
+    ++i_; // consume 'to'
+    DocumentExtension ext;
+    if(accept(Tok::LBrace)){
+        if(!check(Tok::RBrace)){
+            do{ ext.targets.push_back(parseQualifiedName()); }while(accept(Tok::Comma));
+        }
+        expect(Tok::RBrace,"'}'");
+    } else {
+        ext.targets.push_back(parseQualifiedName());
+    }
+    if(ext.targets.empty()) error("document extension names no target document");
+    std::string g=expect(Tok::Ident,"a grouper (linear | group | services)").text;
+    if(g=="linear") ext.grouper=Grouper::Linear;
+    else if(g=="group") ext.grouper=Grouper::Group;
+    else if(g=="services") ext.grouper=Grouper::Services;
+    else error("unknown grouper '"+g+"' (expected linear | group | services)");
+    if(ext.grouper==Grouper::Services){
+        if(check(Tok::Ident)) ext.server=parseQualifiedName();
+        else error("the 'services' grouper requires a Server-of-Services name");
+    }
+    expect(Tok::Semicolon,"';'");
+    return ext;
+}
+ClassDecl Parser::parseClass(unsigned classModifiers,std::vector<annotation::Annotation> annotations,int depth){
+    Tok kind=cur().kind; ClassDecl c; c.java.kind=tokenTypeKind(kind); c.java.modifiers=classModifiers; c.java.annotations=std::move(annotations);
+    if(kind!=Tok::KwClass&&kind!=Tok::KwInterface&&kind!=Tok::KwEnum&&kind!=Tok::KwRecord) error("expected Java type declaration");
+    i_++; c.name=expect(Tok::Ident,"type name").text; c.java.qualifiedName=c.name; c.java.typeParameters=parseTypeParameters();
+    if(accept(Tok::KwExtends)) c.java.superclass=parseQualifiedName();
+    if(accept(Tok::KwImplements)) c.java.interfaces=parseTypeList(Tok::LBrace);
+    expect(Tok::LBrace,"'{'");
+    while(!check(Tok::RBrace)&&!check(Tok::Eof)){
+        auto annotations=parseAnnotations(annotation::UseSite::Declaration);
+        unsigned mods=parseJavaModifiers();
+        // Nested class (syntax 1.11): a `class` keyword inside a class body
+        // declares a nested class. The "rule of two" caps lexical nesting at
+        // depth 2 (the enclosing class + one nested class). Deeper nesting is
+        // rejected with guidance to use a reference instead: a field typed as
+        // the deeper class, declared at top level, held inside the parent.
+        if(check(Tok::KwClass)||check(Tok::KwInterface)||check(Tok::KwEnum)||check(Tok::KwRecord)){
+            if(depth>=2) error("nested classes follow the rule of two: a document nests at most two deep (the enclosing class and one nested class). To go deeper, declare the deeper class at top level and hold a reference to it (a field of that type) inside this nested class, rather than nesting a third level inline");
+            ClassDecl nested=parseClass(mods,std::move(annotations),depth+1);
+            nested.isNested=true; nested.enclosingName=c.name;
+            // Internal name uses the identifier-safe mangling "Outer__Inner";
+            // source type references ("Outer.Inner") are mangled the same way in
+            // parseType / the `new` path, so the names always agree.
+            nested.name=c.name+"__"+nested.name; nested.java.qualifiedName=nested.name;
+            hoistedNested_.push_back(std::move(nested));
+            continue;
+        }
+        if(!isTypeStart() && !(check(Tok::Ident)&&peek(1).kind==Tok::LParen)) error("expected a type/member declaration");
+        if(check(Tok::Ident)&&peek(1).kind==Tok::LParen&&cur().text==c.name){
+            Method m; m.isStatic=false; m.isProtected=(mods&JavaProtected)!=0; m.java.modifiers=mods; m.java.constructor=true; m.java.annotations=std::move(annotations);
+            m.retType=c.name; m.name=expect(Tok::Ident,"constructor name").text; expect(Tok::LParen,"'('");
+            if(!check(Tok::RParen)){do{Param p; p.annotations=parseAnnotations(annotation::UseSite::Parameter); p.type=parseType(&p.typeAnnotations); p.name=expect(Tok::Ident,"parameter name").text; m.params.push_back(std::move(p));}while(accept(Tok::Comma));}
+            expect(Tok::RParen,"')'"); parseThrows(m.java.thrownTypes); m.body=parseBlock(); c.methods.push_back(std::move(m)); continue;
+        }
+        if(!isTypeStart()) error("expected a field or method type");
+        size_t save=i_; parseType(); if(!check(Tok::Ident)){i_=save; error("expected a field or method name");}
+        Tok after=peek(1).kind; i_=save;
+        bool stat=(mods&JavaStatic)!=0, prot=(mods&JavaProtected)!=0;
+        if(after==Tok::LParen)c.methods.push_back(parseMethod(stat,prot,mods,std::move(annotations)));
+        else c.fields.push_back(parseField(stat,prot,mods,std::move(annotations)));
+    }
+    expect(Tok::RBrace,"'}'"); return c;
+}
+Field Parser::parseField(bool isStatic,bool isProtected,unsigned modifiers,std::vector<annotation::Annotation> annotations){Field f;f.isStatic=isStatic;f.isProtected=isProtected;f.java.modifiers=modifiers;f.annotations=std::move(annotations);f.type=parseType(&f.typeAnnotations);f.name=expect(Tok::Ident,"field name").text;if(accept(Tok::Assign))f.init=parseExpr();expect(Tok::Semicolon,"';'");return f;}
 // A type is one of the scalar keywords, or an identifier naming a declared struct.
-bool Parser::isTypeStart()const{Tok k=cur().kind;if(k==Tok::KwVoid||k==Tok::KwIntT||k==Tok::KwDoubleT||k==Tok::KwBoolT||k==Tok::KwStringT)return true;return k==Tok::Ident&&structNames_.count(cur().text)>0;}
-std::string Parser::parseType(){const Token&t=cur();if(!isTypeStart())error("expected a type");i_++;return t.text;}
-Method Parser::parseMethod(bool isStatic,bool isProtected){Method m;m.isStatic=isStatic;m.isProtected=isProtected;m.retType=parseType();m.name=expect(Tok::Ident,"method name").text;expect(Tok::LParen,"'('");if(!check(Tok::RParen)){do{Param p;p.type=parseType();p.name=expect(Tok::Ident,"parameter name").text;m.params.push_back(p);}while(accept(Tok::Comma));}expect(Tok::RParen,"')'");m.body=parseBlock();return m;}
-std::unique_ptr<Block> Parser::parseBlock(){expect(Tok::LBrace,"'{'");auto b=std::make_unique<Block>();while(!check(Tok::RBrace)&&!check(Tok::Eof))b->stmts.push_back(parseStatement());expect(Tok::RBrace,"'}'");return b;}
-StmtP Parser::parseStatement(){if(check(Tok::LBrace))return parseBlock();if(accept(Tok::KwIf)){auto s=std::make_unique<IfStmt>();expect(Tok::LParen,"'('");s->cond=parseExpr();expect(Tok::RParen,"')'");s->thenS=parseStatement();if(accept(Tok::KwElse))s->elseS=parseStatement();return s;}if(accept(Tok::KwWhile)){auto s=std::make_unique<WhileStmt>();expect(Tok::LParen,"'('");s->cond=parseExpr();expect(Tok::RParen,"')'");s->body=parseStatement();return s;}if(accept(Tok::KwFor)){auto s=std::make_unique<ForStmt>();expect(Tok::LParen,"'('");if(!check(Tok::Semicolon))s->init=parseSimpleStatement();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon))s->cond=parseExpr();expect(Tok::Semicolon,"';'");if(!check(Tok::RParen))s->update=parseSimpleStatement();expect(Tok::RParen,"')'");s->body=parseStatement();return s;}if(accept(Tok::KwReturn)){auto s=std::make_unique<ReturnStmt>();if(!check(Tok::Semicolon))s->value=parseExpr();expect(Tok::Semicolon,"';'");return s;}if(accept(Tok::KwPrint)){auto s=std::make_unique<PrintStmt>();expect(Tok::LParen,"'('");s->expr=parseExpr();expect(Tok::RParen,"')'");expect(Tok::Semicolon,"';'");return s;}StmtP s=parseSimpleStatement();expect(Tok::Semicolon,"';'");return s;}
+bool Parser::isTypeStart()const{Tok k=cur().kind;if(k==Tok::KwVoid||k==Tok::KwIntT||k==Tok::KwDoubleT||k==Tok::KwBoolT||k==Tok::KwStringT)return true;return k==Tok::Ident;}
+std::string Parser::parseType(std::vector<annotation::Annotation>* typeAnnotations){
+    if(typeAnnotations){auto a=parseTypeAnnotations(); typeAnnotations->insert(typeAnnotations->end(),a.begin(),a.end());}
+    if(!isTypeStart()) error("expected a type");
+    std::string t;
+    if(check(Tok::Ident)) t=mangleTypeName(parseGenericType()); else { t=cur().text; i_++; }
+    while(accept(Tok::LBracket)){ if(typeAnnotations){auto a=parseTypeAnnotations(); typeAnnotations->insert(typeAnnotations->end(),a.begin(),a.end());} expect(Tok::RBracket,"']'");t+="[]"; }
+    return t;
+}
+Method Parser::parseMethod(bool isStatic,bool isProtected,unsigned modifiers,std::vector<annotation::Annotation> annotations){
+    Method m;m.isStatic=isStatic;m.isProtected=isProtected;m.java.modifiers=modifiers;m.java.annotations=std::move(annotations);
+    m.java.typeParameters=parseTypeParameters();m.retType=parseType(&m.java.typeAnnotations);m.name=expect(Tok::Ident,"method name").text;expect(Tok::LParen,"'('");
+    if(!check(Tok::RParen)){do{Param p;p.annotations=parseAnnotations(annotation::UseSite::Parameter);p.type=parseType(&p.typeAnnotations);p.name=expect(Tok::Ident,"parameter name").text;m.params.push_back(std::move(p));}while(accept(Tok::Comma));}
+    expect(Tok::RParen,"')'");parseThrows(m.java.thrownTypes);
+    m.body=parseBlock();return m;
+}
+// Parse one "simple statement" without its trailing ';': a local variable
+// declaration (`Type name [= expr]`), an assignment to a variable or struct
+// field, or a bare expression statement. Used by parseStatement() and by the
+// for-statement init/update clauses.
 StmtP Parser::parseSimpleStatement(){
+    // GC hint, ran:: qualified form (syntax 1.9): `x = ran::gc [N];` or
+    // `x = ran::mem [N];`. The explicit, system-scoped spelling: `ran::` names
+    // the System meaning so the compiler decides the author's intent instantly
+    // and the words gc/mem stay usable as identifiers. Shape: target `=` `ran`
+    // `::` (gc|mem) [int] `;`.
+    if(cur().kind==Tok::Ident && peek(1).kind==Tok::Assign
+       && peek(2).kind==Tok::Ident && peek(2).text=="ran"
+       && peek(3).kind==Tok::DoubleColon
+       && peek(4).kind==Tok::Ident && isGcHintWord(peek(4).text)){
+        bool bareHint = (peek(5).kind==Tok::Semicolon);
+        bool levelHint = (peek(5).kind==Tok::Int && peek(6).kind==Tok::Semicolon);
+        if(bareHint || levelHint){
+            auto h=std::make_unique<GcHintStmt>();
+            h->ranQualified=true;
+            h->target=cur().text;           // the value being released
+            i_+=2;                          // consume target and '='
+            i_+=2;                          // consume `ran` and `::`
+            h->spelling=cur().text;         // "gc" or "mem"
+            i_++;                           // consume the GC-hint word
+            if(levelHint){
+                long long n=std::stoll(cur().text); i_++;
+                if(n>1000000) n=1000000;
+                h->aggressiveness=(int)n;
+            } else {
+                h->aggressiveness=50;
+            }
+            return h;
+        }
+    }
+    // GC hint (syntax 1.9): `x = gc [N];` or `x = mem [N];`. Recognised
+    // positionally before ordinary assignment: target identifier, `=`, then the
+    // contextual word `gc`/`mem` as the WHOLE right-hand side, optionally with a
+    // 0..100 aggressiveness int, then `;`. The lookahead requires the terminator
+    // to immediately follow the word (or the word + one int literal), so a real
+    // expression RHS that merely begins with a variable named `gc`/`mem`
+    // (e.g. `x = gc + 1;` or `x = gc.field;`) is NOT taken as a hint.
+    if(cur().kind==Tok::Ident && peek(1).kind==Tok::Assign
+       && peek(2).kind==Tok::Ident && isGcHintWord(peek(2).text)){
+        bool bareHint = (peek(3).kind==Tok::Semicolon);
+        bool levelHint = (peek(3).kind==Tok::Int && peek(4).kind==Tok::Semicolon);
+        if(bareHint || levelHint){
+            auto h=std::make_unique<GcHintStmt>();
+            h->target=cur().text;           // the value being released
+            i_+=2;                          // consume target and '='
+            h->spelling=cur().text;         // "gc" or "mem"
+            i_++;                           // consume the GC-hint word
+            if(levelHint){
+                // Preserve the raw level so the semantic analyzer can reject an
+                // out-of-range band (0..100) rather than silently clamping it.
+                long long n=std::stoll(cur().text); i_++;   // consume the int level
+                if(n>1000000) n=1000000;   // guard only absurd input for int fit
+                h->aggressiveness=(int)n;
+            } else {
+                // Bare `x = gc;` defaults to a modest short-term cleanup.
+                h->aggressiveness=50;
+            }
+            return h;   // the terminating ';' is consumed by parseStatement()
+        }
+    }
     // Declaration: `Type name [= expr]`. A struct type name is a valid Type.
     // Disambiguate from `structVar.field = ...` / `structVar = ...` by requiring
-    // the token after a bare-identifier "type" to be another identifier.
-    if(isTypeStart()&&!(cur().kind==Tok::Ident&&peek(1).kind!=Tok::Ident)){auto d=std::make_unique<VarDecl>();d->type=parseType();d->name=expect(Tok::Ident,"variable name").text;if(accept(Tok::Assign))d->init=parseExpr();return d;}
+    // the token after a bare-identifier "type" to be another identifier. A
+    // qualified (dotted) type name — e.g. a nested class `Outer.Inner name`
+    // (syntax 1.11) — is detected by scanning `Ident (Dot Ident)*` and checking
+    // the token immediately after that run is another identifier (the var name).
+    bool localDecl=false;
+    if(isTypeStart()){
+        if(cur().kind!=Tok::Ident){ localDecl=true; }                 // scalar keyword type
+        else if(peek(1).kind==Tok::Ident){ localDecl=true; }          // bare `Type name`
+        else if(peek(1).kind==Tok::Dot){                              // dotted `A.B[.C] name`
+            size_t k=1;                                               // peek offset: at first Dot
+            while(peek((int)k).kind==Tok::Dot&&peek((int)(k+1)).kind==Tok::Ident) k+=2;
+            if(peek((int)k).kind==Tok::Ident) localDecl=true;         // run followed by the var name
+        }
+    }
+    if(localDecl){auto d=std::make_unique<VarDecl>();d->type=parseType();d->name=expect(Tok::Ident,"variable name").text;if(accept(Tok::Assign))d->init=parseExpr();return d;}
     // Otherwise parse an expression; if `=` follows, it is an assignment whose
     // target must be an lvalue (a plain name or a struct member access).
     ExprP lhs=parseExpr();
@@ -69,61 +373,171 @@ StmtP Parser::parseSimpleStatement(){
     }
     auto e=std::make_unique<ExprStmt>();e->expr=std::move(lhs);return e;
 }
-ExprP Parser::parseExpr(){return parseOr();}
-ExprP Parser::parseOr(){ExprP e=parseAnd();while(check(Tok::OrOr)){i_++;e=std::make_unique<Binary>("||",std::move(e),parseAnd());}return e;}
-ExprP Parser::parseAnd(){ExprP e=parseEquality();while(check(Tok::AndAnd)){i_++;e=std::make_unique<Binary>("&&",std::move(e),parseEquality());}return e;}
-ExprP Parser::parseEquality(){ExprP e=parseComparison();for(;;){if(check(Tok::EqEq)){i_++;e=std::make_unique<Binary>("==",std::move(e),parseComparison());}else if(check(Tok::NotEq)){i_++;e=std::make_unique<Binary>("!=",std::move(e),parseComparison());}else break;}return e;}
-ExprP Parser::parseComparison(){ExprP e=parseAdditive();for(;;){if(check(Tok::Lt)){i_++;e=std::make_unique<Binary>("<",std::move(e),parseAdditive());}else if(check(Tok::Le)){i_++;e=std::make_unique<Binary>("<=",std::move(e),parseAdditive());}else if(check(Tok::Gt)){i_++;e=std::make_unique<Binary>(">",std::move(e),parseAdditive());}else if(check(Tok::Ge)){i_++;e=std::make_unique<Binary>(">=",std::move(e),parseAdditive());}else break;}return e;}
-ExprP Parser::parseAdditive(){ExprP e=parseMultiplicative();for(;;){if(check(Tok::Plus)){i_++;e=std::make_unique<Binary>("+",std::move(e),parseMultiplicative());}else if(check(Tok::Minus)){i_++;e=std::make_unique<Binary>("-",std::move(e),parseMultiplicative());}else break;}return e;}
-ExprP Parser::parseMultiplicative(){ExprP e=parseUnary();for(;;){if(check(Tok::Star)){i_++;e=std::make_unique<Binary>("*",std::move(e),parseUnary());}else if(check(Tok::Slash)){i_++;e=std::make_unique<Binary>("/",std::move(e),parseUnary());}else if(check(Tok::Percent)){i_++;e=std::make_unique<Binary>("%",std::move(e),parseUnary());}else break;}return e;}
-ExprP Parser::parseUnary(){if(check(Tok::Minus)){i_++;return std::make_unique<Unary>("-",parseUnary());}if(check(Tok::Not)){i_++;return std::make_unique<Unary>("!",parseUnary());}return parsePrimary();}
-ExprP Parser::parsePrimary(){const Token&t=cur();switch(t.kind){case Tok::Int:i_++;return std::make_unique<IntLit>(std::stoll(t.text));case Tok::Double:i_++;return std::make_unique<DoubleLit>(std::stod(t.text));case Tok::Str:i_++;return std::make_unique<StrLit>(t.text);case Tok::KwTrue:i_++;return std::make_unique<BoolLit>(true);case Tok::KwFalse:i_++;return std::make_unique<BoolLit>(false);case Tok::KwNull:i_++;return std::make_unique<NullLit>();case Tok::LParen:{i_++;ExprP e=parseExpr();expect(Tok::RParen,"')'");return e;}
-case Tok::KwNew:{i_++;const Token&tn=expect(Tok::Ident,"struct type name after 'new'");if(!structNames_.count(tn.text))error("'new' requires a declared struct type, got '"+tn.text+"'");expect(Tok::LParen,"'('");expect(Tok::RParen,"')'");return std::make_unique<NewExpr>(tn.text);}
-case Tok::Ident:{
-    std::string name=t.text;i_++;
-    ExprP base;
-    // A dotted chain that ends in '(' is a qualified call name (namespaced
-    // builtins like Foo.bar()); we keep the flat-callee behaviour for those.
-    // Otherwise the first identifier is a value and each '.field' is a member
-    // access on a struct.
-    if(check(Tok::Dot)){
-        // Look ahead: does this dotted chain terminate in a call?
-        size_t save=i_;bool isCall=false;while(check(Tok::Dot)){i_++;if(!check(Tok::Ident))break;i_++;if(check(Tok::LParen)){isCall=true;break;}}
-        i_=save;
-        if(isCall){while(accept(Tok::Dot)){name += "." + expect(Tok::Ident,"identifier after '.'").text;}expect(Tok::LParen,"'('");auto c=std::make_unique<Call>(name);if(!check(Tok::RParen)){do{c->args.push_back(parseExpr());}while(accept(Tok::Comma));}expect(Tok::RParen,"')'");base=std::move(c);}
-        else{
-            // Pure member-access chain: base.f1.f2 ...
-            ExprP e=std::make_unique<VarExpr>(name);
-            while(accept(Tok::Dot)){std::string field=expect(Tok::Ident,"field name after '.'").text;e=std::make_unique<MemberAccess>(std::move(e),field);}
-            base=std::move(e);
-        }
+ExprP Parser::parseExpr(){return parseAssignment();}
+ExprP Parser::parseAssignment(){
+    ExprP e=parseConditional();
+    if(check(Tok::Assign)||check(Tok::PlusAssign)||check(Tok::MinusAssign)||check(Tok::StarAssign)||check(Tok::SlashAssign)||check(Tok::PercentAssign)){
+        std::string op=cur().text; i_++; return std::make_unique<AssignmentExpr>(op,std::move(e),parseAssignment());
     }
-    else if(accept(Tok::LParen)){auto c=std::make_unique<Call>(name);if(!check(Tok::RParen)){do{c->args.push_back(parseExpr());}while(accept(Tok::Comma));}expect(Tok::RParen,"')'");base=std::move(c);}
-    else base=std::make_unique<VarExpr>(name);
-    // Fluent postfix: consume any `.method(args)` suffixes on the result. This
-    // makes chains like Munction.start(x).connect(y).send(z).closeWithReceipt()
-    // parse as nested MethodCall nodes. A trailing `.field` (no call) after a
-    // call is not valid here and falls through to the caller.
-    return parsePostfix(std::move(base));
+    return e;
 }
-default:error(std::string("unexpected token '")+(t.text.empty()?tokName(t.kind):t.text)+"' in expression");}}
-// Consume `.method(args)` suffixes on `base`, folding each into a MethodCall.
-// Only a dot immediately followed by `ident (` is a postfix call; a dot
-// followed by a plain field is left for the caller (member access is handled
-// in the Ident primary above). This is what enables the fluent chain form.
+ExprP Parser::parseConditional(){
+    ExprP e=parseOr();
+    if(accept(Tok::Question)){ExprP t=parseExpr();expect(Tok::Colon,"':'");return std::make_unique<ConditionalExpr>(std::move(e),std::move(t),parseConditional());}
+    return e;
+}
+ExprP Parser::parseOr(){ExprP e=parseAnd();while(accept(Tok::OrOr))e=std::make_unique<Binary>("||",std::move(e),parseAnd());return e;}
+ExprP Parser::parseAnd(){ExprP e=parseBitOr();while(accept(Tok::AndAnd))e=std::make_unique<Binary>("&&",std::move(e),parseBitOr());return e;}
+ExprP Parser::parseBitOr(){ExprP e=parseBitXor();while(accept(Tok::BitOr))e=std::make_unique<Binary>("|",std::move(e),parseBitXor());return e;}
+ExprP Parser::parseBitXor(){ExprP e=parseBitAnd();while(accept(Tok::BitXor))e=std::make_unique<Binary>("^",std::move(e),parseBitAnd());return e;}
+ExprP Parser::parseBitAnd(){ExprP e=parseEquality();while(accept(Tok::BitAnd))e=std::make_unique<Binary>("&",std::move(e),parseEquality());return e;}
+ExprP Parser::parseEquality(){ExprP e=parseComparison();for(;;){if(accept(Tok::EqEq))e=std::make_unique<Binary>("==",std::move(e),parseComparison());else if(accept(Tok::NotEq))e=std::make_unique<Binary>("!=",std::move(e),parseComparison());else break;}return e;}
+ExprP Parser::parseComparison(){
+    ExprP e=parseShift();
+    for(;;){
+        if(accept(Tok::Lt))e=std::make_unique<Binary>("<",std::move(e),parseShift());
+        else if(accept(Tok::Le))e=std::make_unique<Binary>("<=",std::move(e),parseShift());
+        else if(accept(Tok::Gt))e=std::make_unique<Binary>(">",std::move(e),parseShift());
+        else if(accept(Tok::Ge))e=std::make_unique<Binary>(">=",std::move(e),parseShift());
+        else if(accept(Tok::KwInstanceof)){std::string type=parseType();e=std::make_unique<InstanceOfExpr>(std::move(e),type);}
+        else break;
+    }
+    return e;
+}
+ExprP Parser::parseShift(){ExprP e=parseAdditive();for(;;){if(accept(Tok::ShiftLeft))e=std::make_unique<Binary>("<<",std::move(e),parseAdditive());else if(accept(Tok::ShiftRight))e=std::make_unique<Binary>(">>",std::move(e),parseAdditive());else if(accept(Tok::UnsignedShiftRight))e=std::make_unique<Binary>(">>>",std::move(e),parseAdditive());else break;}return e;}
+ExprP Parser::parseAdditive(){ExprP e=parseMultiplicative();for(;;){if(accept(Tok::Plus))e=std::make_unique<Binary>("+",std::move(e),parseMultiplicative());else if(accept(Tok::Minus))e=std::make_unique<Binary>("-",std::move(e),parseMultiplicative());else break;}return e;}
+ExprP Parser::parseMultiplicative(){ExprP e=parseUnary();for(;;){if(accept(Tok::Star))e=std::make_unique<Binary>("*",std::move(e),parseUnary());else if(accept(Tok::Slash))e=std::make_unique<Binary>("/",std::move(e),parseUnary());else if(accept(Tok::Percent))e=std::make_unique<Binary>("%",std::move(e),parseUnary());else break;}return e;}
+ExprP Parser::parseUnary(){
+    if(accept(Tok::Minus))return std::make_unique<Unary>("-",parseUnary());
+    if(accept(Tok::Plus))return std::make_unique<Unary>("+",parseUnary());
+    if(accept(Tok::Not))return std::make_unique<Unary>("!",parseUnary());
+    if(accept(Tok::BitNot))return std::make_unique<Unary>("~",parseUnary());
+    if(accept(Tok::Increment))return std::make_unique<Unary>("++",parseUnary());
+    if(accept(Tok::Decrement))return std::make_unique<Unary>("--",parseUnary());
+    return parsePrimary();
+}
+ExprP Parser::parsePrimary(){
+    const Token&t=cur();
+    switch(t.kind){
+    case Tok::Int:i_++;return parsePostfix(std::make_unique<IntLit>(std::stoll(t.text)));
+    case Tok::Double:i_++;return parsePostfix(std::make_unique<DoubleLit>(std::stod(t.text)));
+    case Tok::Str:i_++;return parsePostfix(std::make_unique<StrLit>(t.text));
+    case Tok::KwTrue:i_++;return parsePostfix(std::make_unique<BoolLit>(true));
+    case Tok::KwFalse:i_++;return parsePostfix(std::make_unique<BoolLit>(false));
+    case Tok::KwNull:i_++;return parsePostfix(std::make_unique<NullLit>());
+    case Tok::KwSuper:i_++;return parsePostfix(std::make_unique<SuperExpr>());
+    case Tok::KwThis:i_++;return parsePostfix(std::make_unique<ThisExpr>());
+    case Tok::LParen:{
+        i_++;
+        // Java cast disambiguation for a simple/qualified type: (Type) expression.
+        if(check(Tok::Ident)||check(Tok::KwIntT)||check(Tok::KwDoubleT)||check(Tok::KwBoolT)||check(Tok::KwStringT)){
+            size_t save=i_; std::string type;
+            try { type=parseType(); if(check(Tok::RParen)){i_++; return std::make_unique<CastExpr>(type,parseUnary());} }
+            catch(const std::exception&) {}
+            i_=save;
+        }
+        ExprP e=parseExpr();expect(Tok::RParen,"')'");return parsePostfix(std::move(e));
+    }
+    case Tok::KwNew:{
+        i_++;
+        // Accept both class names (qualified) and the scalar keyword types
+        // (int/double/boolean/String/void) as the element type, so
+        // `new int[n]` and `new String[n]` parse like `new Point()`.
+        std::string type;
+        if(check(Tok::Ident)) type=mangleTypeName(parseGenericType());
+        else if(check(Tok::KwIntT)||check(Tok::KwDoubleT)||check(Tok::KwBoolT)||check(Tok::KwStringT)||check(Tok::KwVoid)){ type=cur().text; i_++; }
+        else { error("expected a type after 'new'"); }
+        auto n=std::make_unique<NewExpr>(type);
+        if(accept(Tok::LBracket)){
+            n->typeName += "[]"; n->args.push_back(parseExpr()); expect(Tok::RBracket,"']'");
+            return parsePostfix(std::move(n));
+        }
+        expect(Tok::LParen,"'('");if(!check(Tok::RParen)){do{n->args.push_back(parseExpr());}while(accept(Tok::Comma));}expect(Tok::RParen,"')'");
+        return parsePostfix(std::move(n));
+    }
+    case Tok::Ident:{
+        // `ran::<word>` -- the System / already-Ran-in-RAM reference, used as a
+        // value (e.g. `let b = ran::mem;`). Recognised only when the identifier
+        // is exactly `ran` and is immediately followed by `::` and a word, so a
+        // variable named `ran` and ordinary `base::method` references are
+        // unaffected. The system word is validated in semantic analysis.
+        if(t.text=="ran" && peek(1).kind==Tok::DoubleColon && peek(2).kind==Tok::Ident){
+            i_+=2;                                  // consume `ran` and `::`
+            std::string word=cur().text; i_++;      // consume the system word
+            return parsePostfix(std::make_unique<RanRefExpr>(word));
+        }
+        std::string name=t.text;i_++;
+        ExprP base=std::make_unique<VarExpr>(name);
+        while(accept(Tok::Dot)){
+            std::string part=expect(Tok::Ident,"identifier after '.'").text;
+            if(check(Tok::DoubleColon)){i_++;base=std::make_unique<MethodReferenceExpr>(std::move(base),part);continue;}
+            if(check(Tok::LParen)){
+                i_++;auto c=std::make_unique<MethodCall>(std::move(base),part);
+                if(!check(Tok::RParen)){do{c->args.push_back(parseExpr());}while(accept(Tok::Comma));}
+                expect(Tok::RParen,"')'");base=std::move(c);
+            }else base=std::make_unique<MemberAccess>(std::move(base),part);
+        }
+        if(accept(Tok::LParen)){
+            auto c=std::make_unique<Call>(name);
+            if(!check(Tok::RParen)){do{c->args.push_back(parseExpr());}while(accept(Tok::Comma));}
+            expect(Tok::RParen,"')'");base=std::move(c);
+        }
+        if(accept(Tok::DoubleColon)){
+            std::string member=expect(Tok::Ident,"method name after '::'").text;
+            base=std::make_unique<MethodReferenceExpr>(std::move(base),member);
+        }
+        if(accept(Tok::Dot)&&check(Tok::Ident)&&peek(1).kind==Tok::Ident&&peek(2).kind==Tok::Dot){
+            // reserved for future qualified class literals; do not consume ambiguous forms.
+            i_--;
+        }
+        return parsePostfix(std::move(base));
+    }
+    default:error(std::string("unexpected token '")+(t.text.empty()?tokName(t.kind):t.text)+"' in expression");
+    }
+}
 ExprP Parser::parsePostfix(ExprP base){
     for(;;){
-        if(!check(Tok::Dot)) break;
-        // Look ahead: is this `.ident(` (a method call) rather than `.field`?
-        if(peek(1).kind!=Tok::Ident || peek(2).kind!=Tok::LParen) break;
-        i_++; // consume '.'
-        std::string method=expect(Tok::Ident,"method name after '.'").text;
-        expect(Tok::LParen,"'('");
-        auto mc=std::make_unique<MethodCall>(std::move(base),method);
-        if(!check(Tok::RParen)){do{mc->args.push_back(parseExpr());}while(accept(Tok::Comma));}
-        expect(Tok::RParen,"')'");
-        base=std::move(mc);
+        if(accept(Tok::LBracket)){ExprP idx=parseExpr();expect(Tok::RBracket,"']'");base=std::make_unique<ArrayAccess>(std::move(base),std::move(idx));continue;}
+        if(accept(Tok::Increment)){base=std::make_unique<Unary>("post++",std::move(base));continue;}
+        if(accept(Tok::Decrement)){base=std::make_unique<Unary>("post--",std::move(base));continue;}
+        if(!check(Tok::Dot)||peek(1).kind!=Tok::Ident)break;
+        i_++;std::string member=expect(Tok::Ident,"member name after '.'").text;
+        if(accept(Tok::LParen)){
+            auto mc=std::make_unique<MethodCall>(std::move(base),member);
+            if(!check(Tok::RParen)){do{mc->args.push_back(parseExpr());}while(accept(Tok::Comma));}
+            expect(Tok::RParen,"')'");base=std::move(mc);
+        }else if(accept(Tok::DoubleColon)){
+            base=std::make_unique<MethodReferenceExpr>(std::move(base),member);
+        }else base=std::make_unique<MemberAccess>(std::move(base),member);
     }
     return base;
+}
+
+std::unique_ptr<Block> Parser::parseBlock(){expect(Tok::LBrace,"'{'");auto b=std::make_unique<Block>();while(!check(Tok::RBrace)&&!check(Tok::Eof))b->stmts.push_back(parseStatement());expect(Tok::RBrace,"'}'");return b;}
+StmtP Parser::parseIf(){expect(Tok::KwIf,"'if'");expect(Tok::LParen,"'('");auto s=std::make_unique<IfStmt>();s->cond=parseExpr();expect(Tok::RParen,"')'");s->thenS=parseStatement();if(accept(Tok::KwElse))s->elseS=parseStatement();return s;}
+StmtP Parser::parseWhile(){expect(Tok::KwWhile,"'while'");expect(Tok::LParen,"'('");auto s=std::make_unique<WhileStmt>();s->cond=parseExpr();expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
+StmtP Parser::parseDo(){expect(Tok::KwDo,"'do'");auto s=std::make_unique<DoStmt>();s->body=parseStatement();expect(Tok::KwWhile,"'while'");expect(Tok::LParen,"'('");s->cond=parseExpr();expect(Tok::RParen,"')'");expect(Tok::Semicolon,"';'");return s;}
+StmtP Parser::parseFor(){expect(Tok::KwFor,"'for'");expect(Tok::LParen,"'('");auto s=std::make_unique<ForStmt>();if(!check(Tok::Semicolon))s->init=parseSimpleStatement();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon))s->cond=parseExpr();expect(Tok::Semicolon,"';'");if(!check(Tok::RParen))s->update=std::make_unique<ExprStmt>(parseExpr());expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
+StmtP Parser::parseSynchronized(){expect(Tok::KwSynchronized,"'synchronized'");expect(Tok::LParen,"'('");auto s=std::make_unique<SynchronizedStmt>();s->monitor=parseExpr();expect(Tok::RParen,"')'");s->body=parseBlock();return s;}
+StmtP Parser::parseTry(){expect(Tok::KwTry,"'try'");auto s=std::make_unique<TryStmt>();s->body=parseBlock();while(accept(Tok::KwCatch)){expect(Tok::LParen,"'('");CatchClause c; c.type=expect(Tok::Ident,"exception type").text;c.variable=expect(Tok::Ident,"exception variable").text;expect(Tok::RParen,"')'");c.body=parseBlock();s->catches.push_back(std::move(c));}if(accept(Tok::KwFinally))s->finallyBlock=parseBlock();if(s->catches.empty()&&!s->finallyBlock)error("try requires catch or finally");return s;}
+StmtP Parser::parseSwitch(){expect(Tok::KwSwitch,"'switch'");expect(Tok::LParen,"'('");auto s=std::make_unique<SwitchStmt>();s->selector=parseExpr();expect(Tok::RParen,"')'");expect(Tok::LBrace,"'{'");while(!check(Tok::RBrace)&&!check(Tok::Eof)){SwitchCase sc;if(accept(Tok::KwDefault)){sc.isDefault=true;expect(Tok::Colon,"':'");}else{expect(Tok::KwCase,"'case'");sc.labels.push_back(parseExpr());while(accept(Tok::Comma))sc.labels.push_back(parseExpr());expect(Tok::Colon,"':'");}while(!check(Tok::KwCase)&&!check(Tok::KwDefault)&&!check(Tok::RBrace)&&!check(Tok::Eof))sc.statements.push_back(parseStatement());s->cases.push_back(std::move(sc));}expect(Tok::RBrace,"'}'");return s;}
+StmtP Parser::parseStatement(){
+ if(check(Tok::LBrace))return parseBlock();
+ if(check(Tok::KwIf))return parseIf();
+ if(check(Tok::KwWhile))return parseWhile();
+ if(check(Tok::KwDo))return parseDo();
+ if(check(Tok::KwFor))return parseFor();
+ if(check(Tok::KwSwitch))return parseSwitch();
+ if(check(Tok::KwSynchronized))return parseSynchronized();
+ if(check(Tok::KwTry))return parseTry();
+ if(check(Tok::KwBreak)){i_++;auto s=std::make_unique<BreakStmt>();if(check(Tok::Ident)){s->label=cur().text;i_++;}expect(Tok::Semicolon,"';'");return s;}
+ if(check(Tok::KwContinue)){i_++;auto s=std::make_unique<ContinueStmt>();if(check(Tok::Ident)){s->label=cur().text;i_++;}expect(Tok::Semicolon,"';'");return s;}
+ if(check(Tok::KwReturn)){i_++;auto s=std::make_unique<ReturnStmt>();if(!check(Tok::Semicolon))s->value=parseExpr();expect(Tok::Semicolon,"';'");return s;}
+ if(check(Tok::KwThrow)){i_++;auto s=std::make_unique<ThrowStmt>();s->value=parseExpr();expect(Tok::Semicolon,"';'");return s;}
+ if(check(Tok::KwAssert)){i_++;auto s=std::make_unique<AssertStmt>();s->cond=parseExpr();if(accept(Tok::Colon))s->message=parseExpr();expect(Tok::Semicolon,"';'");return s;}
+ if(check(Tok::KwYield)){i_++;auto s=std::make_unique<YieldStmt>();s->value=parseExpr();expect(Tok::Semicolon,"';'");return s;}
+ if(accept(Tok::KwPrint)){auto s=std::make_unique<PrintStmt>();expect(Tok::LParen,"'('");s->expr=parseExpr();expect(Tok::RParen,"')'");expect(Tok::Semicolon,"';'");return s;}
+ // Local declaration, assignment, or bare expression statement.
+ StmtP s=parseSimpleStatement();expect(Tok::Semicolon,"';'");return s;
 }
 } // namespace sleela

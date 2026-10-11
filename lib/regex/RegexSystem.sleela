@@ -1,0 +1,12 @@
+/*
+ * lib/regex/RegexSystem.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library type RegexSystem used within the regex library family.
+ */
+#sleela 1.3
+class RegexSystem {
+  int state;
+  void initialize(){state=1;}
+  void shutdown(){state=0;}
+  boolean ready(){return state==1;}
+}

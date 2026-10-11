@@ -1,0 +1,71 @@
+/*
+ * lib/cpu/SLGuestTask.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines SLGuestTask — a unit of execution the GUEST kernel
+ *   schedules (a guest thread / task control block). It is distinct from
+ *   SLProcess (which the host OS schedules): this runs inside a guest VM, with
+ *   its own guest entry point, saved guest-substrate instruction pointer, and
+ *   run state. The guest scheduler (SLGuestScheduler) switches between these on
+ *   each timer tick.
+ *
+ * Family: cpu. Pure Sleela guest OS data structure.
+ */
+#sleela 1.3
+class SLGuestTask {
+  static final int READY   = 0;
+  static final int RUNNING = 1;
+  static final int BLOCKED = 2;
+  static final int DONE    = 3;
+
+  int tid;
+  String name;
+  int state;
+  int entry;        // guest-code entry (opcode index)
+  int savedIP;      // saved substrate instruction pointer (resume point)
+  int ticks;        // timer quanta consumed
+
+  // Process-relationship bookkeeping (fork/wait): the parent that fork()ed this
+  // task, the exit status it finished with, and whether a parent has already
+  // reaped it. These let the kernel model the Unix process tree, not just a flat
+  // set of threads.
+  int parentTid;    // tid of the task that fork()ed this one (0 = none / init-parented)
+  int exitStatus;   // status passed to exit() / left for the parent to wait() on
+  int reaped;       // 1 once a parent has collected this task via wait()
+
+  void configure(int id, String taskName, int entryIndex) {
+    tid = id; name = taskName; entry = entryIndex;
+    state = READY; savedIP = entryIndex; ticks = 0;
+    parentTid = 0; exitStatus = 0; reaped = 0;
+  }
+
+  void markReady() { state = READY; }
+  void markRunning() { state = RUNNING; }
+  void markBlocked() { state = BLOCKED; }
+  void finish() { state = DONE; }
+
+  // finish() with an explicit exit status (the exit()/_exit() path): record the
+  // status the parent will see via wait(), then mark the task done (a zombie
+  // until reaped).
+  void exitWith(int status) { exitStatus = status; state = DONE; }
+
+  void saveIP(int ip) { savedIP = ip; }
+  int resumeIP() { return savedIP; }
+  void chargeTick() { ticks = ticks + 1; }
+
+  // Parentage: who fork()ed this task.
+  void setParent(int ptid) { parentTid = ptid; }
+  int parent() { return parentTid; }
+
+  // Zombie / reaping protocol: a DONE-but-unreaped task is a zombie its parent
+  // can still wait() on; reap() collects it so wait() returns each child once.
+  int status() { return exitStatus; }
+  boolean zombie() { return state == DONE && reaped == 0; }
+  void reap() { reaped = 1; }
+  boolean reapedYet() { return reaped == 1; }
+
+  int taskId() { return tid; }
+  String taskName() { return name; }
+  int taskState() { return state; }
+  boolean runnable() { return state == READY || state == RUNNING; }
+  boolean alive() { return state != DONE; }
+}

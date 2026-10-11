@@ -1,0 +1,20 @@
+#sleela 1.6
+
+@java.lang.Deprecated
+@java.lang.SuppressWarnings({"unchecked", "deprecation"})
+public class DeclarationMetadata {
+  @FieldMarker
+  public @TypeUseMarker java.lang.String name;
+
+  @ConstructorMarker
+  public DeclarationMetadata(@ParameterMarker @TypeUseMarker java.lang.String value) {
+    return;
+  }
+
+  @MethodMarker
+  public @TypeUseMarker java.lang.String convert(
+      @ParameterMarker java.lang.String input
+  ) throws java.lang.Exception {
+    return null;
+  }
+}
