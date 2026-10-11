@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # Sleela
 
 **Sleela** is a small, **Java-like** programming language that runs on top of a
@@ -46,7 +55,11 @@ Any language could target this core; Sleela is the first.
 
 ## Building
 
-Requires a C11 compiler and a C++17 compiler.
+Requires a C11 compiler and a C++17 compiler. The HTTP/2 server is built from
+the committed `include/nghttp2-1.70.0.zip`: the Makefile unpacks it under
+`build/`, compiles it into a static `libnghttp2.a`, and links that directly, so
+no system-installed `libnghttp2` (or `-lnghttp2`) is required. `unzip` must be
+available on the build host.
 
 **Linux (POSIX):**
 
@@ -109,10 +122,12 @@ class Hello { void main() { print("Hello, Sleela!"); } }
 ```
 
 The compiler **rejects** any file whose declared version is outside its
-supported range (shown by `sleela version`, currently `1.0 .. 1.0`); a file with
+supported range (shown by `sleela version`, currently `1.3 .. 1.7`); a file with
 no pragma is accepted with a warning and assumed to be the floor version. The
-supported range is defined in [`frontend/version.h`](frontend/version.h). See
-[`../SLEELA.md`](../SLEELA.md) §1.6 for the full rules and diagnostics.
+supported range is defined in [`frontend/version.h`](frontend/version.h). The current
+normative language grammar is [`../SLEELA.syntax`](../SLEELA.syntax), syntax version
+`1.7`. The `U<n>` family (`U1` through `U1048576`) is part of this syntax; see
+[`../markdown/SOURCE.md`](../markdown/SOURCE.md) for the type-signature contract.
 
 ## The language (first pass)
 
@@ -413,3 +428,13 @@ the C core) with recursion, loops, arithmetic, strings, and I/O, and a
 (SL-META-0001 §4.4) across both the `sleela` CLI and Nordshrift. Next
 candidates: short-circuit `&&`/`||`, arrays, a REPL, and a static type checker
 on top of the Java-like surface.
+
+## Corrections
+
+The front end previously did not compile: `parser.cpp` constructed ~16 Java
+statement/expression AST node types that were never declared in `ast.h` and were
+not handled by `semantic.cpp` or `compiler.cpp`. Those nodes were added and
+wired through the analyzer and the bytecode compiler, a latent `Binary`-operand
+bug was fixed, and several build-blocking source/Makefile defects were repaired.
+`cd impl && make` builds `sleela` and `nordshrift`, and `make test` passes every
+target. See the 2026-10-03 entry in [`../REVISIONS.md`](../REVISIONS.md).

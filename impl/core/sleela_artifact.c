@@ -127,6 +127,7 @@ static int validate_loaded_vm(const SLVM* vm, char* error, size_t error_size) {
             case OP_GETFIELD: case OP_SETFIELD:
                 if (in->a < 0 || in->a >= SL_MAX_STRUCT_FIELDS) { abi_error(error,error_size,"field operand outside ABI field range"); return 0; }
                 break;
+
             case OP_LOCK: case OP_UNLOCK:
             case OP_SEND: case OP_RECV:
                 if (in->a < 0 || in->a >= SL_MAX_LOCKS) { abi_error(error,error_size,"synchronization slot outside ABI range"); return 0; }
@@ -243,7 +244,7 @@ SLVM* slvm_load_file(const char* path) {
         (nglobal && (!vm->globals || !vm->gnames)) || (nfunc && !vm->funcs)) ok = 0;
 
     if (ok) {
-        for (uint32_t i = 0; i < codelen; ++i)
+        for (uint32_t i = 0; ok && i < codelen; ++i)
             ok = rd(f, &vm->code[i].op, sizeof(vm->code[i].op)) && rd_i32(f, &vm->code[i].a);
         for (uint32_t i = 0; ok && i < nconst; ++i) ok = rd_value(f, &vm->consts[i]);
         for (uint32_t i = 0; ok && i < nstr; ++i) vm->strs[i] = rd_string(f), ok = vm->strs[i] != NULL;

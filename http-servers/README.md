@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # SLeeLa HTTP Servers
 
 Three native server grades live under `http-servers/1`, `2`, and `3`, sharing `common/`.
@@ -47,3 +56,15 @@ The common source is reusable by future HTTP/2 and HTTP/3 transport adapters.
 
 ## Annotation forwarding and generations 1.0–9.0
 The HTTP server family now participates in SLeeLa's uniform annotation model: Holding Document → Forwarding Annotation → Nexter Colony → HTTP Generation → Transport Adapter. See http/ANNOTATION-FORWARDING.md. The common annotation bridge validates a declared Nexter Colony while leaving authorization and generation-specific protocol semantics to their authoritative layers.
+
+## Unified Route Data
+
+This server consumes the SLeeLa unified route-data contract in
+route/ROUTE.DATA.json and route/ROUTE.DATA.md. Route records carry protocol,
+server surface, HTTP generation, VM generation/formal VM name, canonical
+configuration root, route identifier, target/resolution mode, capability,
+transport, port, and status. VM names are architectural metadata only and do
+not grant capabilities. Dynamic targets must use the shared resolver before
+acceptance. The VM identity is: /impl Core, /1 Foundation, /2 Operator,
+/3 Specialist, /4 Supervisor, /5 Manager, /6 Director, /7 Administrator,
+/8 Executive, /9 Authority, /10 Principal, /11 Sovereign.

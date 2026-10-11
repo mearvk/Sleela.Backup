@@ -205,3 +205,11 @@ The Complete edition is an authoring contract. A module becomes implementation-c
 ## 2.6-dev compiler compatibility gate
 
 Nordshrift 2.6-dev carries forward source readability, `#sleela` syntax-version compatibility, shared Sleela lexer/parser validation, shared target-neutral lowering, target-neutral semantic analysis, runtime artifact ABI validation, and cross-version compatibility fixtures. These gates are integrated into the test workflow. The 2.6-dev line does not claim native linking or deterministic production compiler completeness; see [`COMPILER.RESOLUTION.md`](../../COMPILER.RESOLUTION.md).
+
+## /lib Library Collection — September 2026
+
+The canonical SLeeLa library collection now covers the repository module inventory with **77 package families, 10039 SLeeLa source units, 90 module-facade symbols, and 10,129 total symbol records**.
+
+The compiler and Nordshrift use the same recursive /lib discovery path; the VM-facing loader contract is represented by lib/vm/SLVMModuleLoader.sleela. New package directories therefore enter compiler/Nordshrift visibility through the actual library tree rather than a second hard-coded registry.
+
+The path-level manifest is lib/LIBRARY.SYMBOLS.md; the package summary is lib/LIBRARY.INDEX.md.

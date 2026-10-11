@@ -1,0 +1,20 @@
+/*
+ * lib/data-structures/DSList.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library type DSList used within the data-structures library family.
+ */
+#sleela 1.2
+
+// Ordered, indexed sequence contract.
+
+struct DSList {
+    int size;
+    int capacity;
+}
+
+class DSListOperations {
+    boolean empty(DSList list) { return list.size == 0; }
+    int size(DSList list) { return list.size; }
+    int capacity(DSList list) { return list.capacity; }
+    boolean hasCapacity(DSList list) { return list.capacity >= list.size; }
+}
