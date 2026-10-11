@@ -52,7 +52,7 @@ jobs:
             # Mirror source files while retaining this backup-only automation workflow.
             rsync -a --delete \
               --exclude='/.git' \
-              --exclude='/.github/workflows/sync-from-sleela.yml' \
+              --exclude='/.github/workflows/***' \
               "$source_dir/" "$GITHUB_WORKSPACE/"
 
             git add -A
