@@ -1,0 +1,16 @@
+/*
+ * lib/math/SLRandomDistribution.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library type SLRandomDistribution used within the math library family.
+ */
+#sleela 1.3
+// SLeeLa mathematics front-end contract.
+// Native numerical kernels cross an explicit VM bridge.
+class SLRandomDistribution {
+  int state;
+  int count;
+  void reset(){state=0;count=0;}
+  void activate(){state=1;count=count+1;}
+  boolean active(){return state==1;}
+  int status(){return state;}
+}

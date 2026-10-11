@@ -1,0 +1,225 @@
+/*
+ * lib/cpu/SLGuestVM.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines SLGuestVM — one guest virtual machine managed by the
+ *   hypervisor. It presents a virtual CPU over a window of host memory
+ *   (guest-physical addressing) and, crucially, EXECUTES the guest as a stream
+ *   of canonical SLeeLa opcodes on an embedded SLSleelaVM substrate. Guest code
+ *   is therefore run by the same Turing-complete engine as everything else in
+ *   the model (step 1 of the OS-VM roadmap): the guest is not merely ticked and
+ *   counted — its opcodes are actually dispatched.
+ *
+ * A guest TRAP/SYSCALL opcode is a VM-exit: the vCPU stops at that point, the
+ * hypervisor/guest-kernel emulates the operation, and the guest resumes. VM
+ * exits are recorded so the hypervisor can account for and service them.
+ *
+ * Guest address translation uses a real MMU (SLMMU, page tables + protection)
+ * when one is attached, falling back to a single base-offset window otherwise.
+ *
+ * Family: cpu. Composes SLCore, SLSleelaVM, SLRAM, SLMMU.
+ */
+#sleela 1.3
+class SLGuestVM {
+  String name;
+  SLCore vcpu;          // virtual CPU (the guest's modeled hardware core)
+  SLSleelaVM substrate; // the Turing-complete engine that actually runs guest code
+  SLRAM hostMemory;
+  SLMMU mmu;            // real page-table translation (step 2); null => base-offset
+  SLGuestDeviceBus devices; // guest device model: timer, console, block (step 3)
+  SLGuestLinux kernel;  // guest kernel, for timer-driven scheduling (step 6)
+  int windowBase;       // host-physical base of the guest's memory window
+  int windowSize;       // words
+  int guestEntry;       // guest-physical entry point
+  int running;
+  int exits;
+  int guestInstr;
+  int lastExitReason;   // 0 none, 1 syscall, 2 trap, 3 halt
+
+  static final int EXIT_NONE = 0;
+  static final int EXIT_SYSCALL = 1;
+  static final int EXIT_TRAP = 2;
+  static final int EXIT_HALT = 3;
+
+  void configure(String vmName, SLCore core, SLRAM ram, int base, int size, int entry) {
+    name = vmName; vcpu = core; hostMemory = ram;
+    windowBase = base; windowSize = size; guestEntry = entry;
+    running = 0; exits = 0; guestInstr = 0; lastExitReason = EXIT_NONE;
+    // Each guest gets its own opcode substrate (its guest-physical code/data).
+    substrate = new SLSleelaVM(); substrate.configure(65536, 8192, 4096);
+  }
+
+  // Attach a real MMU for page-table translation + protection faults (step 2).
+  void attachMMU(SLMMU unit) { mmu = unit; }
+  SLMMU memoryUnit() { return mmu; }
+
+  // Attach the guest device model (timer/console/block) (step 3).
+  void attachDevices(SLGuestDeviceBus bus) { devices = bus; }
+  SLGuestDeviceBus deviceBus() { return devices; }
+
+  // Attach the guest kernel so timer interrupts drive its scheduler (step 6).
+  void attachKernel(SLGuestLinux guestKernel) { kernel = guestKernel; }
+
+  // Advance the guest's devices by one tick (timer heartbeat, IRQ posting).
+  void tickDevices() { if (devices != null) { devices.tick(); } }
+
+  // Guest-virtual -> host-physical translation: via the MMU when present
+  // (page tables + protection; a fault returns -1 and the hypervisor delivers a
+  // TRAP), else a single base-offset window.
+  int translate(int guestAddr) {
+    if (mmu != null) {
+      int phys = mmu.translate(guestAddr);
+      if (phys < 0) { recordTrapExit(); return windowBase; } // page fault -> VM-exit
+      return phys;
+    }
+    return windowBase + guestAddr;
+  }
+  boolean inWindow(int guestAddr) { return guestAddr >= 0 && guestAddr < windowSize; }
+
+  // Load one guest opcode+arg into the substrate's code store (the guest kernel
+  // / loader populates this; see SLGuestLinux).
+  int loadOpcode(int opcode, int arg) { return substrate.emit(opcode, arg); }
+
+  SLSleelaVM guestSubstrate() { return substrate; }
+
+  // Enter the guest: put the substrate in hosted mode (service opcodes become
+  // VM-exits the hypervisor routes), record the translated entry on the vCPU.
+  void enter() {
+    substrate.setHosted();
+    vcpu.loadEntryPoint(translate(guestEntry));
+    running = 1;
+  }
+
+  // Run the guest, driving the VM-exit loop (step 5): execute substrate opcodes
+  // until a VM-exit (a service opcode parks one) or HALT; route each exit to the
+  // device model / syscall emulation; resolve it and resume. Devices are ticked
+  // each round so the timer heartbeat advances and posts interrupts.
+  int run(int budget) {
+    if (running == 0) { enter(); }
+    int ran = 0;
+    while (running == 1 && ran < budget && !substrate.isHalted()) {
+      int slice = substrate.run(budget - ran);
+      ran = ran + slice;
+      if (slice == 0 && !substrate.exiting()) { ran = ran + 1; } // guard against stall
+
+      if (substrate.exiting()) {
+        handleExit(substrate.exitReasonOpcode(), substrate.exitReasonArg(), substrate.exitReasonPayload());
+        substrate.resolveExit();
+      }
+      tickDevices();                 // advance timer; post device IRQs
+      deliverPendingInterrupts();    // let the guest PIC see raised lines
+    }
+    if (substrate.isHalted()) { running = 0; exits = exits + 1; lastExitReason = EXIT_HALT; }
+    return ran;
+  }
+
+  // Route a VM-exit from a service opcode to the guest syscall ABI (step b).
+  // Service opcodes are the guest's syscall surface: OP_PRINT is write(1, ch),
+  // and the OP_FILE* opcodes are open/read/write/close. When a kernel is
+  // attached, the exit is dispatched through its syscall table (which emulates
+  // the service against the guest console, filesystem, and scheduler); the
+  // result is pushed back for the guest to resume with. SYS_EXIT finishes the
+  // running task.
+  void handleExit(int opcode, int arg, int payload) {
+    SLSleelaOpcode op = new SLSleelaOpcode(); op.configure(0, "OP_NOP");
+    recordSyscallExit();
+
+    if (kernel == null) {
+      // No kernel: fall back to direct console emulation for OP_PRINT.
+      if (opcode == op.OP_PRINT && devices != null && devices.hasConsole()) { devices.consoleWrite(payload); }
+      return;
+    }
+
+    int result = serviceOpcode(opcode, arg, payload);
+    substrate.pushResult(result);           // syscall return value to the guest
+  }
+
+  // Route one service opcode to the guest syscall ABI and return the syscall
+  // result, applying the SYS_EXIT side effect (finish the running task). This
+  // is the shared routing used by handleExit(); exposing it lets the guest's
+  // process-creation path (OP_SPAWN fork/execve, OP_JOINALL wait) be driven and
+  // observed directly, so the opcode->syscall mapping is exercised end to end.
+  int serviceOpcode(int opcode, int arg, int payload) {
+    if (kernel == null) { return -1; }
+    SLSleelaOpcode op = new SLSleelaOpcode(); op.configure(0, "OP_NOP");
+    SLGuestSyscall sys = kernel.syscallTable();
+    int number = syscallNumberFor(opcode, arg, op, sys);
+    int result = sys.dispatch(number, syscallArg0(opcode, arg, op, payload), payload, syscallArg2(opcode, arg, op));
+    if (sys.isExit(number)) {               // SYS_EXIT: finish the running task
+      SLGuestTask t = kernel.taskScheduler().running();
+      if (t != null) { t.finish(); }
+    }
+    return result;
+  }
+
+  // Map a service opcode to a guest syscall number. The process-creation family
+  // reuses the canonical substrate opcodes: OP_SPAWN is clone/exec (its arg
+  // selects fork vs. execve) and OP_JOINALL is wait.
+  int syscallNumberFor(int opcode, int arg, SLSleelaOpcode op, SLGuestSyscall sys) {
+    if (opcode == op.OP_PRINT) { return sys.SYS_WRITE; }
+    if (opcode == op.OP_FILEOPEN) { return sys.SYS_OPEN; }
+    if (opcode == op.OP_FILEREAD) { return sys.SYS_READ; }
+    if (opcode == op.OP_FILEWRITE) { return sys.SYS_WRITE; }
+    if (opcode == op.OP_FILECLOSE) { return sys.SYS_CLOSE; }
+    if (opcode == op.OP_SPAWN) {
+      // OP_SPAWN with arg 0 is fork(); arg > 0 selects execve() (arg carries
+      // langId + 1 so 0 stays reserved for a plain fork).
+      if (arg == 0) { return sys.SYS_FORK; }
+      return sys.SYS_EXECVE;
+    }
+    if (opcode == op.OP_JOINALL) { return sys.SYS_WAIT; }
+    if (opcode == op.OP_HALT) { return sys.SYS_EXIT; }
+    return sys.SYS_YIELD;
+  }
+
+  // The first syscall argument (fd for I/O; progId for execve): OP_PRINT writes
+  // to stdout (fd 1); OP_SPAWN carries the exec program id as its stack payload,
+  // surfaced to execve as arg0.
+  int syscallArg0(int opcode, int arg, SLSleelaOpcode op, int payload) {
+    if (opcode == op.OP_PRINT) { return 1; }
+    if (opcode == op.OP_SPAWN && arg != 0) { return payload; } // execve progId
+    return 0;
+  }
+
+  // The third syscall argument (execve langId): recovered from OP_SPAWN's arg,
+  // which holds langId + 1 so that arg 0 can mean "plain fork".
+  int syscallArg2(int opcode, int arg, SLSleelaOpcode op) {
+    if (opcode == op.OP_SPAWN && arg != 0) { return arg - 1; } // langId
+    return 0;
+  }
+
+  // Surface any device interrupts the guest PIC now has pending and deliver them
+  // to the guest kernel. A timer IRQ (line 0) drives the guest scheduler
+  // (step 6): the kernel preempts the running task and selects the next one,
+  // and the substrate resumes at that task's saved instruction pointer.
+  void deliverPendingInterrupts() {
+    if (devices != null) {
+      int line = devices.pendingInterrupt();
+      if (line >= 0) {
+        recordTrapExit();
+        devices.acknowledge(line);
+        if (line == 0 && kernel != null) {           // timer IRQ -> scheduler
+          SLGuestTask next = kernel.onTimerInterrupt(substrate.instructionPointer());
+          if (next != null) {
+            // Deliver any pending signal to the newly-scheduled task (its slot
+            // is the scheduler's current index) before resuming it.
+            kernel.deliverSignals();
+            if (next.alive()) { substrate.setInstructionPointer(next.resumeIP()); }
+          }
+        }
+      }
+    }
+  }
+
+  // A guest syscall VM-exit: the guest kernel calls this when its code reaches a
+  // service point, so the hypervisor can emulate it against the host.
+  void recordSyscallExit() { exits = exits + 1; lastExitReason = EXIT_SYSCALL; }
+  void recordTrapExit() { exits = exits + 1; lastExitReason = EXIT_TRAP; }
+
+  void stop() { running = 0; }
+  int exitCount() { return exits; }
+  int lastExit() { return lastExitReason; }
+  int guestInstructions() { return guestInstr; }
+  int printed() { return substrate.printed(); }   // observable guest output
+  String vmName() { return name; }
+  int entry() { return guestEntry; }
+}

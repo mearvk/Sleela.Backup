@@ -24,7 +24,9 @@ VTE supplies the virtual terminal widget and PTY integration used by GTK termina
 
 ## Settings menu
 
-The title bar includes a three-horizontal-line settings/menu button. It opens a compact GTK popover so configuration does not require a permanent side panel or toolbar.
+The right of the title bar carries a small, quiet gear button for settings. It is flat (no loud outline — only a soft hover tint) and opens the Settings as a dedicated modal subframe window, so configuration does not require a permanent side panel or toolbar and stays on screen while the user adjusts it.
+
+The window controls — minimize, maximize, and close — are shown on the right of the title bar and are **lit for visibility**: each is a distinct rounded button carrying a bright, fully-opaque white glyph so the icons read clearly against the dark purple chrome. Close additionally lights up red on hover as an unmistakable affordance.
 
 The menu currently provides:
 
@@ -92,9 +94,22 @@ The application window is branded:
 SleelaTerminal™ — MEARVK LLC
 ```
 
-The title bar and footer retain the dark rich-purple visual language, bright white controls/text, and three-dimensional highlight treatment. The settings popover uses the same purple family rather than introducing a separate theme.
+The upper-left of the title bar carries the SleelaTerminal brand logo (the
+Debian/Windows-terminal mark). The asset is pre-trimmed to the logo's minimum
+2D content bounding box with a transparent background, so it sits flush at the
+left edge with no surrounding whitespace. It is a strict image — no button
+outline — and is produced by `tools/logo/Trim.java` from the source artwork in
+`images/`.
 
-The current GUI displays version `1.0.0`, matching the project's initial SleelaTerminal version baseline.\n\nThe footer also contains the clickable **CMD** image, representing CMD as the Java native launcher associated with SecureJDK 28. It is rendered as a strict image with no additional footer-button outline.
+The title bar and footer retain the dark rich-purple visual language, bright white controls/text, and a clean flat treatment. The settings subframe uses the same purple family rather than introducing a separate theme.
+
+The bottom edge of the title bar is a **living throbber** rather than a static border: a 2px seam that is not one uniform brightness but a **flowing field** of many small excitations — "children of wattage" — each adding a *relative* darker/lighter shade near its own position, as if voltage were being fed through a living receptor. **At rest the strip is the title-bar colour itself** (the same chrome purple), so the seam reads as the title bar coming alive rather than a separate band. It is repainted ~20 times a second while the terminal is open.
+
+Excitations are born across the width with the **odds favouring a start around 35%**, and the **pulsing concentrates in the central 40–60% sweet spot** (soft shoulders out to ~35–65%). The flow moves **mainly left → right**, and pulses **travel the whole width** — but their brightness is gated by how close they are to centre, so a pulse glows most through the middle and is already **fading as it drifts off-centre**; less-centred pulses decay faster because they "weren't of the sweet spot." Pulses also travel at **varied speeds** — some glide, some race. Roughly **1 in 30** excitations may pause or glide **right → left** for a short run (about 20–50 px) before rejoining.
+
+Each excitation's motion is integrated to **third order** — jerk → acceleration → velocity → position — and its speed is set by a slow, reflexive "amplification" field, so the field *speeds up and slows down* smoothly (the rate of change of acceleration stays bounded) instead of scrolling at a constant mechanical rate. Normally the shades stay in the title-bar/airy-light-blue family; under **strong amplification** (around 18/20 of the field's range) latent per-cell **hues — orange, green, blue, red — surface** on the brightest pulses, then recede as the field relaxes. The animation timer is created with the window and removed when the terminal exits or the window closes.
+
+The current GUI displays version `1.0.0`, matching the project's initial SleelaTerminal version baseline. The footer also contains the clickable **CMD** image, representing CMD as the Java native launcher associated with SecureJDK 28. It is rendered as a strict image with no additional footer-button outline.
 
 ## Desktop installation
 

@@ -1,0 +1,91 @@
+/*
+ * lib/telephony-skya/SLPackage.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library package for telephony-skya.
+ */
+#sleela 1.3
+// Library facade for module package: telephony-skya
+// Original module sources remain authoritative in the package source tree.
+class AudioDeviceManager {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class CaptureStream {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class PlaybackStream {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class Skya {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class SkyaClient {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class SkyaRoom {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class SkyaServer {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class VoIPAccount {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class VoIPAppExample {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class VoIPApplication {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+// Hecht's Notional Brand — Static Permanent National Council ID on port 171.
+// Authoritative runnables live in telephony-skya/sleela/hechts/.
+class HechtsNationalCouncil {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class HechtsServer {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+class HechtsClient {
+  String source;
+  void configure(String path){source=path;}
+  String path(){return source;}
+  boolean available(){return source!=null;}
+}
+// The emblematic Skya modules (Socio, Network, Servers, Communication,
+// RealAcquaintances) and their SkyaModules loader are now first-class /lib
+// Master Classes, one per file in this package, rather than facade stubs.

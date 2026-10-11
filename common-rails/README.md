@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # CommonRails — SST + Sleela edition
 
 Professional printing component for the SLeeLa toolchain, ported from the Java
@@ -33,26 +42,73 @@ Professional printing component for the SLeeLa toolchain, ported from the Java
    ░   (0%)      █   (started)
    ```
 
-This directory ships **two editions** of that component, matching the two
-first-class file types of the toolchain.
+4. **A sophisticated bordered table** — a clean, Unicode box-drawing frame
+   around fixed-width, aligned columns:
+
+   ```
+   ┌────────────────────┬────────────┐
+   │ Component          │ State      │
+   ├────────────────────┼────────────┤
+   │ SearchEngineClient │ WORKING    │
+   │ CommonRails        │ COMPLETE   │
+   └────────────────────┴────────────┘
+   ```
+
+   The table is opt-in through a **`table` flag**: renderers such as
+   `printPair(field, fieldChars, value, valueChars, table)` emit a framed
+   table when `table` is `true` and a plain fixed-width line when it is
+   `false` — the single flag tells the printer which form to produce for the
+   same data. Cells are padded, never truncated, and respect per-column widths
+   and left/right alignment.
+
+This directory ships the printer in a **procedural** and an **object-oriented**
+Sleela edition, plus the SST control sheet and the C/C++/Java Heritage layer.
 
 ## Files
 
 | File | Edition | What it is |
 |------|---------|------------|
-| [`CommonRails.sleela`](CommonRails.sleela) | **Sleela** (Wrapper™) | The program — the printer written in the Sleela source language. |
+| [`CommonRails.sleela`](CommonRails.sleela) | **Sleela** (Wrapper™) | The program — the printer written as flat helper methods. |
+| [`PrinterConfig.sleela`](PrinterConfig.sleela) | **Sleela** (OO) | The object-oriented edition — configurable `struct` objects (`PadConfig`, `ColumnConfig`, `TableStyle`, `StateStyle`, `PrinterConfig`) consumed by a `Printer`, so a developer composes their own print method. |
+| [`PRINTER.OOD.md`](PRINTER.OOD.md) | — | The object-oriented design: the object model, developer recipe, and growth plan. |
 | [`common-rails.sst`](common-rails.sst) | **SST** (Nordshrift) | The control sheet — declares the square geometry as a semantic subject and drives the Wrapper™ through the triplet. |
 | `.gitignore` | — | Excludes generated `build/` / `out/` artifacts. |
 
+### The object-oriented edition — `PrinterConfig.sleela`
+
+Each printing concern is a configurable object (a Sleela `struct`, a reference
+type built with `new`): `PadConfig` (width + fill + alignment), `ColumnConfig`
+(a table column), `TableStyle` (the box-drawing glyph set), `StateStyle`, and
+the top-level `PrinterConfig`. A `Printer` class supplies factories that build
+them and renderers that consume them, so a developer assembles a print method
+by constructing and wiring objects instead of threading long argument lists.
+Restyling every table is a one-object swap (`cfg.table = p.asciiTable()`). The
+full object model and a worked developer recipe are in
+[`PRINTER.OOD.md`](PRINTER.OOD.md).
+
+```sh
+# from the repository root
+./impl/build/sleela check common-rails/PrinterConfig.sleela
+./impl/build/sleela run   common-rails/PrinterConfig.sleela
+```
+
 ### The Sleela edition — `CommonRails.sleela`
 
-A `#sleela 1.1` Wrapper™ written against the accepted Sleela surface
+A `#sleela 1.3` Wrapper™ written against the accepted Sleela surface
 (`impl/README.md`): classes, `int`/`String`/`boolean`, `if`/`else`,
 `while`/`for`, arithmetic and comparisons, `+` string concatenation, `print`,
 recursion, and class fields. Because the core value model has no arrays or
 character indexing, the square is produced entirely with nested integer loops,
-and field widths are measured arithmetically. The lexer decodes only
-`\n \t \r \\ \"`, so the block glyphs `█` / `░` are embedded as raw UTF-8.
+field widths are measured arithmetically, and every content primitive takes an
+explicit character count. The lexer decodes only `\n \t \r \\ \"`, so the block
+glyphs `█` / `░` and the box-drawing glyphs `┌ ┬ ┐ │ ├ ┼ ┤ └ ┴ ┘ ─` are
+embedded as raw UTF-8.
+
+> **Syntax note.** The Sleela lexer folds a hyphen into an identifier, so every
+> binary operator — including `-` — must be surrounded by spaces (`w - chars`,
+> not `w-chars`). The source previously declared `#sleela 1.1`, which the
+> current compiler (supported range `1.3 .. 1.10`) rejects; it now declares
+> `1.3` and passes `sleela check`.
 
 ```sh
 # from the repository root

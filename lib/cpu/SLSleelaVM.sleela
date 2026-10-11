@@ -1,0 +1,161 @@
+/*
+ * lib/cpu/SLSleelaVM.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines SLSleelaVM — a stack machine that executes the canonical
+ *   SLeeLa opcodes (SLSleelaOpcode) directly. It mirrors the native dispatch
+ *   loop in impl/core/sleela_core.c ("in = code[ip++]; switch(in.op){...}"):
+ *   fetch one opcode, execute it against an operand stack and globals, advance.
+ *
+ * This is the Turing-complete substrate of the entire CPU model. Every higher
+ * layer — the register-style SLControlUnit, the OS system calls, and all four
+ * language frontends — ultimately produces a stream of these opcodes, and this
+ * VM gives that stream its meaning. Running the same effect here and on the
+ * native VM is what makes the equivalence (SLTuringBridge) concrete.
+ *
+ * Operand stack and globals are modeled over SLRAM so arbitrarily large
+ * computations are expressible (unbounded tape => Turing-complete).
+ *
+ * Family: cpu. Composes SLSleelaOpcode, SLStack, SLRAM.
+ */
+#sleela 1.3
+class SLSleelaVM {
+  SLSleelaOpcode op;
+  SLRAM codeOps;    // opcode of each instruction
+  SLRAM codeArgs;   // immediate operand of each instruction
+  SLRAM stack;      // operand stack (grows up)
+  SLRAM globals;    // global slots
+  int codeLen;
+  int ip;           // instruction pointer
+  int sp;           // operand-stack pointer
+  int halted;
+  int executed;
+  int lastPrint;    // last value sent to OP_PRINT (observable output)
+
+  // VM-exit mechanism (step 5): when hosted under a hypervisor, a service
+  // opcode does not act inline — it parks a pending exit so the host can route
+  // it (to a device / syscall emulation) and resume. hosted==0 keeps the
+  // standalone behavior (PRINT acts directly), so SLSleelaVM is usable both
+  // bare and virtualized.
+  int hosted;        // 1 = park service opcodes as VM-exits
+  int exitPending;   // 1 = execution paused awaiting host handling
+  int exitOpcode;    // the service opcode that caused the exit
+  int exitArg;       // its immediate
+  int exitPayload;   // the stack value it carried (e.g. the char to print)
+
+  void configure(int codeCap, int stackCap, int globalCap) {
+    op = new SLSleelaOpcode(); op.configure(0, "OP_NOP");
+    codeOps = new SLRAM(); codeOps.configure(codeCap, 32); codeOps.allocate();
+    codeArgs = new SLRAM(); codeArgs.configure(codeCap, 32); codeArgs.allocate();
+    stack = new SLRAM(); stack.configure(stackCap, 32); stack.allocate();
+    globals = new SLRAM(); globals.configure(globalCap, 32); globals.allocate();
+    codeLen = 0; ip = 0; sp = 0; halted = 0; executed = 0; lastPrint = 0;
+    hosted = 0; exitPending = 0; exitOpcode = -1; exitArg = 0; exitPayload = 0;
+  }
+
+  // Enable hosted mode: service opcodes park VM-exits instead of acting inline.
+  void setHosted() { hosted = 1; }
+  boolean exiting() { return exitPending == 1; }
+  int exitReasonOpcode() { return exitOpcode; }
+  int exitReasonArg() { return exitArg; }
+  int exitReasonPayload() { return exitPayload; }
+  // Host clears the exit after servicing it so the guest can resume.
+  void resolveExit() { exitPending = 0; exitOpcode = -1; }
+  // Host pushes a syscall return value onto the operand stack for the guest.
+  void pushResult(int value) { push(value); }
+
+  // Load one opcode+arg into the code store.
+  int emit(int opcode, int arg) {
+    int at = codeLen;
+    codeOps.writeWord(at, opcode);
+    codeArgs.writeWord(at, arg);
+    codeLen = codeLen + 1;
+    return at;
+  }
+
+  // Stack helpers.
+  void push(int v) { stack.writeWord(sp, v); sp = sp + 1; }
+  int pop() { if (sp == 0) { return 0; } sp = sp - 1; return stack.readWord(sp); }
+
+  // Execute exactly one opcode (the one-at-a-time native contract).
+  int step() {
+    if (halted == 1 || ip >= codeLen) { halted = 1; return -1; }
+    int o = codeOps.readWord(ip);
+    int a = codeArgs.readWord(ip);
+    executed = executed + 1;
+    ip = ip + 1;
+
+    if (o == op.OP_NOP) { return o; }
+    if (o == op.OP_CONST) { push(a); return o; }
+    if (o == op.OP_POP) { pop(); return o; }
+    if (o == op.OP_DUP) { int v = pop(); push(v); push(v); return o; }
+    if (o == op.OP_LOADG) { push(globals.readWord(a)); return o; }
+    if (o == op.OP_STOREG) { globals.writeWord(a, pop()); return o; }
+
+    if (o == op.OP_ADD) { int b = pop(); int x = pop(); push(x + b); return o; }
+    if (o == op.OP_SUB) { int b = pop(); int x = pop(); push(x - b); return o; }
+    if (o == op.OP_MUL) { int b = pop(); int x = pop(); push(x * b); return o; }
+    if (o == op.OP_DIV) { int b = pop(); int x = pop(); if (b != 0) { push(x / b); } else { push(0); } return o; }
+    if (o == op.OP_MOD) { int b = pop(); int x = pop(); if (b != 0) { push(x % b); } else { push(0); } return o; }
+    if (o == op.OP_NEG) { push(0 - pop()); return o; }
+
+    if (o == op.OP_EQ) { int b = pop(); int x = pop(); push(boolInt(x == b)); return o; }
+    if (o == op.OP_NE) { int b = pop(); int x = pop(); push(boolInt(x != b)); return o; }
+    if (o == op.OP_LT) { int b = pop(); int x = pop(); push(boolInt(x < b)); return o; }
+    if (o == op.OP_LE) { int b = pop(); int x = pop(); push(boolInt(x <= b)); return o; }
+    if (o == op.OP_GT) { int b = pop(); int x = pop(); push(boolInt(x > b)); return o; }
+    if (o == op.OP_GE) { int b = pop(); int x = pop(); push(boolInt(x >= b)); return o; }
+
+    if (o == op.OP_AND) { int b = pop(); int x = pop(); push(boolInt(x != 0 && b != 0)); return o; }
+    if (o == op.OP_OR)  { int b = pop(); int x = pop(); push(boolInt(x != 0 || b != 0)); return o; }
+    if (o == op.OP_NOT) { push(boolInt(pop() == 0)); return o; }
+
+    if (o == op.OP_JMP)  { ip = a; return o; }
+    if (o == op.OP_JMPF) { if (pop() == 0) { ip = a; } return o; }   // jump if false
+
+    if (o == op.OP_PRINT) {
+      int v = pop();
+      lastPrint = v;
+      if (hosted == 1) { parkExit(o, a, v); } else { printValue(v); }
+      return o;
+    }
+    if (o == op.OP_HALT) { halted = 1; return o; }
+
+    // Service / I/O opcodes (PRINT handled above, FILE*, SOCK*, etc.): under a
+    // hypervisor these are VM-exits the host routes to the device model; bare,
+    // the native engine crosses the OS bridge. Non-service opcodes not
+    // explicitly simulated are no-ops in this model VM.
+    if (hosted == 1 && op.isService(o)) { parkExit(o, a, (sp > 0) ? top() : 0); return o; }
+    return o;
+  }
+
+  // Park a VM-exit: record the service opcode and pause execution until the
+  // host resolves it (step 5).
+  void parkExit(int opcode, int arg, int payload) {
+    exitPending = 1; exitOpcode = opcode; exitArg = arg; exitPayload = payload;
+  }
+
+  int boolInt(boolean b) { if (b) { return 1; } return 0; }
+  void printValue(int v) { native sleela_vm_print_int(v); }
+
+  // Run until HALT, a pending VM-exit (hosted mode), or budget exhausted.
+  int run(int budget) {
+    int ran = 0;
+    while (halted == 0 && exitPending == 0 && ip < codeLen && ran < budget) { step(); ran = ran + 1; }
+    return ran;
+  }
+
+  // Read back a loaded code slot (used by the kernel builder to package an image).
+  int opcodeAtIndex(int i) { return codeOps.readWord(i); }
+  int argAtIndex(int i) { return codeArgs.readWord(i); }
+
+  // Instruction-pointer access, for guest context switches (step 6): the guest
+  // scheduler saves the preempted task's ip and restores the next task's.
+  int instructionPointer() { return ip; }
+  void setInstructionPointer(int newIp) { if (newIp >= 0 && newIp <= codeLen) { ip = newIp; } }
+
+  int top() { if (sp == 0) { return 0; } return stack.readWord(sp - 1); }
+  int printed() { return lastPrint; }
+  int instructionsRun() { return executed; }
+  boolean isHalted() { return halted == 1; }
+  int programLength() { return codeLen; }
+}

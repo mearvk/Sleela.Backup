@@ -1,0 +1,20 @@
+/*
+ * Amoral.sleela
+ * COORENAGRAPH moral vocabulary.
+ * Part of speech: adjective
+ * Definition: Lacking moral sensibility or treating right and wrong as irrelevant.
+ */
+
+class Amoral {
+    String term() {
+        return "Amoral";
+    }
+
+    String partOfSpeech() {
+        return "adjective";
+    }
+
+    String definition() {
+        return "Lacking moral sensibility or treating right and wrong as irrelevant.";
+    }
+}

@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # SLeeLa XML Examples
 
 This directory contains clear, runnable examples for the SLeeLa BODI XML project system. The examples are also evidence artifacts: each XML project has a corresponding expected BODI witness output where the result is deterministic and does not require external network access.
