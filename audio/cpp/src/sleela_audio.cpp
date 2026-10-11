@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <vector>
 
 namespace sleela::audio {
@@ -126,6 +127,7 @@ bool mix_wav(const Config& c, std::string& e) {
                 w[i].p.size() / w[i].c);
     }
 
+    if (frames > (static_cast<std::size_t>(-1) / 2)) { e = "output too large"; return false; }
     std::vector<std::int16_t> o(frames * 2);
     const double lg =
         g(c.controls.master_gain_db) * c.controls.left_gain *
@@ -168,6 +170,7 @@ bool mix_wav(const Config& c, std::string& e) {
         }
     };
 
+    if (o.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / 2) { e = "WAV output exceeds RIFF size limit"; return false; }
     const std::uint32_t bytes = static_cast<std::uint32_t>(o.size() * 2);
     f.write("RIFF", 4);
     w32(36 + bytes);

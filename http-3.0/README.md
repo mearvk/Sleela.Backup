@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # SLeeLa HTTP 3.0
 
 **Status:** Experimental SLeeLa application-protocol generation; not a claim of IETF HTTP/3 semantics beyond the selected carrier.
@@ -49,3 +58,23 @@ See:
 - the root `Makefile`
 
 The build system should delegate to the protocol source tree rather than replacing the repository's implementation with an unrelated framework.
+
+## Unified Route Data
+
+This implementation consumes the SLeeLa unified route-data contract in
+route/ROUTE.DATA.json and route/ROUTE.DATA.md. Route records carry protocol,
+server surface, HTTP generation, VM generation/formal VM name, canonical
+configuration root, route identifier, target/resolution mode, capability,
+transport, port, and status. VM names are architectural metadata only and do
+not grant capabilities. Dynamic targets must use the shared resolver before
+acceptance. The VM identity is: /impl Core, /1 Foundation, /2 Operator,
+/3 Specialist, /4 Supervisor, /5 Manager, /6 Director, /7 Administrator,
+/8 Executive, /9 Authority, /10 Principal, /11 Sovereign.
+
+## Corrections
+
+Fixed a link failure: the protocol objects call
+`sleela_preferred_router_packet_policy`, which lives in
+`../preferred-routers/preferred_router.c`; that source was added to the build so
+`make` links cleanly. See the 2026-10-03 entry in
+[`../REVISIONS.md`](../REVISIONS.md).

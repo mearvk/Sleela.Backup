@@ -7,7 +7,7 @@
 // persistent runnable .sleela Core artifact. That artifact is loadable by the
 // Sleela runtime without a second front-end compilation.
 //
-// Nordshrift 2.6-dev also links the common semantic subject model used by the
+// Nordshrift 2.7.1-dev also links the common semantic subject model used by the
 // Math, Physics, Economics, Chemistry, and Financial libraries.
 // ===========================================================================
 #include <cstdio>
@@ -36,6 +36,9 @@
 #include "../frontend/semantic.h"
 #include "../frontend/compiler.h"
 #include "../frontend/artifact.h"
+#include "../frontend/library_index.h"
+#include "../frontend/dynamite.h"
+#include "../frontend/permissible.h"
 #include "../frontend/version.h"
 extern "C" {
 #include "../core/sleela_core.h"
@@ -45,7 +48,7 @@ extern "C" {
 using namespace nordshrift;
 
 static const char* kVersion =
-    "Nordshrift 2.6-dev (NS-SST-0001; source validation; semantic analysis; semantic subject model; Sleelvac™ runnable .sleela target)";
+    "Nordshrift 2.7.1-dev (NS-SST-0001; source validation; semantic analysis; semantic subject model; Sleelvac™ runnable .sleela target)";
 
 static int usage() {
     std::cerr <<
@@ -259,10 +262,14 @@ static void validateSubjects(const Sheet& sheet, DiagnosticBag& diags) {
 }
 
 static void validateSourcePrograms(const Sheet& sheet, const std::string& sheetPath,
-                                     DiagnosticBag& diags) {
+                                     DiagnosticBag& diags, const sleela::library::Index& libraryIndex) {
     if (!sheet.source.present) return;
     const std::string base = dirOf(sheetPath);
     std::vector<std::string> sources = resolveSources(sheet.source, base, diags);
+    std::cout << "library: " << libraryIndex.packageCount() << " package(s), "
+              << libraryIndex.symbolCount() << " SLeeLa source symbol(s)";
+    if (!libraryIndex.root().empty()) std::cout << " from " << libraryIndex.root();
+    std::cout << "\n";
     for (const auto& srcPath : sources) {
         std::string code;
         if (!readFile(srcPath, code)) {
@@ -281,7 +288,22 @@ static void validateSourcePrograms(const Sheet& sheet, const std::string& sheetP
             sleela::Lexer lexer(code);
             sleela::Parser parser(lexer.tokenize());
             sleela::Program program = parser.parseProgram();
-            sleela::SemanticResult semantic = sleela::analyzeSemantics(program, vr.version);
+            sleela::library::validateImports(program.imports, libraryIndex);
+            auto dynamite = sleela::dynamite::discover(code, srcPath);
+            if (dynamite.present) {
+                std::cout << "dynamite-import: " << dynamite.sourcePath;
+                if (!dynamite.configName.empty()) std::cout << " config=" << dynamite.configName;
+                std::cout << " line=" << dynamite.line
+                          << " deferred-construction=" << (sleela::dynamite::isImplicitLoadCandidate(dynamite) ? "enabled" : "incomplete") << "\n";
+            }
+            auto permissible = sleela::permissible::discoverAll(code, srcPath);
+            for (const auto& connector : permissible) {
+                std::cout << "permissible-import: " << connector.sourcePath;
+                if (!connector.referenceName.empty()) std::cout << " reference=" << connector.referenceName;
+                std::cout << " line=" << connector.line
+                          << " admissible=" << (sleela::permissible::isAdmissible(connector) ? "candidate" : "incomplete") << "\n";
+            }
+            sleela::SemanticResult semantic = sleela::analyzeSemantics(program, vr.declared);
             for (const auto& err : semantic.errors)
                 diags.error("NSS-E-SEM-001", srcPath, 0, err, "SST-SOURCE-SEMANTIC");
             for (const auto& warn : semantic.warnings)
@@ -298,7 +320,8 @@ static int doCheck(const std::string& path) {
     Sheet sheet; DiagnosticBag diags;
     if (!loadSheet(path, sheet, diags)) return 1;
     validateSubjects(sheet, diags);
-    validateSourcePrograms(sheet, path, diags);
+    sleela::library::Index libraryIndex = sleela::library::Index::discover();
+    validateSourcePrograms(sheet, path, diags, libraryIndex);
     std::cout << diags.render();
     std::cout << "sheet '" << sheet.meta.name << "' — "
               << diags.errorCount() << " error(s), "
@@ -502,5 +525,6 @@ int main(int argc, char** argv) {
     if (cmd == "build") { if (argc < 3) return usage(); return doBuild(argv[2]); }
     if (cmd == "objects") { return doObjects(); }
     if (cmd == "relevance") { return doRelevance(argc, argv); }
+    if (cmd == "design-activity") { return designActivityCmd(argc, argv); }
     return usage();
 }

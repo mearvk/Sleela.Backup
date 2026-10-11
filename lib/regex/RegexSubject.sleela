@@ -1,0 +1,12 @@
+/*
+ * lib/regex/RegexSubject.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library type RegexSubject used within the regex library family.
+ */
+#sleela 1.3
+class RegexSubject {
+  string value;
+  void set(string text){value=text;}
+  string get(){return value;}
+  int length(){return 0;}
+}

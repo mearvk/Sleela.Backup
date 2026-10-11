@@ -6,14 +6,15 @@
 
 /* Stable VM artifact/runtime ABI identifiers. */
 #define SLEELA_VM_ABI_MAJOR 1u
-#define SLEELA_VM_ABI_MINOR 0u
+#define SLEELA_VM_ABI_MINOR 1u
 #define SLEELA_ARTIFACT_FORMAT_VERSION 2u
 #include <stdint.h>
 #include <stddef.h>
+#include "../../runtime/garbage_collector.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef enum { SL_NULL = 0, SL_INT, SL_DOUBLE, SL_BOOL, SL_STR, SL_STRUCT } SLType;
+typedef enum { SL_NULL = 0, SL_INT, SL_DOUBLE, SL_BOOL, SL_STR, SL_STRUCT, SL_ARRAY } SLType;
 /* SL_STRUCT is a VM-local handle (index into the struct-instance store), the
  * same bounded-handle discipline used for sockets/files/threads. Sleela code
  * never sees a raw pointer; a struct value carries only its instance handle. */
@@ -69,8 +70,71 @@ typedef enum {
     OP_BEST_REPORT,    /* pops handle; pushes multi-line report String         */
     OP_BEST_ARCH,      /* pops realized,param,arch,idx,handle; pushes handle   */
     OP_BEST_ARCH_STATE,/* pops realized,idx,handle; pushes handle              */
-    OP_BEST_CLOSE      /* pops handle; releases the selector; pushes null      */
+    OP_BEST_CLOSE,     /* pops handle; releases the selector; pushes null      */
+    OP_AUDIO_NEW,       /* pops sampleRate, outputPath; pushes job handle */
+    OP_AUDIO_ADD,       /* pops handle,path,startSeconds,gainDb; pushes handle */
+    OP_AUDIO_CONTROLS,  /* pops handle,bass,mid,treble,master,pan,left,right; pushes handle */
+    OP_AUDIO_VALIDATE,  /* pops handle; pushes bool */
+    OP_AUDIO_RENDER,    /* pops handle; invokes host renderer; pushes bool */
+    OP_AUDIO_CLOSE,     /* pops handle; releases job; pushes null */
+    OP_AUDIO_PLATFORM,  /* pushes host platform name */
+    /* Array support (syntax 1.4): a dynamic, growable, zero-indexed sequence of
+     * SLValues. An array value carries a VM-local handle into a bounded array
+     * store, the same handle discipline as structs. Appended at the end of the
+     * opcode enum so existing serialized-artifact opcode numbers are unchanged. */
+    OP_NEWARRAY,   /* pops int size; pushes a fresh array handle with `size` null elements */
+    OP_ARRGET,     /* pops index then array; pushes element (TERR on out-of-range)              */
+    OP_ARRSET,     /* pops value then index then array; writes element; pushes value            */
+    OP_ARRLEN,     /* pops array; pushes int length                                             */
+    OP_ARRPUSH,    /* pops value then array; appends; pushes new int length                     */
+    /* Operating-system system calls (syntax 1.5). The os* built-ins reach the
+     * genuine host System API (Win32 / POSIX / Apple) through sleela_os.c. A
+     * spawned child is a VM-local handle into a bounded process table, the same
+     * handle discipline as sockets/files. Appended at the end of the enum so
+     * existing serialized-artifact opcode numbers are unchanged. */
+    OP_OS_PLATFORM,   /* pushes host OS name String                                 */
+    OP_OS_CAPABILITY, /* pops capability int; pushes 1/0                            */
+    OP_OS_GETENV,     /* pops name String; pushes value String ("" if unset)        */
+    OP_OS_SETENV,     /* pops value,name Strings; pushes 0/-1                        */
+    OP_OS_CWD,        /* pushes current working directory String                    */
+    OP_OS_CHDIR,      /* pops path String; pushes 0/-1                              */
+    OP_OS_HOSTNAME,   /* pushes host name String                                    */
+    OP_OS_USERNAME,   /* pushes current user name String                            */
+    OP_OS_TEMPDIR,    /* pushes system temp directory String                        */
+    OP_OS_PID,        /* pushes this process' id int                                */
+    OP_OS_EXISTS,     /* pops path String; pushes 1/0/-1                            */
+    OP_OS_ISDIR,      /* pops path String; pushes 1/0/-1                            */
+    OP_OS_FILESIZE,   /* pops path String; pushes size int (-1 on error)            */
+    OP_OS_MKDIR,      /* pops path String; pushes 0/-1                              */
+    OP_OS_REMOVE,     /* pops path String; pushes 0/-1                              */
+    OP_OS_RENAME,     /* pops to,from Strings; pushes 0/-1                          */
+    OP_OS_RUN,        /* pops command String; runs it; pushes exit code int         */
+    OP_OS_SPAWN,      /* pops command String; pushes process handle (-1 on failure) */
+    OP_OS_WAIT,       /* pops process handle; waits; pushes exit code int           */
+    OP_OS_KILL,       /* pops process handle; pushes 0/-1                           */
+    OP_OS_PCLOSE,     /* pops process handle; releases it; pushes null              */
+    /* GC hint (syntax 1.9): a developer-emitted request for a short-term GC
+     * cleanup of unreachable allocations after a value is done being used,
+     * written `x = gc N;` or `x = mem N;` where N is 0..100 aggressiveness.
+     * operand a = aggressiveness (0..100): 0 is a no-op; a modest level runs a
+     * young-only safepoint collection sized to the level; a top level (>=
+     * SL_GC_HINT_FULL) requests a full collection. The hint reclaims only
+     * genuinely unreachable objects; it never frees a live value, and it is
+     * deferred (like every safepoint) while worker threads are active. Appended
+     * at the end of the enum so existing serialized-artifact opcode numbers are
+     * unchanged. */
+    OP_GC_HINT,       /* operand a = aggressiveness 0..100; pushes nothing          */
+    /* ran:: system namespace (syntax 1.9). The `ran::` qualifier names the
+     * System / already-Ran-in-RAM meaning of a word, so ordinary identifiers
+     * (mem, gc, ...) stay free for class/variable names. `ran::mem` reads the
+     * current live system memory in bytes as an int. Appended at the end of the
+     * enum so existing serialized-artifact opcode numbers are unchanged. */
+    OP_RAN_MEM        /* pushes current live system memory in bytes (int)           */
 } SLOp;
+/* GC-hint aggressiveness bands for OP_GC_HINT (operand a). */
+#define SL_GC_HINT_MAX  100   /* clamp ceiling for the 0..100 aggressiveness scale */
+#define SL_GC_HINT_FULL 100   /* at this level the hint requests a full collection */
+#define SL_MAX_OS_PROCESSES 64    /* live spawned child processes per VM        */
 /* Synchro stat selectors for OP_SYN_STAT (operand a). */
 #define SL_SYN_STAT_SENT 0
 #define SL_SYN_STAT_RECV 1
@@ -94,8 +158,18 @@ typedef enum {
 #define SL_MAX_STRUCT_TYPES 256   /* distinct struct declarations per program  */
 #define SL_MAX_STRUCT_FIELDS 64   /* named fields per struct type              */
 #define SL_MAX_STRUCTS 4096       /* live struct instances per VM              */
+#define SL_MAX_STRTEXT 65536      /* max bytes for a built/concatenated String */
+#define SL_MAX_ARRAYS 4096        /* live array instances per VM               */
+#define SL_MAX_ARRAY_LEN 1048576  /* maximum elements in a single array        */
 typedef enum { SLR_OK = 0, SLR_ERROR, SLR_HALT } SLResult;
 typedef struct SLVM SLVM;
+typedef int (*SLAudioNativeRenderFn)(
+    const char* output_path, uint32_t sample_rate,
+    const char* const* input_paths, const double* start_seconds,
+    const double* gain_db, size_t input_count,
+    double bass_db, double mid_db, double treble_db,
+    double master_gain_db, double pan, double left_gain, double right_gain,
+    void* user);
 typedef enum { SLX_RESET = 0, SLX_ADD_CONST, SLX_DECLARE_GLOBAL, SLX_BEGIN_FUNC, SLX_END_FUNC, SLX_EMIT, SLX_PATCH, SLX_HERE, SLX_SET_ENTRY, SLX_RUN, SLX_GET_RESULT, SLX_DECLARE_STRUCT } SLExchangeOp;
 /* For SLX_DECLARE_STRUCT: name = struct type name, names = ordered field names,
  * i0 = field count; out receives the type index. */
@@ -103,6 +177,7 @@ typedef struct { SLValue value; const char* name; const char* const* names; int3
 SLVM* slvm_new(void);
 /* True when Sleela source values use the bounded VM-owned memory/handle model. */
 int slvm_memory_safe_mode(const SLVM* vm);
+void slvm_set_audio_native_renderer(SLVM* vm, SLAudioNativeRenderFn fn, void* user);
 void slvm_free(SLVM* vm);
 SLResult slcore_exchange(SLVM* vm, SLExchangeOp op, SLExchangeArg* arg);
 int slvm_add_const_int(SLVM* vm, int64_t v);
