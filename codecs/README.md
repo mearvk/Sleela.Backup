@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # SLeeLa Codec Handlers
 
 **Package:** `codecs/`  
@@ -40,9 +49,63 @@ No handler is advertised as fully implemented merely because its name appears in
 | MIDI | MIDI Standard | Note/event data, not sampled audio | Event format |
 | WebM/Matroska audio | Matroska/WebM containers | Container | Container |
 
-## C Handler API
+## Architecture: individual codecs + a Loader/Manager
 
-The initial public registry is in:
+Each codec is now a **self-contained plugin** in its own folder under
+`codecs/codecs/<name>/`, implementing a small common vtable
+(`codecs/include/sleela_codec_plugin.h`): `describe`, `load`, `unload`, `probe`,
+`decode`, `encode`. Every codec ships C **and** C++ (the vtable/glue in `.c`, the
+byte-level/format detail in `.cpp`) plus its own `.md`.
+
+SLeeLa never links or calls an individual codec directly. It calls the **Codec
+Loader / Unloader / Management Controller** (`codecs/include/sleela_codec_manager.h`),
+which owns every plugin's lifecycle:
+
+```
+   SLeeLa  ->  Codec Manager (loader/unloader/controller)  ->  individual codec plugin
+                 load / unload / resolve / decode / encode
+```
+
+- `sleela_codec_manager_create()` registers every known codec (none loaded).
+- `sleela_codec_manager_load(mgr, id)` / `..._unload(mgr, id)` manage lifecycle.
+- `..._resolve_extension` / `..._resolve_probe` pick a codec from a filename or
+  content bytes.
+- `..._decode` / `..._encode` dispatch to the loaded plugin.
+- A backend-less codec reports its state and returns a clean
+  `SLEELA_CODEC_ERR_UNSUPPORTED` instead of faking success.
+
+The SLeeLa-facing handle to the Loader is `lib/codecs/SLCodecLoader.sleela`
+(runnable demo: `lib/codecs/codecs.sleela`).
+
+### Native codecs (fully implemented in-package, no external library)
+
+- **PCM/WAV** (`codecs/codecs/pcm_wav/`) — RIFF/WAVE 16-bit PCM read/write; the
+  PCM boundary every other codec targets.
+- **AIFF** (`codecs/codecs/aiff/`) — `FORM`/`AIFF` big-endian 16-bit PCM
+  read/write, including the 80-bit extended sample-rate field.
+- **G.711 μ-law / A-law** (`codecs/codecs/g711_mulaw/`, `.../g711_alaw/`) —
+  telephony companding, one byte ↔ one 16-bit PCM sample.
+
+### Backend codecs (contract + probe, pluggable implementation)
+
+FLAC, ALAC, MP3, AAC, HE-AAC, Vorbis, Opus, Speex, WMA, AC-3, E-AC-3, AMR-NB,
+AMR-WB are **Backend** handlers: they identify the format (a C++ signature
+probe) and delegate encode/decode to a **runtime-registered backend adapter**.
+
+```c
+/* A host wires an approved library (libFLAC, libopus, ...) at startup: */
+static const sleela_codec_backend flac_adapter = { "libFLAC", flac_dec, flac_enc };
+sleela_codec_backend_register(SLEELA_CODEC_FLAC, &flac_adapter);
+```
+
+With a backend registered, the plugin's decode/encode dispatch to it; with none
+registered, they return `SLEELA_CODEC_ERR_UNSUPPORTED` — never a false success.
+(No third-party libraries are bundled in-tree.) MIDI is an **Event** format and
+Matroska/WebM are **Container** handlers (probe + identification).
+
+## C Handler Registry (metadata)
+
+The static registry is in:
 
 - `codecs/include/sleela_codecs.h`
 - `codecs/src/sleela_codecs.c`

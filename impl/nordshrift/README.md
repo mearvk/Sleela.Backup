@@ -1,3 +1,12 @@
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+
+
+
+
+
+
 # Nordshrift
 
 **Nordshrift 2.6-dev** is the transpiler driver and semantic coordination layer for Sleela. It reads a **`.sst` control sheet** and drives the transpilation of Sleela sources into the target selected by the sheet — the **triplet**: **Java**, **Sleela** (executed on the C core), or **C**.
