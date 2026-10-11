@@ -70,3 +70,5 @@ jobs:
               --title "Sync $target from SLeeLa master" \
               --body "Automated shallow-depth-2 mirror of https://github.com/mearvk/SLeeLa/tree/master. The sync is proposed as a pull request so backup-only differences can be reviewed before merging."
           done
+
+# This workflow keeps the sister repository reviewable by proposing changes as pull requests.
