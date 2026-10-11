@@ -41,6 +41,7 @@ jobs:
           source_dir="$GITHUB_WORKSPACE/../SLeeLa-source"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp "$GITHUB_WORKSPACE/.github/workflows/sync-from-sleela.yml" "$RUNNER_TEMP/sync-from-sleela.yml"
 
           for target in main master; do
             if ! git show-ref --verify --quiet "refs/remotes/origin/$target"; then
@@ -58,6 +59,7 @@ jobs:
               --exclude='/SHA256-DIGESTS.md' \
               --exclude='/security/important-sha256-manifest.json' \
               "$source_dir/" "$GITHUB_WORKSPACE/"
+            cp "$RUNNER_TEMP/sync-from-sleela.yml" "$GITHUB_WORKSPACE/.github/workflows/sync-from-sleela.yml"
 
             git add -A -f
             if git diff --cached --quiet; then
