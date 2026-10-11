@@ -1,0 +1,74 @@
+name: Sync sister repository from SLeeLa
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-from-sleela.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-from-sleela
+  cancel-in-progress: false
+
+jobs:
+  prepare-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out backup repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Shallow-clone SLeeLa master
+        run: git clone --depth 2 --single-branch --branch master https://github.com/mearvk/SLeeLa.git ../SLeeLa-source
+
+      - name: Prepare sync pull requests for main and master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="$GITHUB_WORKSPACE/../SLeeLa-source"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for target in main master; do
+            if ! git show-ref --verify --quiet "refs/remotes/origin/$target"; then
+              echo "Skipping missing target branch: $target"
+              continue
+            fi
+
+            branch="sync/sleela-master-$target-$RUN_ID"
+            git switch --force-create "$branch" "origin/$target"
+
+            # Mirror source files while retaining this backup-only automation workflow.
+            rsync -a --delete \
+              --exclude='/.git' \
+              --exclude='/.github/workflows/***' \
+              --exclude='/SHA256-DIGESTS.md' \
+              --exclude='/security/important-sha256-manifest.json' \
+              "$source_dir/" "$GITHUB_WORKSPACE/"
+
+            git add -A -f
+            if git diff --cached --quiet; then
+              echo "No source changes to propose for $target"
+              continue
+            fi
+
+            git commit -m "Sync from SLeeLa master (shallow depth 2)"
+            git push --force-with-lease origin "$branch"
+            echo "Branch pushed: https://github.com/$GH_REPO/tree/$branch"
+            echo "Create the review PR with the GitHub integration or repository UI; the default Actions token may not have permission to open PRs."
+          done
+
+# This workflow keeps the sister repository reviewable by proposing changes as pull requests.
