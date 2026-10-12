@@ -1,7 +1,13 @@
 #include <gtk/gtk.h>
 #include <vte/vte.h>
+#include <pango/pangocairo.h>
 
 #include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdlib>
+#include <regex>
+#include <set>
 #include <cmath>
 #include <csignal>
 #include <filesystem>
@@ -38,36 +44,46 @@ struct ThrobberCell {
     // (tr,tg,tb) is a fully-saturated hue; tinted==false means pure base shade.
     bool tinted = false;
     double tr = 0.0, tg = 0.0, tb = 0.0;
+    int shape = 0;          // 0=circle/lava ball, 1=triangle, 2=rectangle
+    bool outline_only = false;
 };
 
 struct AppConfig {
     std::string font = "Monospace 11";
-    std::string foreground = "#FFFFFF";
+    std::string foreground = "#f2f2f2";
     std::string input_language = "system";
     std::string output_language = "system";
     bool national_feeds = false;
     bool persons_of_interest = false;
     bool parametric_documents = false;
     bool national_identifiers = false;
+    unsigned footer_scroll_delay_minutes = 5;
 };
 
 struct AppState {
     std::string shell_path;
     GtkWindow *window = nullptr;
     VteTerminal *terminal = nullptr;
-    GtkLabel *footer_text = nullptr;
+    GtkWidget *footer_text = nullptr;
     std::string executable_path;
     GPid child_pid = 0;
     guint footer_tick = 0;
+    guint footer_scroll_tick = 0;
     guint footer_position = 0;
+    gint64 footer_text_changed_us = 0;
+    std::string footer_full_text;
+    std::string feed_topics_signature;
+    bool feed_fetching = false;
+    gint64 feed_last_fetch = 0;
     AppConfig config;
 
-    // Title-bar throbber: a thin living light-blue strip along the bottom of
-    // the title bar (replacing the static border highlight). It is a flowing
-    // field of discrete excitations ("children of wattage") that stream mainly
-    // left->right at ~20 Hz; see throbber_tick / throbber_draw.
+    // Full-width 4px pure-white throbber rail under the title bar. The existing
+    // coloured cells move and sway within its pixels; only those coloured cells
+    // may cast reflected light onto the terminal text pane.
     GtkWidget *throbber = nullptr;
-    guint throbber_tick = 0;
+    GtkWidget *terminal_glow = nullptr; // non-interactive overlay lit by throbber cells
+    guint throbber_tick = 0; // GTK frame-clock callback ID (main thread only)
+    gint64 throbber_last_frame_us = 0;
     double throbber_t = 0.0;        // monotonically advancing time (seconds)
     int    throbber_w = 0;          // last known strip width (px)
     double throbber_amp = 0.6;      // slow reflexive "amplification" field [0..1]
@@ -99,6 +115,7 @@ void save_config(const AppConfig &config) {
     out << "persons_of_interest=" << (config.persons_of_interest ? "true" : "false") << '\n';
     out << "parametric_documents=" << (config.parametric_documents ? "true" : "false") << '\n';
     out << "national_identifiers=" << (config.national_identifiers ? "true" : "false") << '\n';
+    out << "footer_scroll_delay_minutes=" << config.footer_scroll_delay_minutes << '\n';
 }
 
 void load_config(AppConfig &config) {
@@ -121,6 +138,10 @@ void load_config(AppConfig &config) {
         else if (key == "persons_of_interest") config.persons_of_interest = value == "true";
         else if (key == "parametric_documents") config.parametric_documents = value == "true";
         else if (key == "national_identifiers") config.national_identifiers = value == "true";
+        else if (key == "footer_scroll_delay_minutes") {
+            try { unsigned delay = static_cast<unsigned>(std::stoul(value)); if (delay >= 5 && delay <= 60) config.footer_scroll_delay_minutes = delay; }
+            catch (...) { /* retain default */ }
+        }
     }
 }
 
@@ -180,16 +201,16 @@ void apply_terminal_style(AppState *state) {
     GdkRGBA foreground;
     GdkRGBA background;
     if (!parse_rgba(state->config.foreground, foreground)) {
-        gdk_rgba_parse(&foreground, "#FFFFFF");
+        gdk_rgba_parse(&foreground, "#262626");
     }
-    // Terminal background matches the window background (@sl_bg) so the terminal
-    // reads as one surface with the chrome rather than a separate near-black
-    // rectangle. See UI-PRINCIPLES.md (principle 2).
-    gdk_rgba_parse(&background, "#15101c");
+    // Keep the surrounding GTK workspace near-white; the interactive VTE
+    // surface itself is the shared charcoal command-output surface. VTE owns
+    // the live PTY stream, so styling it as one surface preserves arbitrary
+    // interactive programs, scrollback, selection, and shell I/O semantics.
+    gdk_rgba_parse(&foreground, "#f2f2f2");
+    gdk_rgba_parse(&background, "#4b4b4b");
 
-    // A 16-colour ANSI palette tuned to the dark-purple theme: slightly warmer
-    // and less saturated than raw VTE defaults so output is legible and calm on
-    // the @sl_bg background without clashing with the purple frame.
+    // A restrained ANSI palette tuned for the charcoal VTE surface.
     static const char *const kPalette[16] = {
         "#1b1526", "#e06c75", "#8fcf8f", "#e5c07b", // black, red, green, yellow
         "#8f9ff0", "#c58af0", "#6fd0d8", "#cfcad8", // blue, magenta, cyan, white
@@ -201,7 +222,7 @@ void apply_terminal_style(AppState *state) {
     vte_terminal_set_colors(state->terminal, &foreground, &background, palette, 16);
 }
 
-void install_css() {
+void install_css(AppState *state) {
     // One palette, one source of truth (see UI-PRINCIPLES.md). Every colour
     // below is a named token; selectors never carry raw hex values. The window
     // and terminal share @sl_bg so the terminal does not float as a separate
@@ -212,15 +233,25 @@ void install_css() {
     // rejects the stray backslash and drops the rest of the rule.
     const char *css = R"CSS(
         @define-color sl_bg          #15101c;
+        @define-color sl_textpane_bg #fcfcfc;
+        @define-color sl_output_bg   #4b4b4b;
+        @define-color sl_output_fg   #f2f2f2;
+        @define-color sl_item_bg     #626262;
+        @define-color sl_item_fg     #ffffff;
         @define-color sl_surface     #21112f;
         @define-color sl_chrome      #24103f;
         @define-color sl_border      #7f56aa;
         @define-color sl_fg          #ffffff;
-        @define-color sl_accent      #9d6cff;
+        @define-color sl_accent      #6fa5ff;
+        @define-color sl_menu_bg     #16244f;
+        @define-color sl_menu_mid    #203b78;
+        @define-color sl_menu_edge   #4f74c8;
+        @define-color sl_menu_hover  #31569a;
+        @define-color sl_menu_active #426fc0;
 
         /* Title-bar gradient palette. The bar is no longer a flat chrome fill:
-           it sweeps left -> right through a curated sequence of the project's
-           dark-purple / blue family. These are the only places these shades are
+           the selected preset distributes this curated sequence of the project's
+           dark-purple / blue family along the horizontal or vertical axis. These are the only places these shades are
            used, so they live here as named tokens (principle 2: one palette,
            one source of truth) and are composed into .sleela-titlebar below. */
         @define-color sl_tb_deep_purple  #2a0f45;   /* deep purple        */
@@ -232,17 +263,17 @@ void install_css() {
 
         window { background: @sl_bg; }
 
-        /* Title bar: an elegant horizontal gradient (see below). The bottom
+        /* Title bar: an elegant preset-driven gradient (see assets/*.cfg). The bottom
            highlight is no longer a static border -- it is the living throbber
            strip drawn just below the bar (see .sleela-throbber and the 20Hz
            organic update). A transparent 1px border keeps the bar's height
            identical to before. */
         headerbar.sleela-titlebar {
-            /* An elegant horizontal sweep across the bar: deep purple ->
-               dark gray/black -> deep purple -> light blue -> dark blue ->
-               dark purple -> black. Stops are eased unevenly so the light-blue
-               highlight sits a little past centre and the ends settle into near
-               black, giving the bar depth without competing with the terminal
+            /* Deep purple -> dark gray/black -> deep purple -> light blue -> dark blue ->
+               dark purple -> black. The active preset determines whether the stops
+               are distributed left-to-right or top-to-bottom. Stops are eased unevenly
+               so the light-blue highlight sits a little past centre and the ends settle
+               into near black, giving the bar depth without competing with the terminal
                (principle 1). Colours are the named sl_tb_* tokens above. */
             background: linear-gradient(to right,
                 @sl_tb_deep_purple  0%,
@@ -258,8 +289,15 @@ void install_css() {
         }
         /* The throbber occupies the thin seam between the title bar and the
            terminal; its colour is painted per-frame by the draw function. */
-        drawingarea.sleela-throbber { background: @sl_chrome; min-height: 2px; }
-        headerbar.sleela-titlebar label { color: @sl_fg; font-weight: 600; }
+        drawingarea.sleela-throbber { background: #ffffff; min-height: 4px; }
+        headerbar.sleela-titlebar label {
+            color: #ffffff;
+            font-weight: 600;
+            /* GTK CSS has no portable text-stroke; eight 1px shadows create a crisp black outline. */
+            text-shadow: -1px -1px 0 #000000, 0 -1px 0 #000000, 1px -1px 0 #000000,
+                         -1px 0 0 #000000, 1px 0 0 #000000,
+                         -1px 1px 0 #000000, 0 1px 0 #000000, 1px 1px 0 #000000;
+        }
         image.sleela-titlebar-logo { margin-left: 8px; margin-right: 4px; }
         /* Window controls (close / minimize / maximize). In GTK 4 these are
            native title buttons under a `windowcontrols` node, and the symbolic
@@ -299,6 +337,32 @@ void install_css() {
         headerbar.sleela-titlebar button.titlebutton:active { background: alpha(@sl_fg, 0.42); }
         windowcontrols > button.titlebutton:focus,
         headerbar.sleela-titlebar button.titlebutton:focus { outline: 2px solid @sl_accent; outline-offset: -2px; }
+        /* Per-control mouseover highlights make the three native window actions
+           easy to distinguish. Keep the glyph white and use the shared transition
+           defined above for a restrained, quick highlight rather than a flash. */
+        windowcontrols > button.titlebutton.minimize:hover,
+        headerbar.sleela-titlebar button.titlebutton.minimize:hover {
+            background: #4f74c8;
+            border-color: #8fb4ff;
+            color: #ffffff;
+        }
+        windowcontrols > button.titlebutton.minimize:active,
+        headerbar.sleela-titlebar button.titlebutton.minimize:active {
+            background: #31569a;
+            border-color: #8fb4ff;
+        }
+        windowcontrols > button.titlebutton.maximize:hover,
+        headerbar.sleela-titlebar button.titlebutton.maximize:hover {
+            background: #238636;
+            border-color: #56d364;
+            color: #ffffff;
+        }
+        windowcontrols > button.titlebutton.maximize:active,
+        headerbar.sleela-titlebar button.titlebutton.maximize:active {
+            background: #196c2e;
+            border-color: #56d364;
+        }
+
         /* Close: a clear red resting tint, solid red on hover, glyph stays white. */
         windowcontrols > button.titlebutton.close,
         headerbar.sleela-titlebar button.titlebutton.close {
@@ -313,26 +377,32 @@ void install_css() {
             color: #ffffff;
         }
 
-        /* Settings (gear) button: a quiet, flat affordance. No resting
-           background or border -- the icon alone sits in the bar; it reveals a
-           soft tint only on hover/active. ~25% smaller than the 32px controls. */
+        /* Settings: compact blue hamburger control with a fine black outline and
+           softly rounded corners (18% radius) to match the title-bar blue. */
         headerbar.sleela-titlebar button.sleela-settings-btn {
-            color: alpha(@sl_fg, 0.82);
-            background: transparent;
-            border: none;
-            box-shadow: none;
-            min-width: 24px;
-            min-height: 24px;
-            padding: 2px;
+            color: #ffffff;
+            background: #203b78;
+            border: 1px solid #000000;
+            border-radius: 18%;
+            box-shadow: inset 0 1px 0 alpha(#ffffff, 0.28);
+            min-width: 27px;
+            min-height: 19px;
+            padding: 1px 3px;
             margin-right: 4px;
-            transition: background 120ms ease, color 120ms ease;
+            transition: background 120ms ease, box-shadow 120ms ease;
         }
         headerbar.sleela-titlebar button.sleela-settings-btn:hover {
-            color: @sl_fg;
-            background: alpha(@sl_fg, 0.12);
+            background: #31569a;
+            box-shadow: inset 0 1px 0 alpha(#ffffff, 0.36), 0 0 0 1px alpha(#000000, 0.20);
         }
-        headerbar.sleela-titlebar button.sleela-settings-btn:active { background: alpha(@sl_fg, 0.20); }
-        headerbar.sleela-titlebar button.sleela-settings-btn:focus { outline: 1px solid @sl_accent; outline-offset: -1px; }
+        headerbar.sleela-titlebar button.sleela-settings-btn:active {
+            background: #16244f;
+            box-shadow: inset 0 1px 2px alpha(#000000, 0.35);
+        }
+        headerbar.sleela-titlebar button.sleela-settings-btn:focus {
+            outline: 1px solid @sl_accent;
+            outline-offset: 1px;
+        }
 
         /* Footer: flat chrome bar matching the title bar, one hairline on top. */
         box.sleela-footer {
@@ -343,7 +413,13 @@ void install_css() {
         box.sleela-footer label { color: @sl_fg; font-weight: 600; }
         label.sleela-footer-brand { font-weight: 800; letter-spacing: 0.5px; }
         label.sleela-footer-separator { color: alpha(@sl_fg, 0.42); padding-left: 8px; padding-right: 8px; }
-        label.sleela-footer-ticker { padding-left: 8px; padding-right: 8px; }
+        label.sleela-footer-ticker, drawingarea.sleela-footer-ticker {
+            color: #b8b8b8;
+            text-shadow: -1px -1px 0 #000000, 0 -1px 0 #000000, 1px -1px 0 #000000,
+                         -1px 0 0 #000000, 1px 0 0 #000000,
+                         -1px 1px 0 #000000, 0 1px 0 #000000, 1px 1px 0 #000000;
+            padding-left: 8px; padding-right: 8px;
+        }
         button.sleela-footer-java {
             min-width: 32px; min-height: 32px; padding: 0; margin: 0 8px;
             background: transparent; border: none; box-shadow: none; border-radius: 0;
@@ -353,40 +429,147 @@ void install_css() {
         button.sleela-footer-java:focus { outline: 2px solid @sl_accent; outline-offset: -2px; }
         button.sleela-footer-java image { background: transparent; border: none; box-shadow: none; }
 
-        /* Shared surface styling for popovers and dialogs. */
-        window.sleela-installer { background: @sl_surface; color: @sl_fg; }
+        /* All interactive menus and selection surfaces share the main frame's
+           blue palette: deep-blue base, brighter blue hover, and light-blue focus.
+           This covers the Settings subframe, software popover, and terminal
+           right-click/click-select menu instead of letting GTK theme them gray. */
+        window.sleela-installer {
+            background: linear-gradient(to bottom, @sl_menu_mid, @sl_menu_bg);
+            color: @sl_fg;
+            border: 1px solid @sl_menu_edge;
+        }
         window.sleela-installer label { color: @sl_fg; }
 
-        popover.sleela-software contents { background: @sl_surface; border: 1px solid @sl_border; }
-        /* Settings is a subframe window; theme the window surface itself. */
-        window.sleela-settings { background: @sl_surface; }
-        window.sleela-settings scrolledwindow { background: @sl_surface; }
+        popover contents {
+            background: linear-gradient(to bottom, @sl_menu_mid, @sl_menu_bg);
+            color: @sl_fg;
+            border: 1px solid @sl_menu_edge;
+        }
+        popover.sleela-software contents,
+        popover.sleela-context-menu contents {
+            background: linear-gradient(to bottom, @sl_menu_mid, @sl_menu_bg);
+            color: @sl_fg;
+            border: 1px solid @sl_menu_edge;
+        }
+        popover label { color: @sl_fg; }
+
+        /* Settings is a subframe window; its whole scrollable surface matches
+           the same blue used by the main title frame. */
+        window.sleela-settings {
+            background: linear-gradient(to bottom, @sl_menu_mid, @sl_menu_bg);
+            color: @sl_fg;
+            border: 1px solid @sl_menu_edge;
+        }
+        window.sleela-settings scrolledwindow,
+        window.sleela-settings viewport { background: @sl_menu_bg; color: @sl_fg; }
 
         popover.sleela-software label,
         window.sleela-settings label { color: @sl_fg; }
         window.sleela-settings label.section { font-weight: 800; margin-top: 8px; }
 
-        popover.sleela-software button,
-        window.sleela-settings button {
+        popover button,
+        window.sleela-settings button,
+        window.sleela-installer button {
             color: @sl_fg;
-            background: alpha(@sl_fg, 0.08);
+            background: @sl_menu_bg;
+            border: 1px solid alpha(@sl_menu_edge, 0.78);
+            border-radius: 6px;
             min-width: 260px;
             min-height: 32px;
             text-align: left;
-            transition: background 120ms ease;
+            transition: background 120ms ease, border-color 120ms ease;
         }
-        popover.sleela-software button:hover,
-        window.sleela-settings button:hover { background: alpha(@sl_fg, 0.16); }
-        popover.sleela-software button:focus,
-        window.sleela-settings button:focus { outline: 2px solid @sl_accent; outline-offset: -2px; }
-        /* Keep the Close suggested-action compact, not full-width like the list. */
+        popover button:hover,
+        window.sleela-settings button:hover,
+        window.sleela-installer button:hover {
+            background: @sl_menu_hover;
+            border-color: @sl_menu_edge;
+        }
+        popover button:active,
+        window.sleela-settings button:active,
+        window.sleela-installer button:active { background: @sl_menu_active; }
+        popover button:focus,
+        window.sleela-settings button:focus,
+        window.sleela-installer button:focus {
+            outline: 2px solid @sl_menu_edge;
+            outline-offset: -2px;
+        }
+        popover checkbutton,
+        window.sleela-settings checkbutton { color: @sl_fg; }
+        /* Keep the Close suggested-action compact, with a solid frame-blue fill. */
         window.sleela-settings button.suggested-action { min-width: 88px; }
+        button.suggested-action {
+            background: @sl_menu_edge;
+            border-color: @sl_menu_edge;
+            color: @sl_fg;
+        }
+        button.suggested-action:hover { background: @sl_menu_hover; }
 
-        /* The single suggested action uses the accent; nothing else does. */
-        button.suggested-action { background: @sl_accent; color: @sl_fg; }
-        button.suggested-action:hover { background: shade(@sl_accent, 1.12); }
-
-        textview.sleela-scan-output { color: @sl_fg; background: @sl_bg; }
+        /* The near-white workspace frames one rounded charcoal interactive
+           terminal surface. All VTE output shares the same base palette, while
+           ANSI styling remains available for semantic emphasis. A distinct
+           rounded panel for each completed command would require separating
+           arbitrary PTY output from the interactive stream and is not simulated
+           by this container. */
+        box.sleela-workspace {
+            background: @sl_textpane_bg;
+        }
+        overlay.sleela-terminal-panel {
+            background: @sl_output_bg;
+            border: 1px solid #383838;
+            border-radius: 12px;
+            padding: 10px;
+            margin: 12px;
+        }
+        vte-terminal {
+            color: @sl_output_fg;
+            background: @sl_output_bg;
+            border-radius: 8px;
+        }
+        window .sleela-file-browser {
+            color: #f2f2f2;
+            background: #4b4b4b;
+        }
+        .sleela-file-browser entry {
+            color: #ffffff;
+            background: #383838;
+            border: 1px solid #777777;
+            border-radius: 8px;
+            padding: 8px 10px;
+        }
+        .sleela-file-browser button.sleela-file-item {
+            color: #ffffff;
+            background: #626262;
+            border: 1px solid #777777;
+            border-radius: 10px;
+            padding: 8px 10px;
+            min-height: 30px;
+            transition: background 120ms ease, border-color 120ms ease;
+        }
+        .sleela-file-browser button.sleela-file-directory {
+            background: #6a5b7d;
+            border-color: #8b79a0;
+        }
+        .sleela-file-browser button.sleela-file-item:hover {
+            background: #777777;
+            border-color: #aaaaaa;
+        }
+        .sleela-file-browser button.sleela-file-directory:hover {
+            background: #7b6a91;
+        }
+        .sleela-file-browser button.sleela-file-parent,
+        .sleela-file-browser button {
+            border-radius: 8px;
+        }
+        textview.sleela-scan-output {
+            color: @sl_output_fg;
+            background: @sl_output_bg;
+            caret-color: @sl_output_fg;
+        }
+        textview.sleela-scan-output text {
+            color: @sl_output_fg;
+            background-color: @sl_output_bg;
+        }
 
         /* Secondary / explanatory notes: one dim colour, slightly smaller. */
         label.sleela-software-note,
@@ -396,8 +579,79 @@ void install_css() {
         }
     )CSS";
 
+    // Load the active title-bar gradient preset. GRADIENT.cfg selects either
+    // HORIZONTAL.cfg or VERTICAL.cfg; each preset carries the same palette and
+    // stop positions, changing only the gradient axis.
+    std::string active_preset = "VERTICAL.cfg";
+    {
+        std::ifstream selector(asset_path(state, "GRADIENT.cfg"));
+        std::string line;
+        while (std::getline(selector, line)) {
+            if (line.rfind("active=", 0) == 0) {
+                const std::string candidate = line.substr(7);
+                if (candidate == "HORIZONTAL.cfg" || candidate == "VERTICAL.cfg")
+                    active_preset = candidate;
+            }
+        }
+    }
+    std::string gradient_direction = "to bottom";
+    std::string gradient_stops;
+    {
+        std::ifstream preset(asset_path(state, active_preset.c_str()));
+        std::string line;
+        while (std::getline(preset, line)) {
+            if (line.rfind("direction=", 0) == 0) {
+                const std::string candidate = line.substr(10);
+                if (candidate == "to right" || candidate == "to bottom")
+                    gradient_direction = candidate;
+            } else if (line.rfind("stops=", 0) == 0) {
+                gradient_stops = line.substr(6);
+            }
+        }
+    }
+    std::string css_text(css);
+    // The preset's stop list is authoritative, not just its orientation.
+    // This keeps the horizontal reference palette intact while allowing the
+    // active vertical preset to use the new navy / silver bevel treatment.
+    if (!gradient_stops.empty()) {
+        std::string gradient = "linear-gradient(" + gradient_direction + ",";
+        std::size_t start = 0;
+        while (start < gradient_stops.size()) {
+            const std::size_t comma = gradient_stops.find(',', start);
+            const std::string stop = gradient_stops.substr(
+                start, comma == std::string::npos ? std::string::npos : comma - start);
+            const std::size_t colon = stop.find(':');
+            if (colon != std::string::npos) {
+                const std::string position = stop.substr(0, colon);
+                const std::string color = stop.substr(colon + 1);
+                try {
+                    const int percent = std::stoi(position);
+                    if (percent >= 0 && percent <= 100 &&
+                        color.size() == 7 && color[0] == '#') {
+                        gradient += " " + color + " " + std::to_string(percent) + "%,";
+                    }
+                } catch (...) {
+                    // Ignore malformed stop entries and keep valid ones.
+                }
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        if (gradient.back() == ',') {
+            gradient.back() = ')';
+            const std::string gradient_anchor = "background: linear-gradient(to right,";
+            const auto gradient_pos = css_text.find(gradient_anchor);
+            if (gradient_pos != std::string::npos) {
+                const auto end_pos = css_text.find(';', gradient_pos);
+                if (end_pos != std::string::npos)
+                    css_text.replace(gradient_pos, end_pos - gradient_pos,
+                                     "background: " + gradient);
+            }
+        }
+    }
+
     GtkCssProvider *provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(provider, css);
+    gtk_css_provider_load_from_string(provider, css_text.c_str());
     // Use USER priority (above the system theme) so our window-control and
     // chrome rules actually win over the installed GTK theme -- at APPLICATION
     // priority the theme's more specific `windowcontrols` selectors override
@@ -468,29 +722,89 @@ void make_settings_menu(AppState *state, GtkWidget *settings_button_widget) {
     gtk_widget_set_halign(title, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(box), title);
 
+    GtkWidget *footer_section = gtk_label_new("Footer ticker");
+    gtk_widget_add_css_class(footer_section, "section");
+    gtk_widget_set_halign(footer_section, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), footer_section);
+    GtkWidget *footer_delay_note = gtk_label_new("Start rightward scrolling after:");
+    gtk_widget_set_halign(footer_delay_note, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), footer_delay_note);
+    const unsigned footer_delays[] = {5, 10, 15, 30, 45, 60};
+    for (unsigned delay : footer_delays) {
+        const std::string label = std::to_string(delay) + " minutes";
+        GtkWidget *button = gtk_button_new_with_label(label.c_str());
+        g_object_set_data(G_OBJECT(button), "sleela-delay", GUINT_TO_POINTER(delay));
+        if (delay == state->config.footer_scroll_delay_minutes) gtk_widget_add_css_class(button, "suggested-action");
+        g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton *button, gpointer data) {
+            auto *state = static_cast<AppState *>(data);
+            state->config.footer_scroll_delay_minutes = std::clamp(GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(button), "sleela-delay")), 5u, 60u);
+            state->footer_position = 0; state->footer_text_changed_us = g_get_monotonic_time(); save_config(state->config);
+        }), state);
+        gtk_box_append(GTK_BOX(box), button);
+    }
+
     GtkWidget *appearance = gtk_label_new("Presentation");
     gtk_widget_add_css_class(appearance, "section");
     gtk_widget_set_halign(appearance, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(box), appearance);
 
-    struct FontChoice { const char *label; const char *value; };
-    static const FontChoice fonts[] = {
-        {"Monospace 10", "Monospace 10"},
-        {"Monospace 11", "Monospace 11"},
-        {"Monospace 12", "Monospace 12"},
-        {"Sans 11", "Sans 11"},
-        {"Serif 11", "Serif 11"}
-    };
-    for (const auto &choice : fonts) {
-        GtkWidget *button = gtk_button_new_with_label(choice.label);
-        g_object_set_data_full(G_OBJECT(button), "sleela-value", g_strdup(choice.value), g_free);
+    GtkWidget *font_status = gtk_label_new("Installed monospaced fonts");
+    gtk_widget_set_halign(font_status, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), font_status);
+
+    // Only offer font families reported by the active OS/Pango font backend.
+    PangoFontMap *font_map = pango_cairo_font_map_get_default();
+    PangoFontFamily **families = nullptr;
+    int family_count = 0;
+    pango_font_map_list_families(font_map, &families, &family_count);
+    std::vector<std::string> installed_monospace;
+    for (int i = 0; i < family_count; ++i) {
+        if (pango_font_family_is_monospace(families[i])) {
+            const char *name = pango_font_family_get_name(families[i]);
+            if (name && *name) installed_monospace.emplace_back(name);
+        }
+    }
+    g_free(families);
+    std::sort(installed_monospace.begin(), installed_monospace.end());
+    installed_monospace.erase(std::unique(installed_monospace.begin(), installed_monospace.end()),
+                              installed_monospace.end());
+
+    for (const auto &family : installed_monospace) {
+        GtkWidget *button = gtk_button_new_with_label((family + " 11").c_str());
+        const std::string value = family + " 11";
+        g_object_set_data_full(G_OBJECT(button), "sleela-value", g_strdup(value.c_str()), g_free);
         g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton *button, gpointer data) {
             auto *state = static_cast<AppState *>(data);
             set_font(state, static_cast<const char *>(g_object_get_data(G_OBJECT(button), "sleela-value")));
         }), state);
         gtk_box_append(GTK_BOX(box), button);
     }
+    if (installed_monospace.empty()) {
+        GtkWidget *button = gtk_button_new_with_label("Monospace 11 (system fallback)");
+        g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton *, gpointer data) {
+            set_font(static_cast<AppState *>(data), "Monospace 11");
+        }), state);
+        gtk_box_append(GTK_BOX(box), button);
+    }
 
+    GtkWidget *size_label = gtk_label_new("Font size");
+    gtk_widget_set_halign(size_label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), size_label);
+    const char *font_sizes[] = {"10", "11", "12", "14", "16"};
+    for (const char *size : font_sizes) {
+        GtkWidget *button = gtk_button_new_with_label(size);
+        g_object_set_data_full(G_OBJECT(button), "sleela-size", g_strdup(size), g_free);
+        g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton *button, gpointer data) {
+            auto *state = static_cast<AppState *>(data);
+            const char *size = static_cast<const char *>(g_object_get_data(G_OBJECT(button), "sleela-size"));
+            PangoFontDescription *current = pango_font_description_from_string(state->config.font.c_str());
+            const char *family = pango_font_description_get_family(current);
+            std::string selected = std::string(family && *family ? family : "Monospace") + " " + size;
+            pango_font_description_free(current);
+            set_font(state, selected.c_str());
+        }), state);
+        gtk_box_append(GTK_BOX(box), button);
+    }
     struct ColorChoice { const char *label; const char *value; };
     static const ColorChoice colors[] = {
         {"Font: White", "#FFFFFF"},
@@ -655,6 +969,7 @@ void make_software_menu(AppState *state, GtkWidget *anchor) {
 
 void show_install_prompt(AppState *state, GtkWidget *, const char *product, const char *display_name) {
     GtkWidget *dialog = gtk_window_new();
+    gtk_widget_add_css_class(dialog, "sleela-installer");
     gtk_window_set_title(GTK_WINDOW(dialog), "SleelaTerminal — Java Installer");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 300);
     gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
@@ -703,6 +1018,7 @@ void show_install_prompt(AppState *state, GtkWidget *, const char *product, cons
     g_signal_connect_data(yes, "clicked", G_CALLBACK(+[](GtkButton *, gpointer data) {
         auto *p = static_cast<InstallPayload *>(data);
         GtkWidget *result_window = gtk_window_new();
+        gtk_widget_add_css_class(result_window, "sleela-installer");
         gtk_window_set_title(GTK_WINDOW(result_window), "SleelaTerminal — Installer Output");
         gtk_window_set_default_size(GTK_WINDOW(result_window), 620, 360);
         gtk_window_set_modal(GTK_WINDOW(result_window), TRUE);
@@ -785,6 +1101,7 @@ void terminal_clear_selection(GtkWidget *, gpointer user_data) { vte_terminal_un
 void terminal_mouse_menu(GtkGestureClick *gesture, int, double, double, gpointer user_data) {
     auto *terminal = VTE_TERMINAL(user_data);
     GtkPopover *popover = GTK_POPOVER(gtk_popover_new());
+    gtk_widget_add_css_class(GTK_WIDGET(popover), "sleela-context-menu");
     gtk_widget_set_parent(GTK_WIDGET(popover), GTK_WIDGET(terminal));
     gtk_popover_set_has_arrow(popover, TRUE);
 
@@ -836,6 +1153,201 @@ void terminal_mouse_menu(GtkGestureClick *gesture, int, double, double, gpointer
     gtk_popover_popup(popover);
 }
 
+
+std::string readFooterbarTopics() {
+    const char *xdg = std::getenv("XDG_CONFIG_HOME");
+    const char *home = std::getenv("HOME");
+    std::filesystem::path base = (xdg && *xdg) ? xdg :
+        ((home && *home) ? (std::filesystem::path(home) / ".config").string() : ".config");
+    std::ifstream in(base / "sleela" / "footerbar-topics.conf");
+    std::string topic, joined;
+    while (in >> topic) {
+        if (!joined.empty()) joined += " OR ";
+        joined += topic;
+    }
+    return joined;
+}
+
+void set_footer_text(AppState *state, const std::string &value) {
+    if (!state || state->footer_full_text == value) return;
+    state->footer_full_text = value; state->footer_position = 0; state->footer_text_changed_us = g_get_monotonic_time();
+    state->footer_position = 0;
+    if (state->footer_text) gtk_widget_queue_draw(state->footer_text);
+}
+
+std::string cleanFeedTitle(std::string value) {
+    if (value.size() >= 12 && value.compare(0, 9, "<![CDATA[") == 0 &&
+        value.compare(value.size() - 3, 3, "]]>") == 0)
+        value = value.substr(9, value.size() - 12);
+    const std::pair<const char*, const char*> entities[] = {
+        {"&amp;", "&"}, {"&quot;", "\""}, {"&#39;", "'"}, {"&apos;", "'"},
+        {"&lt;", "<"}, {"&gt;", ">"}
+    };
+    for (const auto &entity : entities) {
+        std::size_t pos = 0;
+        const auto length = std::char_traits<char>::length(entity.first);
+        while ((pos = value.find(entity.first, pos)) != std::string::npos) {
+            value.replace(pos, length, entity.second);
+            pos += std::char_traits<char>::length(entity.second);
+        }
+    }
+    std::replace(value.begin(), value.end(), '\n', ' ');
+    std::replace(value.begin(), value.end(), '\r', ' ');
+    return value;
+}
+
+void footer_feed_worker(GTask *task, gpointer, gpointer task_data, GCancellable *) {
+    const std::string topics = static_cast<const char *>(task_data);
+    const std::string fresh_query = topics + " when:1d";
+    gchar *escaped = g_uri_escape_string(fresh_query.c_str(), nullptr, FALSE);
+    const std::string query = "https://news.google.com/rss/search?q=" +
+        std::string(escaped ? escaped : "") + "&hl=en-US&gl=US&ceid=US:en";
+    g_free(escaped);
+    gchar *argv[] = {const_cast<gchar *>("curl"), const_cast<gchar *>("-fsSL"),
+        const_cast<gchar *>("--max-time"), const_cast<gchar *>("12"),
+        const_cast<gchar *>(query.c_str()), nullptr};
+    gchar *stdout_text = nullptr, *stderr_text = nullptr;
+    gint wait_status = 0;
+    GError *error = nullptr;
+    const gboolean spawned = g_spawn_sync(nullptr, argv, nullptr, G_SPAWN_SEARCH_PATH,
+        nullptr, nullptr, &stdout_text, &stderr_text, &wait_status, &error);
+    std::string headline;
+    if (spawned && g_spawn_check_wait_status(wait_status, nullptr) && stdout_text) {
+        const std::string xml(stdout_text);
+        const std::regex item_title("<item[^>]*>[\\s\\S]*?<title[^>]*>([\\s\\S]*?)</title>", std::regex::icase);
+        unsigned headline_count = 0;
+        for (std::sregex_iterator it(xml.begin(), xml.end(), item_title), end; it != end && headline_count < 8; ++it, ++headline_count) {
+            const std::string title = cleanFeedTitle((*it)[1].str());
+            if (title.empty()) continue;
+            if (!headline.empty()) headline += "   •   ";
+            headline += title;
+        }
+    }
+    if (headline.empty()) headline = "No current headlines returned; check network access and curl";
+    g_free(stdout_text);
+    g_free(stderr_text);
+    if (error) g_error_free(error);
+    g_task_return_pointer(task, g_strdup(headline.c_str()), g_free);
+}
+
+void footer_feed_finished(GObject *source, GAsyncResult *result, gpointer user_data) {
+    (void)source;
+    auto *state = static_cast<AppState *>(user_data);
+    GError *error = nullptr;
+    gchar *headline = static_cast<gchar *>(g_task_propagate_pointer(G_TASK(result), &error));
+    state->feed_fetching = false;
+    if (state->footer_text != nullptr) {
+        if (headline) {
+            const std::string display = "RSS  •  " + state->feed_topics_signature + "  —  " + headline;
+            set_footer_text(state, display);
+        } else if (error) {
+            set_footer_text(state, "RSS feed unavailable");
+        }
+    }
+    if (headline) g_free(headline);
+    if (error) g_error_free(error);
+}
+
+gboolean footer_feed_tick(gpointer user_data);
+
+void footer_ticker_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
+    auto *state = static_cast<AppState *>(user_data);
+    if (!state || state->footer_full_text.empty() || width <= 0 || height <= 0) return;
+    PangoLayout *layout = pango_cairo_create_layout(cr);
+    PangoFontDescription *font = pango_font_description_from_string("Sans Bold 10");
+    pango_layout_set_font_description(layout, font);
+    pango_layout_set_text(layout, state->footer_full_text.c_str(), -1);
+    int text_width = 0, text_height = 0;
+    pango_layout_get_pixel_size(layout, &text_width, &text_height);
+    const gint64 now = g_get_monotonic_time();
+    const gint64 delay = static_cast<gint64>(state->config.footer_scroll_delay_minutes) * 60 * G_USEC_PER_SEC;
+    const bool scrolling = state->footer_text_changed_us != 0 &&
+        now - state->footer_text_changed_us >= delay;
+    // Show one copy at the left during the pause. Then it travels right and
+    // fully exits; only after it has gone does that same single line re-enter
+    // from the left. There is never a second, duplicated copy on screen.
+    double x = 0.0;
+    double alpha = 1.0;
+    if (scrolling) {
+        const double cycle = static_cast<double>(std::max(1, width + text_width));
+        const double phase = std::fmod(static_cast<double>(state->footer_position), cycle);
+        x = phase < width ? phase : -static_cast<double>(text_width) + (phase - width);
+        // Fade only as the line leaves the right edge.
+        const double fade_start = static_cast<double>(width) * 0.55;
+        if (x > fade_start) {
+            alpha = std::clamp((static_cast<double>(width) - x) /
+                               std::max(1.0, static_cast<double>(width) - fade_start), 0.0, 1.0);
+        }
+    }
+    const double y = std::max(0.0, (height - text_height) / 2.0);
+    cairo_save(cr);
+    cairo_rectangle(cr, 0, 0, width, height);
+    cairo_clip(cr);
+    // Draw a crisp 1px black outline around the grey ticker lettering.
+    const double outline[][2] = {{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}};
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, alpha);
+    for (const auto &offset : outline) {
+        cairo_move_to(cr, x + offset[0], y + offset[1]);
+        pango_cairo_show_layout(cr, layout);
+    }
+    cairo_set_source_rgba(cr, 0.72, 0.72, 0.72, alpha);
+    cairo_move_to(cr, x, y);
+    pango_cairo_show_layout(cr, layout);
+    cairo_restore(cr);
+    pango_font_description_free(font);
+    g_object_unref(layout);
+    (void)area;
+}
+
+gboolean footer_scroll_tick(gpointer user_data) {
+    auto *state = static_cast<AppState *>(user_data);
+    if (!state->footer_text || state->footer_full_text.empty()) return G_SOURCE_CONTINUE;
+    const gint64 now = g_get_monotonic_time();
+    const gint64 delay = static_cast<gint64>(state->config.footer_scroll_delay_minutes) * 60 * G_USEC_PER_SEC;
+    if (state->footer_text_changed_us != 0 && now - state->footer_text_changed_us >= delay) {
+        // Approx. 13 px/s at the 150ms cadence. Keep advancing through one
+        // complete cycle: the line exits right, then re-enters from the left.
+        // Modulo positioning in the draw callback guarantees a single copy.
+        state->footer_position += 2;
+        gtk_widget_queue_draw(state->footer_text);
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+gboolean footer_feed_tick(gpointer user_data) {
+    auto *state = static_cast<AppState *>(user_data);
+    const std::string topics = readFooterbarTopics();
+    if (topics.empty()) {
+        state->feed_topics_signature.clear();
+        if (state->footer_text != nullptr)
+            set_footer_text(state, "Secure Shell Interface  •  Interactive session");
+        return G_SOURCE_CONTINUE;
+    }
+    const gint64 now = g_get_monotonic_time();
+    if (topics != state->feed_topics_signature) {
+        state->feed_topics_signature = topics;
+        state->feed_last_fetch = 0;
+    }
+    if (!state->feed_fetching && (state->feed_last_fetch == 0 ||
+        now - state->feed_last_fetch >= ([&]() {
+            GDateTime *local = g_date_time_new_now_local(); const int hour = local ? g_date_time_get_hour(local) : 12;
+            if (local) g_date_time_unref(local);
+            return (hour >= 9 && hour < 17 ? 15LL : 60LL) * 60 * G_USEC_PER_SEC;
+        })())) {
+        state->feed_fetching = true;
+        state->feed_last_fetch = now;
+        GTask *task = g_task_new(nullptr, nullptr, footer_feed_finished, state);
+        g_task_set_task_data(task, g_strdup(topics.c_str()), g_free);
+        g_task_run_in_thread(task, footer_feed_worker);
+        g_object_unref(task);
+        if (state->footer_text != nullptr) {
+            const std::string display = "RSS  •  " + topics + "  —  loading headlines…";
+            set_footer_text(state, display);
+        }
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 const std::vector<std::string> &footer_messages() {
     // A single, static status line. The footer is a calm frame, not a ticker:
     // moving text competes with terminal output. See UI-PRINCIPLES.md (6).
@@ -851,11 +1363,13 @@ void child_exited(VteTerminal *, int, gpointer user_data) {
         g_source_remove(state->footer_tick);
         state->footer_tick = 0;
     }
-    if (state->throbber_tick != 0) {
-        g_source_remove(state->throbber_tick);
+    if (state->footer_scroll_tick != 0) { g_source_remove(state->footer_scroll_tick); state->footer_scroll_tick = 0; }
+    if (state->throbber_tick != 0 && state->throbber != nullptr) {
+        gtk_widget_remove_tick_callback(state->throbber, state->throbber_tick);
         state->throbber_tick = 0;
     }
     state->throbber = nullptr;
+    state->footer_text = nullptr;
     state->child_pid = 0;
     if (state->window != nullptr) {
         GtkApplication *application = gtk_window_get_application(state->window);
@@ -885,11 +1399,13 @@ gboolean window_close_request(GtkWindow *window, gpointer user_data) {
         g_source_remove(state->footer_tick);
         state->footer_tick = 0;
     }
-    if (state->throbber_tick != 0) {
-        g_source_remove(state->throbber_tick);
+    if (state->footer_scroll_tick != 0) { g_source_remove(state->footer_scroll_tick); state->footer_scroll_tick = 0; }
+    if (state->throbber_tick != 0 && state->throbber != nullptr) {
+        gtk_widget_remove_tick_callback(state->throbber, state->throbber_tick);
         state->throbber_tick = 0;
     }
     state->throbber = nullptr;
+    state->footer_text = nullptr;
     gtk_window_destroy(window);
     g_application_quit(G_APPLICATION(gtk_window_get_application(window)));
     return TRUE;
@@ -905,76 +1421,81 @@ void throbber_draw(GtkDrawingArea *, cairo_t *cr, int width, int height, gpointe
     if (width <= 0 || height <= 0) return;
     state->throbber_w = width;
 
-    // At rest the strip IS the title bar: the resting shade equals the chrome
-    // colour (@sl_chrome #24103f). Excitations move a column, relative to that
-    // chrome base, toward a darker purple or an airy light blue -- so the seam
-    // reads as the title-bar colour coming alive, not a separate band.
-    //   dark ~ #190b2c    rest(chrome) ~ #24103f    light ~ #a9dcff
-    auto mix = [](double c0, double c1, double k) { return c0 + (c1 - c0) * k; };
-    const double rest_r = 0.141, rest_g = 0.063, rest_b = 0.247; // #24103f
+    // The rail is exactly four pixels tall: use a clean white base and compact,
+    // monochrome moving glyphs. All geometry is clipped to the rail so no
+    // triangle rotation or circle stroke can increase its layout height.
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_paint(cr);
+    cairo_save(cr);
+    cairo_rectangle(cr, 0, 0, width, height);
+    cairo_clip(cr);
 
-    // Strong-amplification colour: only when the wattage field is driven hard
-    // (~18/20) do latent hues (orange/green/blue/red) surface. This ramps from
-    // 0 below ~0.80 amp to full by ~0.95, so normal operation stays on-brand.
-    const double amp = state->throbber_amp;
-    const double colour_gate = std::max(0.0, (amp - 0.80) / 0.15); // 0..1
-    const double colour_gate_c = colour_gate > 1.0 ? 1.0 : colour_gate;
+    const double t = state->throbber_t;
+    const double mid_y = height * 0.5;
+    for (const auto &c : state->throbber_cells) {
+        if (!c.alive || c.intensity < 0.015) continue;
+        const double x = c.x;
+        // Enlarge the silhouettes as much as the 4px rail permits. A faint
+        // gray offset edge supplies depth against the white rail; the object
+        // itself and its principal outline remain white.
+        const double r = std::clamp(1.75 + c.base_intensity * 0.20, 1.75, 1.95);
+        const double fade = std::clamp(c.intensity * 2.0, 0.0, 1.0);
+        cairo_set_line_width(cr, 0.9);
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
 
-    for (int x = 0; x < width; ++x) {
-        const double px = x + 0.5;
+        // Keep the shapes nearly level: only a small angular wobble is allowed
+        // because the entire rail is 4px high.
+        const double angle = 0.10 * std::sin(t * 1.1 + c.phase);
+        cairo_save(cr);
+        cairo_translate(cr, x, mid_y);
+        cairo_rotate(cr, angle);
 
-        // Accumulate the scalar field (how far this column departs from rest)
-        // and, separately, the hue weighted by each tinted cell's contribution.
-        double f = 0.0;
-        double hr = 0.0, hg = 0.0, hb = 0.0, hw = 0.0;
-        for (const auto &c : state->throbber_cells) {
-            if (!c.alive) continue;
-            double dx = px - c.x;
-            // Asymmetric width: trailing (left) side longer -> comet tail that
-            // points back the way it came, reinforcing left->right flow.
-            double s = (dx < 0.0) ? c.sigma * 1.6 : c.sigma * 0.8;
-            if (s < 0.5) s = 0.5;
-            double e = dx / s;
-            double bump = std::exp(-0.5 * e * e);
-            double flick = 0.85 + 0.15 * std::sin(state->throbber_t * 6.0 + c.phase);
-            double contrib = c.intensity * bump * flick;
-            f += contrib;
-            if (c.tinted) { hr += c.tr * contrib; hg += c.tg * contrib; hb += c.tb * contrib; hw += contrib; }
-        }
-        f *= (0.5 + 0.9 * amp);
-        if (f > 1.2) f = 1.2;
+        // First paint a tiny offset gray contact shadow, then the white body
+        // and white outline. The offset is sub-pixel and the rotation is tiny,
+        // giving a raised/3D read without adding vertical movement.
+        auto shape_path = [&](double dx, double dy) {
+            if (c.shape == 0) {
+                cairo_arc(cr, dx, dy, r, 0.0, 6.283185307179586);
+            } else if (c.shape == 1) {
+                cairo_move_to(cr, dx, dy - r);
+                cairo_line_to(cr, dx + r * 1.05, dy + r * 0.78);
+                cairo_line_to(cr, dx - r * 1.05, dy + r * 0.78);
+                cairo_close_path(cr);
+            } else {
+                const double half_w = r * 1.40;
+                const double half_h = 1.15;
+                cairo_rectangle(cr, dx - half_w, dy - half_h, half_w * 2.0, half_h * 2.0);
+            }
+        };
+        shape_path(0.0, 0.35);
+        cairo_set_source_rgba(cr, 0.55, 0.55, 0.55, 0.70 * fade);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgba(cr, 0.62, 0.62, 0.62, 0.75 * fade);
+        cairo_set_line_width(cr, 0.55);
+        cairo_stroke(cr);
 
-        // Relative shade of the chrome base.
-        double k = f;
-        double r, g, b;
-        if (k >= 0.0) {
-            double kk = k > 1.0 ? 1.0 : k;
-            r = mix(rest_r, 0.663, kk);   // chrome -> #a9dcff
-            g = mix(rest_g, 0.863, kk);
-            b = mix(rest_b, 1.000, kk);
+        shape_path(0.0, 0.0);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, fade);
+        cairo_fill_preserve(cr);
+        cairo_set_line_width(cr, 0.8);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, fade);
+        cairo_stroke(cr);
+
+        // A narrow silver-gray lower rim and white upper glint make each
+        // white-on-white particle read as a small polished 3D object.
+        cairo_set_source_rgba(cr, 0.68, 0.68, 0.68, 0.85 * fade);
+        cairo_set_line_width(cr, 0.45);
+        if (c.shape == 0) {
+            cairo_arc(cr, 0.0, 0.0, r * 0.72, 0.15, 2.75);
+            cairo_stroke(cr);
         } else {
-            double kk = -k; if (kk > 1.0) kk = 1.0;
-            r = mix(rest_r, 0.098, kk);   // chrome -> #190b2c
-            g = mix(rest_g, 0.043, kk);
-            b = mix(rest_b, 0.173, kk);
+            shape_path(0.0, 0.0);
+            cairo_stroke(cr);
         }
-
-        // Under strong amplification, bend bright columns toward the local hue.
-        if (colour_gate_c > 0.0 && hw > 0.0 && k > 0.0) {
-            double thr = (hr / hw), tg2 = (hg / hw), tb2 = (hb / hw);
-            double w = colour_gate_c * std::min(1.0, k);  // only where it's bright
-            r = mix(r, thr, w);
-            g = mix(g, tg2, w);
-            b = mix(b, tb2, w);
-        }
-
-        r = std::clamp(r, 0.0, 1.0);
-        g = std::clamp(g, 0.0, 1.0);
-        b = std::clamp(b, 0.0, 1.0);
-        cairo_set_source_rgb(cr, r, g, b);
-        cairo_rectangle(cr, x, 0, 1, height);
-        cairo_fill(cr);
+        cairo_restore(cr);
     }
+    cairo_restore(cr);
 }
 
 // Spawn a fresh excitation. Birth position spans the whole 0-100% of the strip
@@ -982,68 +1503,92 @@ void throbber_draw(GtkDrawingArea *, cairo_t *cr, int width, int height, gpointe
 // left->right feed), but a share are born anywhere across 0-100% and simply
 // fade in at that spot (intensity eases up from 0). Either way the pulse then
 // travels left->right all the way through to 100%.
+// Paint a restrained, diffuse reflection of the title-bar throbber into the
+// terminal pane. The overlay is non-interactive, so terminal input and selection
+// remain owned by VTE. Keep alpha low so text contrast remains the priority.
+void terminal_glow_draw(GtkDrawingArea *, cairo_t *cr, int width, int height, gpointer user_data) {
+    auto *state = static_cast<AppState *>(user_data);
+    if (width <= 0 || height <= 0 || state->throbber_w <= 0) return;
+
+    const double pane_scale = static_cast<double>(width) / state->throbber_w;
+    for (const auto &c : state->throbber_cells) {
+        // The white rail is deliberately not reflected onto the text pane.
+        // Only explicitly coloured cells cast light into the terminal.
+        if (!c.alive || !c.tinted || c.intensity < 0.008) continue;
+        const double x = c.x * pane_scale;
+        const double sigma = std::max(14.0, c.sigma * 2.8 * pane_scale);
+        const double visual_width = std::max(1.0, c.sigma * 2.4);
+        const double width_energy = std::clamp(visual_width / 50.0, 0.35, 2.8);
+        const double colour_gate = std::clamp((state->throbber_amp - 0.80) / 0.15, 0.0, 1.0);
+        const double strength = std::clamp(
+            c.intensity * colour_gate * 0.12 * width_energy, 0.0, 0.12);
+        if (strength < 0.001) continue;
+
+        cairo_pattern_t *glow = cairo_pattern_create_radial(x, 0.0, 1.0, x, 0.0, sigma);
+        cairo_pattern_add_color_stop_rgba(glow, 0.0, c.tr, c.tg, c.tb, strength);
+        cairo_pattern_add_color_stop_rgba(glow, 1.0, c.tr, c.tg, c.tb, 0.0);
+        cairo_rectangle(cr, 0, 0, width,
+                        std::min(height, static_cast<int>(std::ceil(sigma))));
+        cairo_set_source(cr, glow);
+        cairo_fill(cr);
+        cairo_pattern_destroy(glow);
+    }
+}
+
 void throbber_spawn(AppState *state, int W) {
     ThrobberCell c;
     c.alive = true;
 
-    // Birth position: odds favour starting around 35% of the width, so the
-    // flow then does most of its pulsing through the central sweet spot before
-    // fading by ~65%. A minority still enter from the left edge (keeping the
-    // left->right feed) or appear elsewhere, but the bulk cluster near 0.35W.
+    // Mostly enter from the left and travel across the rail; a smaller share
+    // starts mid-rail so the animation has depth without losing its direction.
     const double roll = g_random_double();
-    if (roll < 0.65) {
-        // cluster around 35% with a modest spread (approx normal via two rolls)
-        double gauss = (g_random_double() + g_random_double() - 1.0); // ~[-1,1], centre-weighted
-        double frac = 0.35 + gauss * 0.12;                            // mostly 0.23..0.47
-        if (frac < 0.0) frac = 0.0;
-        if (frac > 1.0) frac = 1.0;
-        c.x = frac * W;
-    } else if (roll < 0.85) {
-        c.x = -4.0 + g_random_double() * 6.0;        // enter from just off the left
+    if (roll < 0.72) {
+        c.x = -3.0 + g_random_double() * 2.0;
+    } else if (roll < 0.90) {
+        c.x = g_random_double() * W;
     } else {
-        c.x = g_random_double() * W;                 // occasional anywhere in 0-100%
+        c.x = W * (0.20 + g_random_double() * 0.25);
     }
 
-    // Varied speed: some children glide, some race. Wider spread so the field
-    // reads as many independent reflexes rather than a uniform conveyor.
-    c.v = 14.0 + g_random_double() * g_random_double() * 150.0; // skewed: mostly slow, a few fast
+    // Keep the particles moving at a fairly even horizontal pace. Small
+    // per-particle variation adds life without making the strip look erratic.
+    c.v = 26.0 + g_random_double() * 12.0;
     c.a = 0.0;
     c.j = 0.0;
-    c.base_intensity = 0.35 + g_random_double() * 0.6; // relative shade strength
-    c.intensity = 0.0;                                  // eases up from birth (fade-in)
+    c.base_intensity = 0.80 + g_random_double() * 0.20;
+    c.intensity = 0.0;
     c.energy = 1.0;
-    c.sigma = 6.0 + g_random_double() * 14.0;        // glow half-width
-    c.speed_mul = 0.45 + g_random_double() * g_random_double() * 2.6; // 0.45..~3x, skewed slow
+    c.sigma = 1.0 + g_random_double() * 0.7;
+    c.speed_mul = 0.85 + g_random_double() * 0.30;
+    c.shape = g_random_int_range(0, 3);
+    c.outline_only = false;
     c.phase = g_random_double() * 6.2831853;
     // 1 in 30 children may pause or run right->left for 20-50 px.
     c.retro = (g_random_int_range(0, 30) == 0);
     c.retro_px = c.retro ? (20.0 + g_random_double() * 30.0) : 0.0;
 
-    // Each child carries a latent hue (orange / green / blue / red). It stays
-    // dormant at normal wattage and only surfaces under strong amplification
-    // (see throbber_draw). Give most children a hue so colour can appear when
-    // the field is driven hard.
-    static const double hues[4][3] = {
-        {1.00, 0.55, 0.10},  // orange
-        {0.20, 0.85, 0.35},  // green
-        {0.30, 0.60, 1.00},  // blue
-        {1.00, 0.25, 0.25},  // red
-    };
-    c.tinted = (g_random_double() < 0.75);
-    if (c.tinted) {
-        const int h = g_random_int_range(0, 4);
-        c.tr = hues[h][0]; c.tg = hues[h][1]; c.tb = hues[h][2];
-    }
+    // This effect is intentionally monochrome: no coloured spill or terminal glow.
+    c.tinted = false;
 
     state->throbber_cells.push_back(c);
 }
 
-// 20 Hz update of the living field.
-gboolean throbber_tick(gpointer user_data) {
+// Frame-clock-driven update: GTK calls this on the UI thread at display cadence.
+// Simulate at up to ~30 updates/second, skip redundant refreshes on 60/120/144 Hz
+// displays, and clamp long pauses (minimize, debugger stop, scheduling delay).
+gboolean throbber_tick(GtkWidget *, GdkFrameClock *frame_clock, gpointer user_data) {
     auto *state = static_cast<AppState *>(user_data);
     if (state->throbber == nullptr) return G_SOURCE_REMOVE;
 
-    const double dt = 1.0 / 20.0;
+    const gint64 frame_us = gdk_frame_clock_get_frame_time(frame_clock);
+    if (state->throbber_last_frame_us == 0) {
+        state->throbber_last_frame_us = frame_us;
+        return G_SOURCE_CONTINUE;
+    }
+    const gint64 elapsed_us = frame_us - state->throbber_last_frame_us;
+    if (elapsed_us < 33333) return G_SOURCE_CONTINUE; // cap simulation to ~30 FPS
+    state->throbber_last_frame_us = frame_us;
+    const double dt = std::clamp(elapsed_us / 1000000.0, 0.001, 0.050);
     state->throbber_t += dt;
     const int W = state->throbber_w > 0 ? state->throbber_w : 600;
 
@@ -1076,7 +1621,15 @@ gboolean throbber_tick(gpointer user_data) {
 
         // Reflexive, amplified desired speed, scaled by this cell's own speed
         // character so some pulses glide and others race across the sweet spot.
-        double desired_v = (18.0 + 70.0 * state->throbber_amp) * c.speed_mul;
+        double desired_v = (34.0 + 10.0 * state->throbber_amp) * c.speed_mul;
+
+        // Size-dependent pacing: broad light bars (>50px overall) glide more
+        // slowly; medium bars gain a little pace; narrow sparks move faster.
+        // Width is estimated from the visible Gaussian footprint (about 2.4σ).
+        const double visual_width = c.sigma * 2.4;
+        if (visual_width > 50.0) desired_v /= 1.7;
+        else if (visual_width >= 25.0) desired_v *= 1.12;
+        else desired_v *= 1.32;
 
         if (c.retro && c.retro_px > 0.0) {
             // This rare child pauses or glides right->left for its allotment.
@@ -1096,45 +1649,20 @@ gboolean throbber_tick(gpointer user_data) {
         c.v += c.a * dt;
         c.x += c.v * dt;
 
-        // --- Centre sweet spot (40-60%), soft shoulders to ~35/65% ----------
-        // The pulsing concentrates in the middle of the strip. A column's
-        // "centre weight" is ~1 across 40-60% and falls off outside it; pulses
-        // that drift away from centre both glow less AND decay faster, so the
-        // visible life of a pulse is spent mainly in the 35-65% band.
+        // Uniform life across the rail: particles should traverse most of
+        // the width horizontally instead of vanishing around the centre.
         const double frac = (W > 0) ? (c.x / W) : 0.5;
-        double dist = std::fabs(frac - 0.50);
-        double center_weight;
-        if (dist <= 0.10) {
-            center_weight = 1.0;                         // flat top across 40-60%
-        } else {
-            // Gaussian shoulders beyond +/-10%: ~0.37 at the 35/65% edges, less
-            // further out, so off-centre pulses clearly recede.
-            double e = (dist - 0.10) / 0.07;
-            center_weight = std::exp(-0.5 * e * e);
-        }
-
-        // Energy (the "amplification series") decays faster the farther the
-        // pulse is from the sweet spot: in-band it lingers, out-of-band it dies
-        // off quickly because it "wasn't of the sweet spot".
-        double decay = 0.10 + 0.05 * state->throbber_amp
-                     + 0.9 * (1.0 - center_weight);       // off-centre penalty
-        c.energy -= dt * decay;
-        if (c.energy < 0.0) c.energy = 0.0;
-
-        double edge_fade = 1.0;
-        if (c.x > W * 0.90) edge_fade = std::max(0.0, (W - c.x) / (W * 0.10));
-        double breath = 0.9 + 0.1 * std::sin(state->throbber_t * 1.7 + c.phase);
-        // Brightness is gated by centre proximity, so the pulsing lives in the
-        // middle and less-centred pulses are already fading relative to it.
-        double target_i = c.base_intensity * center_weight * edge_fade * c.energy * breath;
-        // Ease the live intensity toward its target so fade-in / fade-out smooth.
-        c.intensity += (target_i - c.intensity) * 0.30;
+        const double center_weight = 1.0;
+        // Once a particle appears, keep its brightness stable across the
+        // visible band. It leaves only when its centre passes the right edge.
+        c.energy = 1.0;
+        const double target_i = c.base_intensity;
+        c.intensity += (target_i - c.intensity) * std::min(1.0, 8.0 * dt);
 
         // The pulse still travels left->right across the whole width; it only
         // dies on exit at the right edge (or once it has faded to nothing well
         // past the sweet spot, so spent pulses don't linger invisibly).
-        if (c.x > W + 6.0) c.alive = false;
-        else if (frac > 0.70 && c.energy <= 0.0 && c.intensity < 0.01) c.alive = false;
+        if (c.x > W + 4.0) c.alive = false;
     }
 
     // Compact the pool: drop dead cells.
@@ -1144,12 +1672,14 @@ gboolean throbber_tick(gpointer user_data) {
         state->throbber_cells.end());
 
     gtk_widget_queue_draw(state->throbber);
+    if (state->terminal_glow != nullptr) gtk_widget_queue_draw(state->terminal_glow);
     return G_SOURCE_CONTINUE;
 }
 
+
 void activate(GtkApplication *application, gpointer user_data) {
     auto *state = static_cast<AppState *>(user_data);
-    install_css();
+    install_css(state);
     load_config(state->config);
 
     GtkWidget *window = gtk_application_window_new(application);
@@ -1175,14 +1705,56 @@ void activate(GtkApplication *application, gpointer user_data) {
     gtk_widget_set_tooltip_text(logo, "SleelaTerminal™ — Debian / Windows Terminal");
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), logo);
 
-    // Settings control on the RIGHT of the title bar: a gear icon (the
-    // conventional Settings glyph), flat/quiet by default with only a soft
-    // hover tint, ~25% smaller than the other title controls. Clicking it opens
-    // the Settings subframe window. Packed at the end so it sits on the right.
+    // Settings control on the RIGHT of the title bar: a custom three-bar
+    // hamburger glyph, filled title-bar blue with a 1px black outline. Clicking
+    // it opens the Settings subframe window. Packed at the end so it sits right.
     GtkWidget *settings = gtk_button_new();
-    GtkWidget *settings_image = gtk_image_new_from_icon_name("emblem-system-symbolic");
-    gtk_image_set_pixel_size(GTK_IMAGE(settings_image), 16);
-    gtk_button_set_child(GTK_BUTTON(settings), settings_image);
+    GtkWidget *settings_glyph = gtk_drawing_area_new();
+    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(settings_glyph), 15);
+    gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(settings_glyph), 10); // ~30% shorter vertically
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(settings_glyph),
+        [](GtkDrawingArea *, cairo_t *cr, int width, int height, gpointer) {
+            const double bar_height = 1.8;
+            const double left = 1.0;
+            const double right = static_cast<double>(width) - 1.0;
+            const double inset = 1.0;
+            const double bars_y[] = {inset, inset + 2.2, inset + 4.4};
+            for (double y : bars_y) {
+                const double radius = 0.9;
+                cairo_new_path(cr);
+                cairo_move_to(cr, left + radius, y);
+                cairo_line_to(cr, right - radius, y);
+                cairo_arc(cr, right - radius, y + radius, radius, -M_PI_2, 0.0);
+                cairo_line_to(cr, right, y + bar_height - radius);
+                cairo_arc(cr, right - radius, y + bar_height - radius, radius, 0.0, M_PI_2);
+                cairo_line_to(cr, left + radius, y + bar_height);
+                cairo_arc(cr, left + radius, y + bar_height - radius, radius, M_PI_2, M_PI);
+                cairo_line_to(cr, left, y + radius);
+                cairo_arc(cr, left + radius, y + radius, radius, M_PI, 3.0 * M_PI_2);
+                cairo_close_path(cr);
+
+                // Black 1px outline, with a subtle vertical blue bevel for depth.
+                cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+                cairo_set_line_width(cr, 1.0);
+                cairo_stroke_preserve(cr);
+                cairo_pattern_t *bevel = cairo_pattern_create_linear(0.0, y, 0.0, y + bar_height);
+                cairo_pattern_add_color_stop_rgb(bevel, 0.0, 0.16, 0.29, 0.62); // dark-blue top highlight
+                cairo_pattern_add_color_stop_rgb(bevel, 0.45, 0.09, 0.19, 0.44);
+                cairo_pattern_add_color_stop_rgb(bevel, 1.0, 0.04, 0.10, 0.27); // deeper shaded lower edge
+                cairo_set_source(cr, bevel);
+                cairo_fill(cr);
+                cairo_pattern_destroy(bevel);
+
+                // Fine top glint gives the bars a restrained 3D lighting effect.
+                cairo_new_path(cr);
+                cairo_move_to(cr, left + radius + 0.4, y + 0.35);
+                cairo_line_to(cr, right - radius - 0.4, y + 0.35);
+                cairo_set_source_rgba(cr, 0.58, 0.73, 1.0, 0.65);
+                cairo_set_line_width(cr, 0.45);
+                cairo_stroke(cr);
+            }
+        }, nullptr, nullptr);
+    gtk_button_set_child(GTK_BUTTON(settings), settings_glyph);
     gtk_widget_set_tooltip_text(settings, "SleelaTerminal Settings");
     gtk_widget_add_css_class(settings, "sleela-settings-btn");
     gtk_widget_set_valign(settings, GTK_ALIGN_CENTER);
@@ -1195,15 +1767,16 @@ void activate(GtkApplication *application, gpointer user_data) {
     gtk_window_set_titlebar(state->window, header);
 
     GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(root, "sleela-workspace");
 
-    // Living throbber strip: a thin drawing area immediately below the title
-    // bar, replacing the old static bottom border. Its light-blue shade is
-    // repainted ~20x/second by throbber_tick while the terminal is open.
+    // Full-width 4px pure-white throbber rail below the title bar. The moving
+    // coloured field is composited inside the white pixels; the frame clock
+    // animates the cells and their slow travelling sway.
     GtkWidget *throbber = gtk_drawing_area_new();
     state->throbber = throbber;
     gtk_widget_add_css_class(throbber, "sleela-throbber");
     gtk_widget_set_hexpand(throbber, TRUE);
-    gtk_widget_set_size_request(throbber, -1, 2);
+    gtk_widget_set_size_request(throbber, -1, 4);
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(throbber), throbber_draw, state, nullptr);
     gtk_box_append(GTK_BOX(root), throbber);
 
@@ -1223,7 +1796,25 @@ void activate(GtkApplication *application, gpointer user_data) {
     gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);
     g_signal_connect(right_click, "pressed", G_CALLBACK(terminal_mouse_menu), terminal);
     gtk_widget_add_controller(terminal, GTK_EVENT_CONTROLLER(right_click));
-    gtk_box_append(GTK_BOX(root), terminal);
+    // Let the throbber cast a faint, moving light field over the terminal
+    // surface without intercepting clicks, text selection, or keyboard input.
+    GtkWidget *terminal_overlay = gtk_overlay_new();
+    gtk_widget_add_css_class(terminal_overlay, "sleela-terminal-panel");
+    // Clip the VTE child and glow to the panel's rounded silhouette.
+    gtk_widget_set_overflow(terminal_overlay, GTK_OVERFLOW_HIDDEN);
+    gtk_widget_set_hexpand(terminal_overlay, TRUE);
+    gtk_widget_set_vexpand(terminal_overlay, TRUE);
+    gtk_overlay_set_child(GTK_OVERLAY(terminal_overlay), terminal);
+    GtkWidget *glow = gtk_drawing_area_new();
+    state->terminal_glow = glow;
+    gtk_widget_add_css_class(glow, "sleela-terminal-glow");
+    gtk_widget_set_hexpand(glow, TRUE);
+    gtk_widget_set_vexpand(glow, TRUE);
+    gtk_widget_set_can_target(glow, FALSE);
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(glow), terminal_glow_draw, state, nullptr);
+    gtk_overlay_add_overlay(GTK_OVERLAY(terminal_overlay), glow);
+    gtk_overlay_set_measure_overlay(GTK_OVERLAY(terminal_overlay), glow, FALSE);
+    gtk_box_append(GTK_BOX(root), terminal_overlay);
 
     GtkWidget *footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(footer, "sleela-footer");
@@ -1241,13 +1832,17 @@ void activate(GtkApplication *application, gpointer user_data) {
     gtk_widget_set_valign(separator, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(footer), separator);
 
-    GtkWidget *footer_text = gtk_label_new(footer_messages().front().c_str());
-    state->footer_text = GTK_LABEL(footer_text);
+    GtkWidget *footer_text = gtk_drawing_area_new();
+    state->footer_text = footer_text;
     gtk_widget_add_css_class(footer_text, "sleela-footer-ticker");
     gtk_widget_set_hexpand(footer_text, TRUE);
-    gtk_widget_set_halign(footer_text, GTK_ALIGN_START);
+    gtk_widget_set_halign(footer_text, GTK_ALIGN_FILL);
     gtk_widget_set_valign(footer_text, GTK_ALIGN_CENTER);
-    gtk_label_set_ellipsize(state->footer_text, PANGO_ELLIPSIZE_END);
+    // DrawingArea measures independently of headline length. Pango renders the
+    // entire RSS string inside the fixed allocated viewport, without ellipses
+    // and without allowing the headline to resize the Terminal window.
+    gtk_widget_set_size_request(footer_text, 160, 30);
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(footer_text), footer_ticker_draw, state, nullptr);
     gtk_box_append(GTK_BOX(footer), footer_text);
 
     // CMD footer control: strict image only; the image itself is the clickable surface.
@@ -1269,15 +1864,21 @@ void activate(GtkApplication *application, gpointer user_data) {
     g_signal_connect(terminal, "child-exited", G_CALLBACK(child_exited), state);
     g_signal_connect(state->window, "close-request", G_CALLBACK(window_close_request), state);
 
-    // Resting-state status is static: moving/scrolling text competes with the
-    // terminal content, which is the hero. See UI-PRINCIPLES.md (principle 6).
-    // The footer shows a single clear status string; no rotation timer runs.
+    // Keep the status stable for the configured delay, then run a complete
+    // rightward marquee pass and refresh the RSS feed after the line exits.
     state->footer_position = 0;
-    state->footer_tick = 0;
+    state->footer_text_changed_us = g_get_monotonic_time();
+    state->footer_full_text = footer_messages().front();
+    state->footer_tick = g_timeout_add_seconds(30, footer_feed_tick, state);
+    state->footer_scroll_tick = g_timeout_add(150, footer_scroll_tick, state);
+    footer_feed_tick(state);
 
-    // Drive the throbber at 20 Hz (every 50 ms) for as long as the window lives.
-    // The timer is removed in child_exited / window_close_request.
-    state->throbber_tick = g_timeout_add(50, throbber_tick, state);
+    // GTK's frame clock schedules updates with display frames and naturally
+    // pauses callbacks while the drawing widget is unmapped. This avoids a
+    // free-running timer and keeps all GTK/Cairo work on the UI thread.
+    state->throbber_last_frame_us = 0;
+    state->throbber_tick = gtk_widget_add_tick_callback(
+        throbber, throbber_tick, state, nullptr);
 
     std::vector<char *> shell_argv;
     shell_argv.push_back(const_cast<char *>(state->shell_path.c_str()));
