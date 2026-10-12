@@ -30,22 +30,35 @@ All colours come from a single named palette defined once at the top of the CSS
 (as CSS custom properties / `@define-color`). No raw hex values are scattered
 through individual selectors. Changing the theme means editing one block.
 
-The palette is the project's established dark rich-purple family on a near-black
-terminal:
+The window chrome retains the project's dark rich-purple family, while the
+terminal text pane and command-result surfaces use a separate neutral, high-contrast
+reading palette:
 
 | Token | Value | Use |
 |---|---|---|
-| `--sl-bg` | `#15101c` | window / terminal background (unified) |
+| `--sl-bg` | `#15101c` | window chrome background |
 | `--sl-surface` | `#21112f` | popovers, dialogs, raised surfaces |
 | `--sl-surface-hi` | `#321a4d` | gradient top / hover surface |
 | `--sl-chrome` | `#24103f` | title bar / footer base |
 | `--sl-border` | `#7f56aa` | 1px separators and surface borders |
-| `--sl-fg` | `#ffffff` | primary text / controls |
+| `--sl-fg` | `#ffffff` | chrome text / controls |
 | `--sl-fg-dim` | `rgba(255,255,255,.70)` | secondary / note text |
 | `--sl-accent` | `#9d6cff` | focus ring, suggested action |
 
-The terminal background and the window background are the **same** value so the
-terminal does not float as a separate near-black rectangle inside purple chrome.
+The GTK workspace uses `#fcfcfc` (RGB 252, 252, 252). The interactive VTE
+terminal surface uses charcoal `#4b4b4b` with near-white `#f2f2f2` text. Keep
+this three-colour hierarchy consistent: near-white workspace, dark terminal
+surface, light readable terminal text. The purple/black palette belongs to the
+surrounding window chrome only.
+
+**Implementation boundary:** VTE presents an ongoing interactive PTY stream,
+not discrete command-result widgets. The current design therefore applies the
+charcoal surface to the whole interactive terminal, including the prompt and
+empty terminal state. It does not yet create a separate rounded panel that
+appears only around each command's output. Do not describe per-command
+response panels as implemented until a separate output-view architecture can
+preserve arbitrary interactive programs, stdout/stderr, terminal control
+sequences, scrollback, selection, pipelines, and redirection.
 
 ## 3. Restraint over effects
 
@@ -110,3 +123,27 @@ stylesheet still parses. If a change adds motion, a new colour, or a new
 spacing value, it must either fit these principles or update them deliberately.
 
 — SleelaTerminal™ · MEARVK LLC
+
+## 11. Rounded file-item renderer
+
+The title-bar **Files** control opens a GTK FlowBox browser. Every entry is a
+separate rounded button, not terminal text with ANSI colouring. Regular files
+use a charcoal-gray chip (`#626262`) and white text; directories use a muted
+purple chip. The browser supports path entry, parent navigation, directory
+sorting, and opening files with the desktop's associated application.
+
+The main workspace remains near-white (`#fcfcfc`); the terminal and file
+browser use a charcoal surface (`#4b4b4b`). The VTE surface has a light
+foreground (`#f2f2f2`) and is clipped to the rounded terminal container.
+Individual `ls` tiles are legacy ANSI styling, not the global output model.
+
+## Interactive `ls` presentation
+
+The `slsh` shell provides an interactive `ls` builtin. In a terminal session it
+renders each entry as a compact, rounded-corner Unicode tile with a lighter
+background; directories use a distinct muted-purple shade. The surrounding
+terminal remains the charcoal output surface (`#4B4B4B`) on the near-white
+workspace (`#FCFCFC`). Redirected output stays plain, newline-separated names
+so scripts and pipelines do not receive presentation escape sequences. The
+builtin currently supports `ls`, `ls -a` / `ls -A`, and path arguments; it
+does not yet implement the full option set of system `ls`.
