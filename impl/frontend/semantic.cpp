@@ -49,7 +49,12 @@ static bool builtin(const std::string&n){
  "arrayNew","arrayLength","arrayGet","arraySet","arrayPush",
  "osPlatform","osCapability","osGetEnv","osSetEnv","osCurrentDir","osChangeDir","osHostName","osUserName","osTempDir","osProcessId",
  "osExists","osIsDir","osFileSize","osMakeDir","osRemove","osRename","osRun","osSpawn","osWait","osKill","osProcessClose",
- "conduct","role","insight","congruent","route","sysdepth","degreemax"};
+ "conduct","role","insight","congruent","route","sysdepth","degreemax",
+ "ideaCanvasCreate","ideaCanvasDestroy","ideaCanvasCols","ideaCanvasRows","ideaCanvasCount",
+ "ideaCanvasSetParams","ideaCanvasExcite","ideaCanvasStep","ideaCanvasAdvance","ideaCanvasTimestep",
+ "ideaCanvasIntensityAt","ideaCanvasHasRenderer","ideaCanvasOpenWindow","ideaCanvasShouldClose",
+ "ideaCanvasPresent","ideaCanvasRun",
+ "ideaCanvasSetBackendPolicy","ideaCanvasPolicy","ideaCanvasActiveBackend","ideaCanvasGpuAvailable","ideaCanvasMeasuredHz","ideaCanvasMigrate"};
  return s.count(n)!=0;
 }
 struct MethodSig{const Method* m=nullptr;std::string owner;};
@@ -206,7 +211,7 @@ class Analyzer{
    Type g=expr(*x->value);if(!assignable(want,g))err("method '"+cur->name+"' returns "+nameOf(g)+", expected "+nameOf(want));return;}
   if(auto i=dynamic_cast<const IfStmt*>(&s)){requireBool(expr(*i->cond),"if condition");stmt(*i->thenS);if(i->elseS)stmt(*i->elseS);return;}
   if(auto w=dynamic_cast<const WhileStmt*>(&s)){requireBool(expr(*w->cond),"while condition");stmt(*w->body);return;}
-  if(auto f=dynamic_cast<const ForStmt*>(&s)){push();if(f->init)stmt(*f->init);if(f->cond)requireBool(expr(*f->cond),"for condition");if(f->update)stmt(*f->update);stmt(*f->body);pop();return;}
+  if(auto f=dynamic_cast<const ForStmt*>(&s)){push();if(f->init)stmt(*f->init);if(f->cond)requireBool(expr(*f->cond),"for condition");if(f->threadStable)requireBool(expr(*f->threadStable),"for thread-stability guard");if(f->heapHealthy)requireBool(expr(*f->heapHealthy),"for VM heap-health guard");if(f->update)stmt(*f->update);stmt(*f->body);pop();return;}
   if(auto d=dynamic_cast<const DoStmt*>(&s)){stmt(*d->body);requireBool(expr(*d->cond),"do-while condition");return;}
   if(dynamic_cast<const BreakStmt*>(&s))return;
   if(dynamic_cast<const ContinueStmt*>(&s))return;
