@@ -9,10 +9,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(utf4088
     utf4088.cpp
     character_map.cpp
+    sleela_alphabet_adapter.cpp
     registry_generator.cpp
     digraph_engine.cpp
     voltage_field.cpp
     algebra/glyph8x12.cpp
+    semantics/concept_symbols.cpp
 )
 target_include_directories(utf4088 PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
