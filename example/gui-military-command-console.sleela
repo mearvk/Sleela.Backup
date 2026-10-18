@@ -1,0 +1,124 @@
+/*
+ * example/gui-military-command-console.sleela
+ * An original, runnable SLeeLa GUI walkthrough in the MILITARY (5.0) line,
+ * modeled on lib/gui/version-military. It is a small "command console" scene
+ * that exercises the hardened, strongly-branded military surface end to end:
+ *
+ *   - the metal / metal-silver / blue-hue aesthetic with a 3D-lit base frame;
+ *   - strong, facile branding (wordmark + insignia + tagline);
+ *   - the explicit Component vs Container taxonomy;
+ *   - carefully sized and placed icons on a clickable;
+ *   - the cryptography selector gated to a strong (post-quantum) minimum;
+ *   - the public-key certificate store (import -> trust -> select -> revoke);
+ *   - window key-listeners (minimize-right fold + double-click restore,
+ *     and fullscreen).
+ *
+ * It uses only the military-line Master Classes shipped under
+ * lib/gui/version-military (SLPackage, SLGuiSettings, SLGuiBranding, SLGuiKind,
+ * SLGuiIcon, SLGuiCryptoSelector, SLGuiCertificateStore, SLGuiWindowState), so
+ * it mirrors gui-military-demo.sleela while telling its own scene.
+ *
+ * Run (with the military line's classes on the source path):
+ *   SLEELA_SHEET=./SHEET.sheet sleela run example/gui-military-command-console.sleela
+ */
+#sleela 2.1
+
+// Select the GUI 5.0 military source line; other GUI lines intentionally reuse
+// class names such as SLPackage and SLGuiSettings.
+import gui.version-military;
+class GuiMilitaryCommandConsole {
+
+  void banner(String t) {
+    print("================================================================");
+    print("  " + t);
+    print("================================================================");
+  }
+
+  void main() {
+    banner("SLeeLa GUI — Military (5.0) Command Console");
+
+    // ---- Package identity: confirm we are on the military line ----
+    SLPackage pkg = new SLPackage(); pkg.configure("gui");
+    print("gui package " + pkg.version() + " (featureLevel " + pkg.featureLevel() +
+          ", military=" + pkg.isMilitary() + ")");
+
+    // ---- Hardened metal/blue aesthetic + 3D-lit frame ----
+    banner("Surface: metal / blue-hue, 3D-lit frame");
+    SLGuiSettings s = new SLGuiSettings(); s.configure();
+    print("aesthetic: " + s.aestheticName() + " honored=" + (s.honored() && s.militaryHonored()));
+    s.setMetalFinish(1); s.setBlueHuePct(18);   // 1 = SLGuiSettings.METAL_SILVER
+    print("  finish=" + s.metalFinishName() + " blueHue=" + s.getBlueHuePct() +
+          "% frame3d=" + s.frameLit() + "@" + s.getFrameLightAngle() + "deg");
+
+    // ---- Strong, facile branding ----
+    banner("Branding");
+    SLGuiBranding b = new SLGuiBranding(); b.configure("brand/insignia.svg");
+    b.setPlacement(1); b.setScalePct(115);   // 1 = PLACE_HEADER
+    b.setWordmark("SLeeLa Command Console");
+    b.setColors("#8FB7D9", "#2E3744");
+    b.setTagline("neutral · hardened · precise");
+    print("branding: " + b.report());
+
+    // ---- Component vs Container taxonomy ----
+    banner("Taxonomy (Component vs Container)");
+    SLGuiKind k = new SLGuiKind();
+    print("  " + k.describe("window"));          // container
+    print("  " + k.describe("button"));          // component, clickable, icon-eligible
+    print("  " + k.describe("cryptoselector"));  // component, clickable
+    print("  " + k.describe("label"));           // component (not clickable)
+
+    // ---- Icon on the primary action button ----
+    banner("Icon placement on a clickable");
+    SLGuiIcon icon = new SLGuiIcon(); icon.configure("icons/shield.svg");
+    icon.setSizeTier(2); icon.setPosition(0); icon.setGapPx(8);  // 2 = SIZE_MD, 0 = POS_LEADING
+    icon.setOpticalNudge(0, -1);
+    icon.setTint("#8FB7D9");
+    print("  action icon: " + icon.sizeName() + " " + icon.positionName() +
+          " valid=" + icon.valid() + " -> " + icon.toStyle());
+
+    // ---- Cryptography selector: gate to strong / post-quantum ----
+    banner("Cryptography selector");
+    SLGuiCryptoSelector cs = new SLGuiCryptoSelector(); cs.configure();
+    cs.requireMinStrength(2);   // 2 = SLGuiCryptoSelector.STRENGTH_STRONG
+    print("  suites=" + cs.suiteCount() + " (min strength: " + cs.strengthName(2) + ")");
+    boolean okLegacy = cs.selectByName("3DES-CBC + RSA-2048 (legacy interop)");
+    boolean okPqc    = cs.selectByName("AES-256-GCM + ML-KEM-768 + ML-DSA-65");
+    print("  legacy (below min) accepted -> " + okLegacy + " [must be false]");
+    print("  PQC strong accepted         -> " + okPqc + " -> '" + cs.selectedSuite() +
+          "' strength=" + cs.strengthName(cs.selectedStrength()) + " pqc=" + cs.selectedIsPostQuantum());
+
+    // ---- Public-key certificate store ----
+    banner("Certificate store");
+    SLGuiCertificateStore store = new SLGuiCertificateStore(); store.configure();
+    // importCert(...) is fail-closed: a new entry starts TRUST_UNTRUSTED and it
+    // refuses a blank subject/fingerprint. It returns the new index (root=0,
+    // leaf=1).
+    int root = store.importCert("SLeeLa Root CA", "SLeeLa Root CA", "Ed25519", "ab12..root", true);
+    int leaf = store.importCert("console.sleela.mil", "SLeeLa Root CA", "ECDSA-P256", "cd34..leaf", false);
+    print("  imported " + store.certCount() + " (both start " + store.trustName(store.trustAt(leaf)) + ")");
+    store.trustCert(root); store.trustCert(leaf);
+    boolean sel = store.select(leaf);
+    print("  trusted + selected leaf=" + sel + " subject='" + store.selectedSubject() +
+          "' validCount=" + store.validCount());
+    store.markRevoked(leaf);
+    print("  after revoke: leaf valid=" + store.valid(leaf) + " selection cleared=" + (!store.hasSelection()));
+
+    // ---- Window key-listeners: fold + double-click restore, fullscreen ----
+    banner("Window key-listeners");
+    SLGuiWindowState w = new SLGuiWindowState(); w.configure(160, 96, 1280, 800);
+    w.setDesktop(1920, 1080);
+    print("  " + w.modeName() + " " + w.getWidth() + "x" + w.getHeight() +
+          " @(" + w.getX() + "," + w.getY() + ")");
+    w.minimizeRight();
+    print("  minimize-right -> " + w.modeName() + " side=" + w.foldSideName() +
+          " " + w.getWidth() + "x" + w.getHeight() + " @(" + w.getX() + "," + w.getY() + ")");
+    boolean restored = w.onDoubleClick();
+    print("  double-click restore=" + restored + " -> " + w.modeName() +
+          " " + w.getWidth() + "x" + w.getHeight());
+    w.onFullscreen(); print("  fullscreen -> " + w.getWidth() + "x" + w.getHeight());
+    w.onDoubleClick(); print("  restore -> " + w.modeName() + " " + w.getWidth() + "x" + w.getHeight());
+
+    banner("Done");
+    print("Military line: metal/blue surface, strong branding, hardened crypto + certs.");
+  }
+}
