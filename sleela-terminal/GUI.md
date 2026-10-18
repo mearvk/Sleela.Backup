@@ -63,8 +63,10 @@ An example schema is provided in `sleela-terminal.conf.example`. The file uses s
 From `sleela-terminal`:
 
 ```sh
-make gui
+make all-gui
 ```
+
+`make gui` builds only the GUI executable (and its `slsh` dependency); `make all-gui` builds the CLI, smoke-test executable, and GUI.
 
 The executable is:
 
@@ -72,9 +74,11 @@ The executable is:
 build/SleelaTerminal
 ```
 
-The default `make` target builds the GUI in addition to `build/slsh` and the smoke-test executable.
+The default `make` target builds the CLI shell and smoke-test executable only. The GUI is an optional target and requires GTK 4 and VTE development packages.
 
 ## Run
+
+Build the GUI first with `make gui` or `make all-gui`, then run:
 
 ```sh
 ./build/SleelaTerminal
@@ -101,19 +105,24 @@ left edge with no surrounding whitespace. It is a strict image — no button
 outline — and is produced by `tools/logo/Trim.java` from the source artwork in
 `images/`.
 
-The title bar and footer retain the dark rich-purple visual language, bright white controls/text, and a clean flat treatment. The settings subframe uses the same purple family rather than introducing a separate theme.
+The title bar keeps its branded purple-to-blue gradient, while every interactive selection surface—the Settings subframe, software popover, and terminal right-click menu—uses the same deep-blue/light-blue family as the main frame. Menu text stays white, hover and active states brighten in blue, and keyboard focus uses a visible light-blue outline so selection states remain clear.
 
-The bottom edge of the title bar is a **living throbber** rather than a static border: a 2px seam that is not one uniform brightness but a **flowing field** of many small excitations — "children of wattage" — each adding a *relative* darker/lighter shade near its own position, as if voltage were being fed through a living receptor. **At rest the strip is the title-bar colour itself** (the same chrome purple), so the seam reads as the title bar coming alive rather than a separate band. It is repainted ~20 times a second while the terminal is open.
+The bottom edge of the title bar carries a **4px pure-white throbber rail** across the terminal's full width. The monochrome particle effect mixes lava balls (circles), triangles, and short rectangles. The silhouettes are enlarged to nearly fill the available rail height, with white bodies and white outlines; a subtle silver-gray contact edge and lower rim provide a raised, 3D-like appearance against the white background. Rotation and vertical movement remain tightly constrained.
 
-Excitations are born across the width with the **odds favouring a start around 35%**, and the **pulsing concentrates in the central 40–60% sweet spot** (soft shoulders out to ~35–65%). The flow moves **mainly left → right**, and pulses **travel the whole width** — but their brightness is gated by how close they are to centre, so a pulse glows most through the middle and is already **fading as it drifts off-centre**; less-centred pulses decay faster because they "weren't of the sweet spot." Pulses also travel at **varied speeds** — some glide, some race. Roughly **1 in 30** excitations may pause or glide **right → left** for a short run (about 20–50 px) before rejoining.
-
-Each excitation's motion is integrated to **third order** — jerk → acceleration → velocity → position — and its speed is set by a slow, reflexive "amplification" field, so the field *speeds up and slows down* smoothly (the rate of change of acceleration stays bounded) instead of scrolling at a constant mechanical rate. Normally the shades stay in the title-bar/airy-light-blue family; under **strong amplification** (around 18/20 of the field's range) latent per-cell **hues — orange, green, blue, red — surface** on the brightest pulses, then recede as the field relaxes. The animation timer is created with the window and removed when the terminal exits or the window closes.
+Particles move mainly horizontally at a fairly consistent pace. Once visible, each particle holds its brightness while it traverses the band and is removed only after it exits the right edge; it no longer fades away prematurely near the center. The white rail remains continuous underneath the particles, with no saturated colours or terminal-pane colour spill.
 
 The current GUI displays version `1.0.0`, matching the project's initial SleelaTerminal version baseline. The footer also contains the clickable **CMD** image, representing CMD as the Java native launcher associated with SecureJDK 28. It is rendered as a strict image with no additional footer-button outline.
 
 ## Desktop installation
 
-`make install` installs both executables and the desktop launcher:
+The CLI-only `make install` target installs `slsh`. To install the GUI and desktop launcher together with the required shell executable, build the GUI and run:
+
+```sh
+make all-gui
+make install-all
+```
+
+The staged paths are:
 
 ```text
 $(PREFIX)/bin/slsh
@@ -122,6 +131,10 @@ $(PREFIX)/share/applications/SleelaTerminal.desktop
 ```
 
 The desktop entry declares `Terminal=false`, so launching SleelaTerminal does not wrap the shell inside another terminal emulator.
+
+## Runtime validation boundary
+
+CI currently verifies that the GTK4/VTE GUI compiles on Ubuntu; compilation does not validate window startup, PTY interaction, keyboard input, clipboard behavior, or close/restart lifecycle. Before calling the GUI runtime-validated on a desktop, manually test: launch and close; run a command and verify its exit status; resize the window; type/paste/select/copy text; open and dismiss Settings; close the window while a foreground child is running; and confirm the child and GUI exit cleanly. Linux/macOS CLI CI does not claim native Windows support.
 
 ## Dependencies
 
@@ -132,3 +145,12 @@ sudo apt install libgtk-4-dev libvte-2.91-gtk4-dev
 ```
 
 The existing CLI shell remains a C++17 program and does not depend on GTK or VTE.
+
+## Title-bar gradient presets
+
+The title-bar gradient is stored in `assets/HORIZONTAL.cfg` and `assets/VERTICAL.cfg`; each preset supplies both its direction and its own color stops. Both presets use a dark-navy palette with the former white glint replaced by a narrow blue-black center grade, blended through nearby navy stops to preserve the existing linear fade and restrained 3D bevel. The active selection in `assets/GRADIENT.cfg` is `active=HORIZONTAL.cfg`, so the gradient runs left to right. Change it to `active=VERTICAL.cfg` to run the same palette from top to bottom, then restart SleelaTerminal.
+
+
+## Text pane and command-result colors
+
+The VTE text pane uses near-white RGB **(252, 252, 252)** (`#fcfcfc`) with dark default terminal text. Command-result text views use a subtly darker light-gray surface, RGB **(228, 228, 228)** (`#e4e4e4`), with dark-gray text (`#303030`) so results are distinct from the main pane while remaining readable. These are separate named CSS tokens; the rest of the window's purple chrome is unchanged.
