@@ -109,3 +109,38 @@ The regression suite checks identifier boundaries, deterministic registry genera
 ## Status
 
 Experimental / conceptual. No claim of standards-body approval or Unicode compatibility is made.
+
+## Input-map traversal and pressure protocol
+
+The canonical spatial iteration order and pressure scale are defined in [INPUT-MAP-AND-PRESSURE.md](INPUT-MAP-AND-PRESSURE.md): begin at the top-left of layer `z=0`, move right, then down row by row, and advance to the next z-layer only after completing the current layer. Each element's pressure iterations run from 1 through the assumed maximum of 50. These are logical iteration values, not physical pressure or voltage.
+
+The [National Lien Alphabetic Register](NATIONAL-LIEN-REGISTER.md) separates permanent catalogue IDs, alphabetic ranks, map coordinates, registry ordinals, and pressure levels.
+
+
+## Probe-driven alphabet generation
+
+The proposed candidate-probing and match-ordering algorithm is specified in [PROBE-ORDERING-AND-MATCHING.md](PROBE-ORDERING-AND-MATCHING.md). It separates spatial traversal, probe priority, nearest-match order, and published alphabetic rank. The specification describes a deterministic baseline, a bounded 1–50 depth range, match evidence, resource budgets, and validation metrics; it is a design contract, not a claim that the complete engine already exists.
+
+
+## UTF-4088 document map
+
+The canonical documentation set for this existing directory is indexed in [ALPHABET-RELAY.md](ALPHABET-RELAY.md). Main protocol documents are:
+
+- [Input-map traversal and depth/pressure iteration](INPUT-MAP-AND-PRESSURE.md)
+- [National Lien Alphabetic Register](NATIONAL-LIEN-REGISTER.md)
+- [Probe ordering and match-driven candidate generation](PROBE-ORDERING-AND-MATCHING.md)
+- [Code-point and serialization contract](CODE-POINT-AND-SERIALIZATION.md)
+- [SLeeLa alphabet adapter integration](SLeeLa-ALPHABET-INTEGRATION.md)
+
+The same protocol set is mirrored for discovery in [alphabet/sleela/UTF-4088-RELAY.md](../alphabet/sleela/UTF-4088-RELAY.md). This directory remains the canonical home for UTF-4088-specific protocols, catalogue design documents, implementation, registry data, and tests; `/alphabet/sleela` contains SLeeLa's broader alphabet documentation and synchronized mirrors.
+
+Use the relay to navigate the additional character-map, gradation, symbol-weight, natural-die, voltage-field, build, registry, and testing material. The relay does not claim that proposed probe scheduling or semantic validation has been implemented end to end.
+
+
+## Five-input application trial mapping
+
+The detailed five-point mapping and sudden-pressure transition rules are maintained in [alphabet/utf-4088/RIGOROUS.INPUTS.md](../alphabet/utf-4088/RIGOROUS.INPUTS.md). The tables report normalized model inputs only; they do not claim physical pressure or voltage measurements.
+
+## 4D implementation symbol inventory
+
+The source-level catalogue at [alphabet/utf-4088/SYMBOLS.md](../alphabet/utf-4088/SYMBOLS.md) documents the C/C++ 4D point and field symbols, geometric comparison metrics, binary glyph topology, registry identifiers, and graph state/edge coalescence. The separate five-input probe glyphs and provisional labels remain in the trial output files under [alphabet/utf-4088/results](../alphabet/utf-4088/results/).
