@@ -12,6 +12,8 @@
 #include <set>
 #include <functional>
 #include "library_index.h"
+#include "../core/sleela_ui_ids.h"
+#include "../core/sleela_ui_vm.h"
 
 namespace sleela {
 
@@ -322,7 +324,7 @@ private:
     void emitContinue(){if(loops_.empty())throw std::runtime_error("Semantic error: 'continue' used outside a loop");loops_.back().continues.push_back(emit(OP_JMP,0));}
     void emitWhile(const WhileStmt& s){loops_.push_back({});int top=here();emitExpr(s.cond.get());int jf=emit(OP_JMPF,0);emitStmt(s.body.get());for(int c:loops_.back().continues)patch(c,top);emit(OP_JMP,top);patch(jf,here());for(int b:loops_.back().breaks)patch(b,here());loops_.pop_back();}
     void emitDo(const DoStmt& s){loops_.push_back({});int top=here();emitStmt(s.body.get());int contTarget=here();for(int c:loops_.back().continues)patch(c,contTarget);emitExpr(s.cond.get());int jf=emit(OP_JMPF,0);emit(OP_JMP,top);patch(jf,here());for(int b:loops_.back().breaks)patch(b,here());loops_.pop_back();}
-    void emitFor(const ForStmt& s){loops_.push_back({});if(s.init)emitStmt(s.init.get());int top=here();int jf=-1;if(s.cond){emitExpr(s.cond.get());jf=emit(OP_JMPF,0);}emitStmt(s.body.get());int contTarget=here();for(int c:loops_.back().continues)patch(c,contTarget);if(s.update)emitStmt(s.update.get());emit(OP_JMP,top);if(jf>=0)patch(jf,here());for(int b:loops_.back().breaks)patch(b,here());loops_.pop_back();}
+    void emitFor(const ForStmt& s){loops_.push_back({});if(s.init)emitStmt(s.init.get());int top=here();std::vector<int> exits;if(s.cond){emitExpr(s.cond.get());exits.push_back(emit(OP_JMPF,0));}if(s.threadStable){emitExpr(s.threadStable.get());exits.push_back(emit(OP_JMPF,0));}if(s.heapHealthy){emitExpr(s.heapHealthy.get());exits.push_back(emit(OP_JMPF,0));}emitStmt(s.body.get());int contTarget=here();for(int c:loops_.back().continues)patch(c,contTarget);if(s.update)emitStmt(s.update.get());emit(OP_JMP,top);int end=here();for(int j:exits)patch(j,end);for(int b:loops_.back().breaks)patch(b,end);loops_.pop_back();}
     void emitSynchronized(const SynchronizedStmt& s){emitExpr(s.monitor.get());emit(OP_POP);emitBlock(*s.body);}
     void emitTry(const TryStmt& s){emitBlock(*s.body);if(s.finallyBlock)emitBlock(*s.finallyBlock);}
     void emitSwitch(const SwitchStmt& s){
@@ -652,8 +654,61 @@ private:
         emitExpr(b.lhs.get());emitExpr(b.rhs.get());
         if(o=="+")emit(OP_ADD);else if(o=="-")emit(OP_SUB);else if(o=="*")emit(OP_MUL);else if(o=="/")emit(OP_DIV);else if(o=="%")emit(OP_MOD);else if(o=="==")emit(OP_EQ);else if(o=="!=")emit(OP_NE);else if(o=="<")emit(OP_LT);else if(o=="<=")emit(OP_LE);else if(o==">")emit(OP_GT);else if(o==">=")emit(OP_GE);else throw std::runtime_error("Semantic error: unknown binary operator '"+o+"'");}
 
+    // SleelaUI (ui*) built-ins: map the SLeeLa-facing name to its bridge id,
+    // arity-check, emit the args, then OP_UI_CALL<id>. Returns true if handled.
+    bool tryEmitUiBuiltin(const Call& c){
+        const std::string& n=c.callee;
+        static const std::map<std::string,int> uiIds = {
+            {"uiAppCreate",SLUI_FN_APP_CREATE},{"uiAppRun",SLUI_FN_APP_RUN},{"uiAppPump",SLUI_FN_APP_PUMP},
+            {"uiAppQuit",SLUI_FN_APP_QUIT},{"uiAppDestroy",SLUI_FN_APP_DESTROY},{"uiBackend",SLUI_FN_BACKEND},
+            {"uiBackendName",SLUI_FN_BACKEND_NAME},{"uiVersion",SLUI_FN_VERSION},
+            {"uiWindowCreate",SLUI_FN_WINDOW_CREATE},{"uiWindowShow",SLUI_FN_WINDOW_SHOW},{"uiWindowHide",SLUI_FN_WINDOW_HIDE},
+            {"uiWindowRoot",SLUI_FN_WINDOW_ROOT},{"uiWindowSetTitle",SLUI_FN_WINDOW_SET_TITLE},
+            {"uiWindowSetTheme",SLUI_FN_WINDOW_SET_THEME},{"uiWindowRedraw",SLUI_FN_WINDOW_REDRAW},
+            {"uiBox",SLUI_FN_BOX},{"uiGrid",SLUI_FN_GRID},{"uiFrame",SLUI_FN_FRAME},{"uiCard",SLUI_FN_CARD},
+            {"uiHeaderBar",SLUI_FN_HEADER_BAR},{"uiStatusBar",SLUI_FN_STATUS_BAR},{"uiSeparator",SLUI_FN_SEPARATOR},
+            {"uiSpacer",SLUI_FN_SPACER},{"uiButton",SLUI_FN_BUTTON},{"uiLinkButton",SLUI_FN_LINK_BUTTON},
+            {"uiToggle",SLUI_FN_TOGGLE},{"uiCheckBox",SLUI_FN_CHECK_BOX},{"uiRadioButton",SLUI_FN_RADIO_BUTTON},
+            {"uiComboBox",SLUI_FN_COMBO_BOX},{"uiComboBoxAdd",SLUI_FN_COMBO_BOX_ADD},{"uiSpinButton",SLUI_FN_SPIN_BUTTON},
+            {"uiEntry",SLUI_FN_ENTRY},{"uiSearchEntry",SLUI_FN_SEARCH_ENTRY},{"uiPasswordEntry",SLUI_FN_PASSWORD_ENTRY},
+            {"uiSlider",SLUI_FN_SLIDER},{"uiScrollBar",SLUI_FN_SCROLL_BAR},{"uiProgressBar",SLUI_FN_PROGRESS_BAR},
+            {"uiLevelBar",SLUI_FN_LEVEL_BAR},{"uiSpinner",SLUI_FN_SPINNER},{"uiLabel",SLUI_FN_LABEL},
+            {"uiHeading",SLUI_FN_HEADING},{"uiImage",SLUI_FN_IMAGE},{"uiAvatar",SLUI_FN_AVATAR},
+            {"uiBadge",SLUI_FN_BADGE},{"uiChip",SLUI_FN_CHIP},{"uiInfoBar",SLUI_FN_INFO_BAR},{"uiTooltip",SLUI_FN_TOOLTIP},
+            {"uiThrobber",SLUI_FN_THROBBER},{"uiThrobberSetWidth",SLUI_FN_THROBBER_SET_WIDTH},
+            {"uiThrobberSetIntensity",SLUI_FN_THROBBER_SET_INTENSITY},{"uiThrobberSetHue",SLUI_FN_THROBBER_SET_HUE},
+            {"uiWidgetMargin",SLUI_FN_WIDGET_SET_MARGIN},{"uiWidgetAlign",SLUI_FN_WIDGET_SET_ALIGN},
+            {"uiWidgetExpand",SLUI_FN_WIDGET_SET_EXPAND},{"uiWidgetSizeRequest",SLUI_FN_WIDGET_SET_SIZE_REQ},
+            {"uiWidgetSensitive",SLUI_FN_WIDGET_SET_SENSITIVE},{"uiWidgetVisible",SLUI_FN_WIDGET_SET_VISIBLE},
+            {"uiWidgetSuggested",SLUI_FN_WIDGET_SET_SUGGESTED},{"uiWidgetDestructive",SLUI_FN_WIDGET_SET_DESTRUCT},
+            {"uiWidgetSetText",SLUI_FN_WIDGET_SET_TEXT},{"uiWidgetSetToggle",SLUI_FN_WIDGET_SET_TOGGLE},
+            {"uiWidgetSetValue",SLUI_FN_WIDGET_SET_VALUE},{"uiWidgetGetText",SLUI_FN_WIDGET_GET_TEXT},
+            {"uiWidgetGetToggle",SLUI_FN_WIDGET_GET_TOGGLE},{"uiWidgetGetValue",SLUI_FN_WIDGET_GET_VALUE},
+            {"uiWidgetTakeActivated",SLUI_FN_WIDGET_TAKE_ACTIVATED},{"uiThemePreset",SLUI_FN_THEME_PRESET},
+            {"uiThemeDestroy",SLUI_FN_THEME_DESTROY},{"uiThemeLoadConfig",SLUI_FN_THEME_LOAD_CONFIG},
+            {"uiThemeSetBaseColor",SLUI_FN_THEME_SET_BASE},{"uiThemeSetBg",SLUI_FN_THEME_SET_BG},
+            {"uiThemeSetSurface",SLUI_FN_THEME_SET_SURFACE},{"uiThemeSetSurfaceHi",SLUI_FN_THEME_SET_SURFACE_HI},
+            {"uiThemeSetChrome",SLUI_FN_THEME_SET_CHROME},{"uiThemeSetBorder",SLUI_FN_THEME_SET_BORDER},
+            {"uiThemeSetFg",SLUI_FN_THEME_SET_FG},{"uiThemeSetFgDim",SLUI_FN_THEME_SET_FG_DIM},
+            {"uiThemeSetAccent",SLUI_FN_THEME_SET_ACCENT},{"uiThemeSetAccentFg",SLUI_FN_THEME_SET_ACCENT_FG},
+            {"uiThemeSetDanger",SLUI_FN_THEME_SET_DANGER},{"uiThemeSetRadius",SLUI_FN_THEME_SET_RADIUS},
+            {"uiThemeSetControlHeight",SLUI_FN_THEME_SET_CONTROL_H},{"uiThemeSetFont",SLUI_FN_THEME_SET_FONT},
+            {"uiScreenWidth",SLUI_FN_SCREEN_WIDTH},{"uiScreenHeight",SLUI_FN_SCREEN_HEIGHT},
+        };
+        auto it=uiIds.find(n);
+        if(it==uiIds.end())return false;
+        int id=it->second;
+        int want=sleela_ui_arity(id);
+        if((int)c.args.size()!=want)
+            throw std::runtime_error("Semantic error: "+n+"() expects "+std::to_string(want)+" argument(s), got "+std::to_string(c.args.size()));
+        for(const auto& a:c.args) emitExpr(a.get());
+        emit(OP_UI_CALL,id);
+        return true;
+    }
+
     bool tryEmitBuiltin(const Call& c){
         const std::string& n=c.callee;
+        if(n.size()>2 && n[0]=='u' && n[1]=='i' && n[2]>='A' && n[2]<='Z'){ if(tryEmitUiBuiltin(c)) return true; }
         auto litInt=[&](const Expr*e,const char*what)->int{auto il=dynamic_cast<const IntLit*>(e);if(!il)throw std::runtime_error("Semantic error: "+std::string(what)+" must be an integer literal");return(int)il->value;};
         if(n=="spawn"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: spawn(method) takes exactly one argument");auto var=dynamic_cast<const VarExpr*>(c.args[0].get());if(!var)throw std::runtime_error("Semantic error: spawn(method) argument must be a method name");auto it=funcIndex_.find(var->name);if(it==funcIndex_.end())it=funcIndex_.find(currentClass_+"::"+var->name);if(it==funcIndex_.end())throw std::runtime_error("Semantic error: spawn of unknown method '"+var->name+"'");if(!methods_[it->second].method->isStatic)throw std::runtime_error("Semantic error: spawn target '"+var->name+"' must be static because a thread has no instance receiver");if(!methods_[it->second].method->params.empty())throw std::runtime_error("Semantic error: spawn target '"+var->name+"' must take no parameters");emit(OP_SPAWN,it->second);return true;}
         if(n=="join"){if(!c.args.empty())throw std::runtime_error("Semantic error: join() takes no arguments");emit(OP_JOINALL);emit(OP_CONST,addNullConst());return true;}
@@ -769,6 +824,31 @@ private:
             if(syntax_<SyntaxVersion{1,3})throw std::runtime_error("Semantic error: best-of built-ins require #sleela 1.3");
         }
         auto emitArgs=[&](const Call& call){ for(const auto& a:call.args) emitExpr(a.get()); };
+
+        // ---- Idea System(TM) realtime canvas (native-CPU render + physics) ----
+        if(n=="ideaCanvasCreate"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasCreate(cols, rows) takes two arguments");emitArgs(c);emit(OP_IC_CREATE);return true;}
+        if(n=="ideaCanvasDestroy"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasDestroy(handle) takes one argument");emitArgs(c);emit(OP_IC_DESTROY);return true;}
+        if(n=="ideaCanvasCols"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasCols(handle) takes one argument");emitArgs(c);emit(OP_IC_COLS);return true;}
+        if(n=="ideaCanvasRows"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasRows(handle) takes one argument");emitArgs(c);emit(OP_IC_ROWS);return true;}
+        if(n=="ideaCanvasCount"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasCount(handle) takes one argument");emitArgs(c);emit(OP_IC_COUNT);return true;}
+        if(n=="ideaCanvasSetParams"){if(c.args.size()!=5)throw std::runtime_error("Semantic error: ideaCanvasSetParams(handle, decay, flowGain, hueBase, coupling) takes five arguments");emitArgs(c);emit(OP_IC_SETPARAMS);return true;}
+        if(n=="ideaCanvasExcite"){if(c.args.size()!=4)throw std::runtime_error("Semantic error: ideaCanvasExcite(handle, col, row, amount) takes four arguments");emitArgs(c);emit(OP_IC_EXCITE);return true;}
+        if(n=="ideaCanvasStep"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasStep(handle, dt) takes two arguments");emitArgs(c);emit(OP_IC_STEP);return true;}
+        if(n=="ideaCanvasAdvance"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasAdvance(handle, frameDt) takes two arguments");emitArgs(c);emit(OP_IC_ADVANCE);return true;}
+        if(n=="ideaCanvasTimestep"){if(!c.args.empty())throw std::runtime_error("Semantic error: ideaCanvasTimestep() takes no arguments");emit(OP_IC_TIMESTEP);return true;}
+        if(n=="ideaCanvasIntensityAt"){if(c.args.size()!=3)throw std::runtime_error("Semantic error: ideaCanvasIntensityAt(handle, col, row) takes three arguments");emitArgs(c);emit(OP_IC_INTENSITY);return true;}
+        if(n=="ideaCanvasHasRenderer"){if(!c.args.empty())throw std::runtime_error("Semantic error: ideaCanvasHasRenderer() takes no arguments");emit(OP_IC_HASREND);return true;}
+        if(n=="ideaCanvasOpenWindow"){if(c.args.size()!=4)throw std::runtime_error("Semantic error: ideaCanvasOpenWindow(handle, width, height, title) takes four arguments");emitArgs(c);emit(OP_IC_OPENWIN);return true;}
+        if(n=="ideaCanvasShouldClose"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasShouldClose(handle) takes one argument");emitArgs(c);emit(OP_IC_SHOULDCLOSE);return true;}
+        if(n=="ideaCanvasPresent"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasPresent(handle) takes one argument");emitArgs(c);emit(OP_IC_PRESENT);return true;}
+        if(n=="ideaCanvasRun"){if(c.args.size()!=4)throw std::runtime_error("Semantic error: ideaCanvasRun(handle, width, height, title) takes four arguments");emitArgs(c);emit(OP_IC_RUN);return true;}
+        if(n=="ideaCanvasSetBackendPolicy"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasSetBackendPolicy(handle, policy) takes two arguments");emitArgs(c);emit(OP_IC_SETPOLICY);return true;}
+        if(n=="ideaCanvasPolicy"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasPolicy(handle) takes one argument");emitArgs(c);emit(OP_IC_POLICY);return true;}
+        if(n=="ideaCanvasActiveBackend"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasActiveBackend(handle) takes one argument");emitArgs(c);emit(OP_IC_BACKEND);return true;}
+        if(n=="ideaCanvasGpuAvailable"){if(!c.args.empty())throw std::runtime_error("Semantic error: ideaCanvasGpuAvailable() takes no arguments");emit(OP_IC_GPUAVAIL);return true;}
+        if(n=="ideaCanvasMeasuredHz"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasMeasuredHz(handle) takes one argument");emitArgs(c);emit(OP_IC_MEASHZ);return true;}
+        if(n=="ideaCanvasMigrate"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasMigrate(handle, target) takes two arguments");emitArgs(c);emit(OP_IC_MIGRATE);return true;}
+
         if(n=="audioNew"){
             if(c.args.size()!=2)throw std::runtime_error("Semantic error: audioNew(sampleRate, outputPath) takes two arguments");
             emitExpr(c.args[0].get());emitExpr(c.args[1].get());emit(OP_AUDIO_NEW);return true;

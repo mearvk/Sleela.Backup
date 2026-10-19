@@ -1,0 +1,121 @@
+/*
+ * example/gui-mual-text-editor.sleela
+ * The MUAL (1.0 baseline) "text editor" scene as a REAL, on-screen window --
+ * driven by SleelaUI, SLeeLa's own native C/C++ toolkit, through the ui* SLVM
+ * bridge (OP_UI_CALL -> user-interface/ C ABI -> X11/Cocoa/Win32). Previously
+ * this file only print()ed a walkthrough of the scene; now the same baseline
+ * surface (a toolkit-neutral window holding an editor + a status line, a menu
+ * of actions, and the 1..14 document listener state) is painted as actual
+ * widgets you can review and interact with.
+ *
+ * The three-layer stack is live here:
+ *   SLeeLa decoration (this program + the theme below)
+ *     -> model (ui* built-ins: uiWindowCreate, uiButton, uiEntry, ...)
+ *       -> C/C++ (SleelaUI software rasterizer + native window backend)
+ *
+ * Run (needs a display: X on Linux, native on macOS/Windows):
+ *   SLEELA_SHEET=./SHEET.sheet \
+ *   SLEELA_SHA256_MANIFEST=./security/sha256-manifest.json \
+ *   ./impl/build/sleela run example/gui-mual-text-editor.sleela
+ *
+ * With no display (headless/CI) it reports that and exits 0 without a window.
+ */
+#sleela 2.1
+// MUAL (1.0) is the stable baseline: the original 25-class surface. SLeeLa owns
+// business logic and the meaning of events; here that model is projected onto
+// the native toolkit so the baseline window is really drawn.
+class GuiMualTextEditor {
+
+  // SLUITheme preset ordinals (mirror SLUIThemeId in the toolkit C ABI).
+  int THEME_CUSTOM = 2;
+
+  // 0xRRGGBBAA colours for the MUAL baseline: a calm neutral editor surface.
+  int rgba(int r, int g, int b, int a) {
+    return r * 16777216 + g * 65536 + b * 256 + a;
+  }
+  int rgb(int r, int g, int b) { return rgba(r, g, b, 255); }
+
+  // Build the baseline editor theme and return its handle.
+  int baselineTheme() {
+    int t = uiThemePreset(THEME_CUSTOM);
+    uiThemeSetBg(t, rgb(30, 32, 36));          // window floor
+    uiThemeSetSurface(t, rgb(40, 43, 48));     // editor / status surface
+    uiThemeSetSurfaceHi(t, rgb(52, 56, 62));   // raised / hover
+    uiThemeSetChrome(t, rgb(46, 49, 55));      // menu/header strip
+    uiThemeSetBorder(t, rgba(210, 216, 224, 40));
+    uiThemeSetFg(t, rgb(230, 234, 240));       // primary text
+    uiThemeSetFgDim(t, rgb(150, 158, 168));    // muted (status)
+    uiThemeSetAccent(t, rgb(90, 141, 239));    // the baseline blue accent
+    uiThemeSetAccentFg(t, rgb(16, 22, 34));
+    uiThemeSetRadius(t, 7);
+    uiThemeSetControlHeight(t, 32);
+    return t;
+  }
+
+  void main() {
+    print("SLeeLa MUAL Text Editor (native SleelaUI) — backend "
+        + uiBackendName(uiBackend()) + ", toolkit " + uiVersion());
+
+    int app = uiAppCreate("com.mearvk.SleelaUI.MualTextEditor");
+    if (app < 0) {
+      print("No display available (headless): the ui* bridge is wired, but the");
+      print("toolkit could not open a window. Run on a desktop (X/Cocoa/Win32).");
+      return;
+    }
+
+    int theme = baselineTheme();
+    int win = uiWindowCreate(app, "SLeeLa Editor — MUAL 1.0", 900, 640, theme);
+    int root = uiWindowRoot(win);
+
+    // --- Menu bar: the Path-1 actions bound to SLeeLa operations ---
+    int menu = uiHeaderBar(root);
+    int title = uiLabel(menu, "\u25A2  Editor");
+    uiWidgetMargin(title, 0, 10, 0, 12);
+    int save = uiButton(menu, "Save");         // -> operation onSave
+    uiWidgetSuggested(save, 1);
+    uiButton(menu, "Open");                     // -> operation onOpen
+    uiButton(menu, "New");
+    uiSpacer(menu);
+    uiLabel(menu, "backend: native \u00B7 swing \u00B7 javafx");
+
+    // --- Content: the Path-2 window (container) holding its components ---
+    int content = uiBox(root, 1, 10);
+    uiWidgetMargin(content, 14, 14, 14, 14);
+    uiWidgetExpand(content, 1, 1);
+
+    // The editable text area (component 'editor').
+    int editor = uiEntry(content, "Untitled \u2014 ready.");
+    uiWidgetExpand(editor, 1, 1);
+
+    // The 1..14 document-change listener panel.
+    int watch = uiCard(content);
+    int watchBox = uiBox(watch, 1, 6);
+    uiWidgetMargin(watchBox, 12, 12, 12, 12);
+    uiLabel(watchBox, "DOCUMENT LISTENER  (1..14 contract)");
+    int w1 = uiBox(watchBox, 0, 10);
+    uiLabel(w1, "watching 2 documents");
+    uiSpacer(w1);
+    uiBadge(w1, "within bound");
+    int w2 = uiBox(watchBox, 0, 10);
+    uiLabel(w2, "chapter-01.md  rev 1739981000:4096");
+    uiSpacer(w2);
+    uiBadge(w2, "refreshed");
+    int w3 = uiBox(watchBox, 0, 10);
+    int bad = uiLabel(w3, "watch 0 / 15 documents");
+    uiSpacer(w3);
+    int rej = uiBadge(w3, "rejected");
+    uiWidgetDestructive(rej, 1);
+
+    // --- Status line (component 'status', not clickable) ---
+    int status = uiStatusBar(root);
+    int sl = uiLabel(status, "MUAL baseline \u00B7 toolkit-neutral window \u00B7 three paths \u00B7 1..14 document listener");
+    uiWidgetMargin(sl, 0, 12, 0, 12);
+
+    uiWindowShow(win);
+    print("Window shown. Close it to exit; running the SleelaUI event loop.");
+    int code = uiAppRun(app);
+    uiThemeDestroy(theme);
+    uiAppDestroy(app);
+    print("event loop exited with code " + code);
+  }
+}
