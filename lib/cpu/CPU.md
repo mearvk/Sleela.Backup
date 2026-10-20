@@ -81,6 +81,24 @@ that bottoms out at Boolean logic.
 |---|---|
 | `SLStack` | The hardware call/data stack (grows downward) for PUSH/POP and CALL/RET return addresses. |
 
+### Layer 2.7 — Voltages, variable clocks, and expert timings
+| Class | Role |
+|---|---|
+| `SLVoltageRail` | One named, adjustable supply rail — **actual voltages in mV**, with load-line droop and a safe window. |
+| `SLTiming` | A named, careful timing budget (setup/hold/propagation/jitter/guardband in ps) with slack and max-frequency reporting. |
+| `SLBusTiming` | A bus's **variable clock speed** + named address/data-strobe/control budgets; voltage caps the trustworthy clock. |
+| `SLCpuTiming` | Expert CPU core timings: variable clock + Vcore + per-stage pipeline budgets; the critical stage sets the honest max clock. |
+| `SLIOTiming` | Expert timings for **control of I/O**: handshake/turnaround/recovery budgets + clock-domain-crossing synchronizer latency. |
+| `SLRamTiming` | Expert RAM timings: CL/tRCD/tRP/tRAS/tRC/command-rate with derived real-nanosecond access latency. |
+| `SLTimingClass` | The expertise tier as a **Class Object** — Novice/Basic/Advanced/Expert — carrying brand/medium and the dialing policy. |
+| `SLTimingProfile` | Gathers all rails + expert timings under one tier, dials them, checks `honored()`, seals an `SLTimingManifest`. |
+| `SLTimingManifest` | The serializable operating point a **compiled `.sleela` image carries** so the VM/loader honor **declared** timings. |
+
+> **This layer is documented in detail in [`TIMING.md`](TIMING.md).** It lets a
+> compiled `.sleela` file state the actual voltages, variable clocks, and expert
+> bus/CPU/I/O/RAM timings it was built for, so the compilers and VM operate those
+> stated numbers rather than assuming the quality of the hardware.
+
 ### Layer 5 — Programs and the multi-language toolchain
 | Class | Role |
 |---|---|
@@ -149,3 +167,49 @@ the real structure and semantics (combinational logic, clocked state, the
 fetch-decode-execute cycle, the memory hierarchy, interrupts, DMA, drivers,
 scheduling, syscalls, and loading) at a level that stays readable as SLeeLa
 source.
+
+### What the model does and does not claim
+
+Being explicit about the guarantees, since the point of the stack is that it is
+honest about its own boundaries:
+
+1. **Running a CPU as a model models that CPU, its codes, and its features.**
+   Each `SL<ARCH>CPU` (including the AMD Threadripper 9000 SKUs) extends
+   `SLCPURuntime` and supplies the architecture's real programmer model — its
+   register set, data/address widths, flags — and a genuine `decode()` that maps
+   the architecture's own instruction encoding onto the ALU and the substrate.
+   `SLControlUnit.step()` is a real fetch-decode-execute cycle. Cache levels,
+   the MMU/TLB, the bus, and the interrupt controller are modeled as that part's
+   actual features (see each arch folder's `CPU.md`/`CACHE.md`/`BUS.md`). So the
+   **instruction semantics** — the result and observable effect of executing
+   each instruction — are faithfully represented.
+
+2. **Instruction timing is a behavioral, conservative estimate — not
+   cycle-accurate.** The model states this plainly: `instruction latency !=
+   clock period`, and per-instruction cost depends on addressing mode, operand
+   transfers, read/write sequence, branch outcome, and wait/interrupt state
+   (see [`TIMING.md`](TIMING.md)). Clock rate, the per-stage/bus/RAM/I-O timing
+   budgets (`SLCpuTiming`, `SLBusTiming`, `SLRamTiming`, `SLIOTiming`), and cycle
+   counts are **timing hints and net-result accounting**, recorded as
+   observable/derived values. They are deliberately *not* presented as a
+   cycle-accurate or transistor-level count; the model never claims an exact
+   per-cycle silicon reproduction.
+
+3. **The opcode mapping (Sleela → model CPU → native VM) is careful,
+   conservative, and verified — it invents nothing.** Every register-ISA
+   instruction and every OS syscall is lowered onto the **canonical opcode
+   substrate** (`SLSleelaOpcode`), whose codes and mnemonics mirror the native
+   enum exactly (`impl/core/sleela_core.h` `SLOp`). The native substrate
+   currently defines **150 opcodes** (codes 0..149), organized in `SLSleelaOpcode`
+   as a double shelf of three tiers — base computational/service core (0..48),
+   substrate extensions (49..97), and host-facing services (98..149) — each with
+   its own `TIER_*` flag and `*_COUNT` bound for the monitoring/storage layer.
+   All are acceptable opcodes; the CPU model lowers onto the Turing-complete base
+   core and does not fabricate a parallel instruction set.
+   Because that substrate is already executed by the native VM and is Turing
+   complete, the mapping is a **reduction**, not an invention — and it is
+   checkable: `SLTuringBridge.proveEquivalence(c, cpp, java, sleela)` lowers the
+   same computation from all four frontends to the substrate, runs each, and
+   returns true only when every one produces the identical result. That is what
+   makes "a program on the model CPU" and "a program on the native VM" 1:1 in
+   Turing effect rather than an unverified assertion.
