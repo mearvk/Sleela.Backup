@@ -123,76 +123,112 @@ void Box::arrange(const PaintContext& ctx, const Rect& area) {
     bounds_ = area;
     Rect box = content();
 
-    /* First pass: natural sizes and count expanders along the main axis. */
+    /* Measure natural sizes, then fit every visible child into the parent's
+     * available main-axis extent. Natural measurements are preferences, not
+     * permission to allocate beyond the parent's frame. */
     std::vector<SLUISize> nat;
     std::vector<Widget*> vis;
-    int natural_main = 0, expanders = 0, count = 0;
+    int natural_main = 0, expanders = 0;
     for (auto& c : children_) {
         if (!c->visible()) continue;
         SLUISize cs = c->measure(ctx);
         nat.push_back(cs);
         vis.push_back(c.get());
-        bool exp = (orient_ == SLUI_ORIENT_HORIZONTAL) ? c->hexpand() : c->vexpand();
-        natural_main += (orient_ == SLUI_ORIENT_HORIZONTAL) ? cs.w : cs.h;
+        const int child_main = orient_ == SLUI_ORIENT_HORIZONTAL ? cs.w : cs.h;
+        natural_main += std::max(0, child_main);
+        const bool exp = orient_ == SLUI_ORIENT_HORIZONTAL ? c->hexpand() : c->vexpand();
         if (exp) ++expanders;
-        ++count;
     }
+    const int count = static_cast<int>(vis.size());
     if (count == 0) return;
 
-    int avail_main = (orient_ == SLUI_ORIENT_HORIZONTAL) ? box.w : box.h;
-    int spacing_total = spacing_ * (count - 1);
-    int extra = avail_main - natural_main - spacing_total;
-    int per_expander = (expanders > 0 && extra > 0) ? extra / expanders : 0;
-    int remainder = (expanders > 0 && extra > 0) ? extra % expanders : 0;
+    const int avail_main = std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? box.w : box.h);
+    /* If the requested gaps themselves cannot fit, reduce them before sizing
+     * children. This keeps every assigned rectangle inside the parent. */
+    const int requested_spacing = std::max(0, spacing_);
+    const int effective_spacing = count > 1
+        ? std::min(requested_spacing, avail_main / (count - 1)) : 0;
+    const int spacing_total = effective_spacing * (count - 1);
+    const int content_main = std::max(0, avail_main - spacing_total);
 
-    int pos = (orient_ == SLUI_ORIENT_HORIZONTAL) ? box.x : box.y;
-    for (size_t i = 0; i < vis.size(); ++i) {
-        Widget* c = vis[i];
-        SLUISize cs = nat[i];
-        bool exp = (orient_ == SLUI_ORIENT_HORIZONTAL) ? c->hexpand() : c->vexpand();
-        int main_size = (orient_ == SLUI_ORIENT_HORIZONTAL) ? cs.w : cs.h;
-        if (exp && extra > 0) {
-            main_size += per_expander;
-            if (remainder > 0) {
-                main_size += 1;
+    std::vector<int> main_sizes(static_cast<size_t>(count), 0);
+    int assigned_main = 0;
+    if (natural_main > content_main && natural_main > 0) {
+        /* Compress proportionally when natural content cannot fit. Distribute
+         * rounding pixels deterministically without exceeding the parent. */
+        for (int i = 0; i < count; ++i) {
+            const int natural = std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? nat[i].w : nat[i].h);
+            main_sizes[static_cast<size_t>(i)] =
+                static_cast<int>((static_cast<long long>(natural) * content_main) / natural_main);
+            assigned_main += main_sizes[static_cast<size_t>(i)];
+        }
+        int remainder = content_main - assigned_main;
+        for (int i = 0; i < count && remainder > 0; ++i) {
+            const int natural = std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? nat[i].w : nat[i].h);
+            if (natural > 0) {
+                ++main_sizes[static_cast<size_t>(i)];
                 --remainder;
             }
         }
-        Rect cell;
-        if (orient_ == SLUI_ORIENT_HORIZONTAL) {
-            cell = Rect{pos, box.y, main_size, box.h};
-        } else {
-            cell = Rect{box.x, pos, box.w, main_size};
+    } else {
+        for (int i = 0; i < count; ++i)
+            main_sizes[static_cast<size_t>(i)] =
+                std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? nat[i].w : nat[i].h);
+        int extra = content_main - natural_main;
+        if (expanders > 0 && extra > 0) {
+            const int per_expander = extra / expanders;
+            int remainder = extra % expanders;
+            for (int i = 0; i < count; ++i) {
+                Widget* child = vis[static_cast<size_t>(i)];
+                const bool exp = orient_ == SLUI_ORIENT_HORIZONTAL ? child->hexpand() : child->vexpand();
+                if (!exp) continue;
+                main_sizes[static_cast<size_t>(i)] += per_expander;
+                if (remainder > 0) {
+                    ++main_sizes[static_cast<size_t>(i)];
+                    --remainder;
+                }
+            }
         }
-        /* Cross-axis alignment: shrink the cell to the child's natural cross
-         * size unless the child fills, then offset for start/center/end. */
+    }
+
+    int pos = orient_ == SLUI_ORIENT_HORIZONTAL ? box.x : box.y;
+    for (int i = 0; i < count; ++i) {
+        Widget* child = vis[static_cast<size_t>(i)];
+        const SLUISize cs = nat[static_cast<size_t>(i)];
+        const int main_size = main_sizes[static_cast<size_t>(i)];
+        Rect cell = orient_ == SLUI_ORIENT_HORIZONTAL
+            ? Rect{pos, box.y, main_size, std::max(0, box.h)}
+            : Rect{box.x, pos, std::max(0, box.w), main_size};
+
+        /* Cross-axis alignment can reduce a child, never enlarge it past the
+         * allocated cell. If its natural size is too large, the cell wins. */
         Rect placed = cell;
         if (orient_ == SLUI_ORIENT_HORIZONTAL) {
-            SLUIAlign va = c->valign();
+            const SLUIAlign va = child->valign();
             if (va != SLUI_ALIGN_FILL && cs.h < cell.h) {
-                placed.h = cs.h;
-                if (va == SLUI_ALIGN_CENTER)
-                    placed.y = cell.y + (cell.h - cs.h) / 2;
-                else if (va == SLUI_ALIGN_END)
-                    placed.y = cell.bottom() - cs.h;
+                placed.h = std::max(0, cs.h);
+                if (va == SLUI_ALIGN_CENTER) placed.y = cell.y + (cell.h - placed.h) / 2;
+                else if (va == SLUI_ALIGN_END) placed.y = cell.bottom() - placed.h;
             }
         } else {
-            SLUIAlign ha = c->halign();
+            const SLUIAlign ha = child->halign();
             if (ha != SLUI_ALIGN_FILL && cs.w < cell.w) {
-                placed.w = cs.w;
-                if (ha == SLUI_ALIGN_CENTER)
-                    placed.x = cell.x + (cell.w - cs.w) / 2;
-                else if (ha == SLUI_ALIGN_END)
-                    placed.x = cell.right() - cs.w;
+                placed.w = std::max(0, cs.w);
+                if (ha == SLUI_ALIGN_CENTER) placed.x = cell.x + (cell.w - placed.w) / 2;
+                else if (ha == SLUI_ALIGN_END) placed.x = cell.right() - placed.w;
             }
         }
-        c->arrange(ctx, placed);
-        pos += main_size + spacing_;
+        child->arrange(ctx, placed);
+        pos += main_size + effective_spacing;
     }
 }
 
 void Box::paint(PaintContext& ctx) {
+    // A container is a hard paint boundary: descendants may measure naturally,
+    // but their pixels must never escape the allocated parent rectangle.
+    if (ctx.canvas) ctx.canvas->push_clip(bounds_);
     paint_children(ctx);
+    if (ctx.canvas) ctx.canvas->pop_clip();
 }
 
 void HeaderBar::paint(PaintContext& ctx) {
@@ -201,7 +237,10 @@ void HeaderBar::paint(PaintContext& ctx) {
     ctx.canvas->fill_rect(b, t.chrome);
     /* 1px bottom hairline -- the quiet frame edge. */
     ctx.canvas->hline(b.x, b.right() - 1, b.bottom() - 1, t.border);
+    // Header-bar children obey the same hard boundary as ordinary boxes.
+    ctx.canvas->push_clip(b);
     paint_children(ctx);
+    ctx.canvas->pop_clip();
 }
 
 /* ======================================================================== */
@@ -1246,6 +1285,210 @@ bool ScrollBar::on_event(const SLUIEvent& ev) {
     default:
         return false;
     }
+}
+
+/* ======================================================================== */
+/* ScrolledView                                                             */
+/* ======================================================================== */
+ScrolledView::ScrolledView(int policy_h, int policy_v)
+    : Widget(WidgetKind::ScrolledView),
+      policy_h_(policy_h), policy_v_(policy_v) {
+    /* Own two scroll bars. They live in children_ (so they paint and route
+     * events like any child) but are NOT the scroll content. Each bar drives
+     * the matching content offset through its value_changed handler. */
+    auto v = std::make_unique<ScrollBar>(SLUI_ORIENT_VERTICAL, 0.0, 1.0);
+    vbar_ = v.get();
+    add_child(std::move(v));
+    auto h = std::make_unique<ScrollBar>(SLUI_ORIENT_HORIZONTAL, 0.0, 1.0);
+    hbar_ = h.get();
+    add_child(std::move(h));
+
+    vbar_->on_value_changed(
+        [](SLUIWidget*, double val, void* u) {
+            auto* self = static_cast<ScrolledView*>(u);
+            self->set_scroll_y(
+                static_cast<int>(val * self->max_offset_y() + 0.5));
+        },
+        this);
+    hbar_->on_value_changed(
+        [](SLUIWidget*, double val, void* u) {
+            auto* self = static_cast<ScrolledView*>(u);
+            self->set_scroll_x(
+                static_cast<int>(val * self->max_offset_x() + 0.5));
+        },
+        this);
+}
+
+Widget* ScrolledView::content_child() const {
+    for (auto& c : children_) {
+        if (c.get() == vbar_ || c.get() == hbar_) continue;
+        return c.get();
+    }
+    return nullptr;
+}
+
+bool ScrolledView::bar_visible_x() const {
+    if (policy_h_ == SCROLL_NEVER) return false;
+    if (policy_h_ == SCROLL_ALWAYS) return true;
+    return overflow_x();
+}
+bool ScrolledView::bar_visible_y() const {
+    if (policy_v_ == SCROLL_NEVER) return false;
+    if (policy_v_ == SCROLL_ALWAYS) return true;
+    return overflow_y();
+}
+
+void ScrolledView::set_scroll_x(int px) {
+    int mx = max_offset_x();
+    offset_x_ = std::clamp(px, 0, mx);
+    invalidate();
+}
+void ScrolledView::set_scroll_y(int px) {
+    int my = max_offset_y();
+    offset_y_ = std::clamp(px, 0, my);
+    invalidate();
+}
+
+SLUISize ScrolledView::measure(const PaintContext& ctx) {
+    /* A viewport reports the size it wants to OCCUPY, which is intentionally
+     * decoupled from its content's (possibly larger) size -- reporting the
+     * content size here is exactly what would make the viewport overflow its
+     * own parent, defeating the point. So:
+     *   - a pinned axis (uiWidgetSizeRequest) reports that fixed size;
+     *   - an un-pinned axis reports a MODEST default viewport, capped so it is
+     *     never larger than a sane window region, and never the full content.
+     * Set hexpand/vexpand (uiWidgetExpand) to have the parent grow the viewport
+     * to fill the available space; the content then scrolls inside whatever the
+     * parent allocates. The parent box still decides the final allocation. */
+    SLUISize cs{0, 0};
+    if (Widget* c = content_child()) cs = c->measure(ctx);
+    /* Default viewport extents: large enough to be useful, small enough to fit
+     * inside a typical window so the view does not push its parent wider/taller
+     * than the screen. Content beyond these scrolls. */
+    const int kDefaultViewW = 320;
+    const int kDefaultViewH = 240;
+    int wantW = (min_w_ > 0) ? min_w_ : std::min(cs.w, kDefaultViewW);
+    int wantH = (min_h_ > 0) ? min_h_ : std::min(cs.h, kDefaultViewH);
+    SLUISize s;
+    s.w = wantW + margin_.left + margin_.right;
+    s.h = wantH + margin_.top + margin_.bottom;
+    return s;
+}
+
+void ScrolledView::arrange(const PaintContext& ctx, const Rect& area) {
+    bounds_ = area;
+    Rect box = content();           /* viewport minus this widget's margin */
+    const Theme& t = *ctx.theme;
+    int gutter = t.unit * 3;         /* matches ScrollBar::measure thickness */
+
+    Widget* child = content_child();
+    SLUISize cs{0, 0};
+    if (child) cs = child->measure(ctx);
+    content_w_ = cs.w;
+    content_h_ = cs.h;
+
+    /* Decide bar visibility. Reserving a gutter for one bar reduces the other
+     * axis' viewport, which can itself trigger overflow; resolve in two passes
+     * so a corner case (content just fits until a gutter appears) settles. */
+    bool showV = false, showH = false;
+    for (int pass = 0; pass < 2; ++pass) {
+        int vw = box.w - (showV ? gutter : 0);
+        int vh = box.h - (showH ? gutter : 0);
+        bool ofx = content_w_ > vw;
+        bool ofy = content_h_ > vh;
+        showV = (policy_v_ == SCROLL_ALWAYS) ||
+                (policy_v_ == SCROLL_AUTO && ofy);
+        showH = (policy_h_ == SCROLL_ALWAYS) ||
+                (policy_h_ == SCROLL_AUTO && ofx);
+    }
+
+    view_w_ = box.w - (showV ? gutter : 0);
+    view_h_ = box.h - (showH ? gutter : 0);
+    if (view_w_ < 0) view_w_ = 0;
+    if (view_h_ < 0) view_h_ = 0;
+
+    /* Re-clamp the offsets to the (possibly new) max and place the content at
+     * the negative offset so scrolling reveals material below/right. */
+    offset_x_ = std::clamp(offset_x_, 0, max_offset_x());
+    offset_y_ = std::clamp(offset_y_, 0, max_offset_y());
+
+    if (child) {
+        int cw = std::max(content_w_, view_w_);   /* fill the viewport if smaller */
+        int ch = std::max(content_h_, view_h_);
+        Rect placed{box.x - offset_x_, box.y - offset_y_, cw, ch};
+        child->arrange(ctx, placed);
+    }
+
+    /* Place the bars in their gutters along the inner edges. */
+    vbar_->set_visible(showV);
+    hbar_->set_visible(showH);
+    if (showV) {
+        vbar_->arrange(ctx, Rect{box.right() - gutter, box.y, gutter, view_h_});
+    }
+    if (showH) {
+        hbar_->arrange(ctx, Rect{box.x, box.bottom() - gutter, view_w_, gutter});
+    }
+    sync_bars();
+}
+
+void ScrolledView::sync_bars() {
+    /* page = fraction of content visible (thumb size); value = offset fraction. */
+    if (content_h_ > 0) {
+        double page = std::clamp(view_h_ / static_cast<double>(content_h_), 0.05, 1.0);
+        double val = max_offset_y() > 0
+                         ? offset_y_ / static_cast<double>(max_offset_y())
+                         : 0.0;
+        vbar_->set_page(page);
+        vbar_->set_value_silent(val);
+    }
+    if (content_w_ > 0) {
+        double page = std::clamp(view_w_ / static_cast<double>(content_w_), 0.05, 1.0);
+        double val = max_offset_x() > 0
+                         ? offset_x_ / static_cast<double>(max_offset_x())
+                         : 0.0;
+        hbar_->set_page(page);
+        hbar_->set_value_silent(val);
+    }
+}
+
+void ScrolledView::paint(PaintContext& ctx) {
+    Rect box = content();
+    /* Clip the content to the viewport (minus any reserved gutters) so the
+     * overflow is hidden rather than spilling past the frame. */
+    ctx.canvas->push_clip(Rect{box.x, box.y, view_w_, view_h_});
+    if (Widget* child = content_child()) {
+        if (child->visible()) child->paint(ctx);
+    }
+    ctx.canvas->pop_clip();
+    /* The bars paint unclipped in their gutters. */
+    if (vbar_->visible()) vbar_->paint(ctx);
+    if (hbar_->visible()) hbar_->paint(ctx);
+}
+
+bool ScrolledView::on_event(const SLUIEvent& ev) {
+    /* Give the scroll bars first refusal (they sit in the gutters), then route
+     * positional events into the clipped content with the scroll offset applied
+     * so hit-testing matches what the user sees. */
+    bool positional = ev.type == SLUI_EVENT_POINTER_DOWN ||
+                      ev.type == SLUI_EVENT_POINTER_UP ||
+                      ev.type == SLUI_EVENT_POINTER_MOVE;
+    if (vbar_->visible() && (!positional || vbar_->bounds().contains(ev.x, ev.y))) {
+        if (vbar_->on_event(ev)) return true;
+    }
+    if (hbar_->visible() && (!positional || hbar_->bounds().contains(ev.x, ev.y))) {
+        if (hbar_->on_event(ev)) return true;
+    }
+    Widget* child = content_child();
+    if (child && child->visible()) {
+        if (positional) {
+            Rect box = content();
+            /* Only deliver pointer events that fall inside the visible viewport. */
+            if (!Rect{box.x, box.y, view_w_, view_h_}.contains(ev.x, ev.y))
+                return false;
+        }
+        return child->on_event(ev);
+    }
+    return false;
 }
 
 /* ======================================================================== */

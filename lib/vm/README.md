@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-vm-creator-logo-001.jpg" alt="SLeeLa VM Creator" width="100%"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-vm-creator-logo-001.jpg" alt="SLeeLa VM Creator" width="100%"></p>
 
 
 # SLeeLa VM Source Classes
@@ -34,6 +34,29 @@ The following `.sleela` files are the source-level VM and architecture definitio
 - `SleelaVMSystemCallBridge.sleela` — the VM-family face of the operating-system System Call API: exposes the host System API (environment, identity, working directory, filesystem metadata, process execution) to a running VM through the `os*` built-ins / `OP_OS_*` opcodes. Shared by the base VM and every generation. Pairs with the `PROCESS`/`OS_SYSCALLS` feature bits. See `OPCODE-MAP.md` and `/lib/os/OS.md`.
 - `SLVMMemory.sleela` — VM memory model.
 - `SLVMHeap.sleela` — VM heap model.
+
+### Running a guest CPU and a C/C++/Java/Sleela program (the full stack)
+
+The Secondary Sleela VM can host a **Sleela CPU model** as its executor and run a
+C, C++, Java, or Sleela program through it. The chain is:
+
+```
+SleelaVMCreator (creator/)  →  SLVM (this package, on the Native Sleela VM)
+                            →  hostCpu(SL<ARCH>CPU from /lib/cpu)
+                            →  runGuestWorkload(C | C++ | Java | Sleela program)
+```
+
+- `SLVM.hostCpu(cpu)` lends the hosted CPU this VM's `SLSleelaVM` substrate; the
+  CPU attaches to it (`SLCPURuntime.attachSubstrate`) so it lowers its program
+  onto **this** substrate — the CPU runs *nested* on the Secondary VM.
+- `SLVM.runGuestWorkload(work, budget)` has the CPU compile + map a workload
+  (`/lib/cpu` `SLWorkload` + `SLCompilerDriver` + `SLOpcodeMap`) onto the shared
+  substrate, then SLVM drives the opcode stream and services I/O VM-exits.
+- `creator/SleelaVMCreator.sleela` builds and boots the SLVM and runs the whole
+  stack in one call (`creator.run(generation, cpu, workload, budget)`).
+
+See `creator/README.md` and `creator/examples/creator-full-stack.sleela`, plus
+`/lib/cpu/CPU-ON-SECONDARY-VM.md` for the CPU-side view.
 
 ### VM options, capabilities, and resource architecture
 
