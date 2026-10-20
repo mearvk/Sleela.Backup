@@ -115,6 +115,15 @@ void slui_app_quit(SLUIApp* app, int exit_code) {
     if (app && app->backend) app->backend->quit(exit_code);
 }
 
+SLUIStatus slui_screen_size(SLUIApp* app, int* w, int* h) {
+    if (!app || !app->backend) return SLUI_ERR_INVALID;
+    int sw = 0, sh = 0;
+    if (!app->backend->screen_size(&sw, &sh)) return SLUI_ERR_INVALID;
+    if (w) *w = sw;
+    if (h) *h = sh;
+    return SLUI_OK;
+}
+
 /* ---- Window -------------------------------------------------------------- */
 SLUIWindow* slui_window_create(SLUIApp* app, const SLUIWindowConfig* config) {
     if (!app || !config) return nullptr;
@@ -156,6 +165,20 @@ void slui_window_set_theme(SLUIWindow* window, const SLUITheme* theme) {
 }
 void slui_window_request_redraw(SLUIWindow* window) {
     if (window) as_window(window)->request_redraw();
+}
+void slui_window_render(SLUIWindow* window) {
+    if (window) as_window(window)->render();
+}
+void slui_window_set_buffering(SLUIWindow* window, int mode) {
+    if (!window) return;
+    if (mode < SLUI_BUFFERING_SINGLE) mode = SLUI_BUFFERING_SINGLE;
+    if (mode > SLUI_BUFFERING_TRIPLE) mode = SLUI_BUFFERING_TRIPLE;
+    as_window(window)->set_buffering(static_cast<SLUIBufferingMode>(mode));
+}
+int slui_window_buffering(const SLUIWindow* window) {
+    if (!window) return SLUI_BUFFERING_SINGLE;
+    return static_cast<int>(
+        as_window(const_cast<SLUIWindow*>(window))->buffering());
 }
 void slui_window_set_event_handler(SLUIWindow* window, SLUIEventHandler handler,
                                    void* user) {
@@ -239,6 +262,36 @@ SLUIWidget* slui_scroll_bar(SLUIWidget* parent, SLUIOrientation orient,
                             double value, double page) {
     return attach(parent,
                   std::make_unique<slui::ScrollBar>(orient, value, page));
+}
+SLUIWidget* slui_scrolled_view(SLUIWidget* parent, int policy_h, int policy_v) {
+    return attach(parent,
+                  std::make_unique<slui::ScrolledView>(policy_h, policy_v));
+}
+void slui_scrolled_view_scroll_to(SLUIWidget* view, int x, int y) {
+    if (!view) return;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return;
+    auto* sv = static_cast<slui::ScrolledView*>(w);
+    sv->set_scroll_x(x);
+    sv->set_scroll_y(y);
+}
+void slui_scrolled_view_scroll_by(SLUIWidget* view, int dx, int dy) {
+    if (!view) return;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return;
+    static_cast<slui::ScrolledView*>(w)->scroll_by(dx, dy);
+}
+int slui_scrolled_view_scroll_x(SLUIWidget* view) {
+    if (!view) return 0;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return 0;
+    return static_cast<slui::ScrolledView*>(w)->scroll_x();
+}
+int slui_scrolled_view_scroll_y(SLUIWidget* view) {
+    if (!view) return 0;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return 0;
+    return static_cast<slui::ScrolledView*>(w)->scroll_y();
 }
 SLUIWidget* slui_frame(SLUIWidget* parent, const char* title) {
     return attach(parent, std::make_unique<slui::Frame>(title ? title : ""));
