@@ -32,9 +32,18 @@ Window::Window(void*, Backend* backend, const SLUIWindowConfig& cfg)
     native_ = backend_->create_window(this, cfg.title ? cfg.title : "SleelaUI",
                                       w, h, cfg.resizable != 0);
     canvas_.resize(w, h);
+    /* Triple buffering is the native default for smoother rapid redraws,
+     * resize, and animation. Applications may explicitly select single/double. */
+    if (native_) native_->set_buffering(buffering_);
 }
 
 Window::~Window() = default;
+
+void Window::set_buffering(SLUIBufferingMode mode) {
+    buffering_ = mode;
+    if (native_) native_->set_buffering(mode);
+    request_redraw();
+}
 
 SLUIWidget* Window::root_handle() {
     return reinterpret_cast<SLUIWidget*>(root_.get());
