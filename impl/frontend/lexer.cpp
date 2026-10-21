@@ -14,7 +14,7 @@ const char* tokName(Tok t) {
         case Tok::KwStatic:return "static"; case Tok::KwProtected:return "protected"; case Tok::KwPublic:return "public"; case Tok::KwPrivate:return "private";
         case Tok::KwFinal:return "final"; case Tok::KwAbstract:return "abstract"; case Tok::KwNative:return "native";
         case Tok::KwSynchronized:return "synchronized"; case Tok::KwVolatile:return "volatile"; case Tok::KwTransient:return "transient";
-        case Tok::KwStrictfp:return "strictfp"; case Tok::KwSealed:return "sealed"; case Tok::KwNonSealed:return "non-sealed"; case Tok::KwDefault:return "default";
+        case Tok::KwStrictfp:return "strictfp"; case Tok::KwSealed:return "sealed"; case Tok::KwNonSealed:return "non-sealed"; case Tok::KwConst:return "const"; case Tok::KwUsualMem:return "usualmem"; case Tok::KwAccurateMem:return "accuratemem"; case Tok::KwDefault:return "default";
         case Tok::KwExtends:return "extends"; case Tok::KwImplements:return "implements"; case Tok::KwThrows:return "throws"; case Tok::KwSuper:return "super"; case Tok::KwThis:return "this"; case Tok::KwInstanceof:return "instanceof"; case Tok::KwIf:return "if"; case Tok::KwElse:return "else"; case Tok::KwWhile:return "while"; case Tok::KwDo:return "do"; case Tok::KwFor:return "for"; case Tok::KwSwitch:return "switch"; case Tok::KwCase:return "case"; case Tok::KwBreak:return "break"; case Tok::KwContinue:return "continue"; case Tok::KwReturn:return "return"; case Tok::KwThrow:return "throw"; case Tok::KwTry:return "try"; case Tok::KwCatch:return "catch"; case Tok::KwFinally:return "finally"; case Tok::KwAssert:return "assert"; case Tok::KwYield:return "yield"; case Tok::KwNew:return "new";
         case Tok::KwVoid:return "void"; case Tok::KwIntT:return "int"; case Tok::KwDoubleT:return "double"; case Tok::KwBoolT:return "boolean"; case Tok::KwStringT:return "String";
         case Tok::KwTrue:return "true"; case Tok::KwFalse:return "false"; case Tok::KwPrint:return "print"; case Tok::KwNull:return "null";
@@ -41,6 +41,11 @@ static const std::unordered_map<std::string,int> kContextualBuiltins13={
     {"synchroOpen",1},{"synchroDispatch",1},{"synchroReport",1},{"synchroClose",1},{"synchroSent",1},{"synchroReceived",1},{"synchroMean",1},{"synchroMin",1},{"synchroMax",1},{"synchroP95",1},{"synchroLoss",1},
     {"bestOfNew",1},{"bestOfWeight",1},{"bestOfMinVersion",1},{"bestOfCostBudget",1},{"bestOfCandidate",1},{"bestOfRecord",1},{"bestOfScore",1},{"bestOfBest",1},{"bestOfChoice",1},{"bestOfReport",1},{"bestOfClose",1},
     {"bestOfMean",1},{"bestOfLoss",1},{"bestOfJitter",1},{"bestOfCertainty",1},{"bestOfCandidateArch",1},{"bestOfArchRealized",1},{"bestOfArch",1},{"bestOfArchParam",1},{"bestOfArchState",1},
+    /* Idea System(TM) realtime canvas (idea/realtime) native-bridge built-ins. */
+    {"ideaCanvasCreate",1},{"ideaCanvasDestroy",1},{"ideaCanvasCols",1},{"ideaCanvasRows",1},{"ideaCanvasCount",1},
+    {"ideaCanvasSetParams",1},{"ideaCanvasExcite",1},{"ideaCanvasStep",1},{"ideaCanvasAdvance",1},{"ideaCanvasTimestep",1},
+    {"ideaCanvasIntensityAt",1},{"ideaCanvasHasRenderer",1},{"ideaCanvasOpenWindow",1},{"ideaCanvasShouldClose",1},{"ideaCanvasPresent",1},{"ideaCanvasRun",1},
+    {"ideaCanvasSetBackendPolicy",1},{"ideaCanvasPolicy",1},{"ideaCanvasActiveBackend",1},{"ideaCanvasGpuAvailable",1},{"ideaCanvasMeasuredHz",1},{"ideaCanvasMigrate",1},
     /* GC-hint words (syntax 1.9). `gc` and `mem` are CONTEXTUAL, not reserved:
      * they tokenize as ordinary identifiers and are only special as the whole
      * right-hand side of an assignment (`x = gc N;` / `x = mem N;`), so they
@@ -60,7 +65,7 @@ Token Lexer::makeIdentOrKeyword(){
         {"class",Tok::KwClass},{"interface",Tok::KwInterface},{"enum",Tok::KwEnum},{"record",Tok::KwRecord},
         {"static",Tok::KwStatic},{"protected",Tok::KwProtected},{"public",Tok::KwPublic},{"private",Tok::KwPrivate},
         {"final",Tok::KwFinal},{"abstract",Tok::KwAbstract},{"native",Tok::KwNative},{"synchronized",Tok::KwSynchronized},
-        {"volatile",Tok::KwVolatile},{"transient",Tok::KwTransient},{"strictfp",Tok::KwStrictfp},{"sealed",Tok::KwSealed},{"non-sealed",Tok::KwNonSealed},
+        {"volatile",Tok::KwVolatile},{"transient",Tok::KwTransient},{"strictfp",Tok::KwStrictfp},{"sealed",Tok::KwSealed},{"non-sealed",Tok::KwNonSealed},{"const",Tok::KwConst},{"usualmem",Tok::KwUsualMem},{"accuratemem",Tok::KwAccurateMem},
         {"default",Tok::KwDefault},{"extends",Tok::KwExtends},{"implements",Tok::KwImplements},{"throws",Tok::KwThrows},{"super",Tok::KwSuper},{"this",Tok::KwThis},{"instanceof",Tok::KwInstanceof},{"if",Tok::KwIf},{"else",Tok::KwElse},{"while",Tok::KwWhile},{"do",Tok::KwDo},{"for",Tok::KwFor},{"switch",Tok::KwSwitch},{"case",Tok::KwCase},{"break",Tok::KwBreak},{"continue",Tok::KwContinue},{"return",Tok::KwReturn},{"throw",Tok::KwThrow},{"try",Tok::KwTry},{"catch",Tok::KwCatch},{"finally",Tok::KwFinally},{"synchronized",Tok::KwSynchronized},{"assert",Tok::KwAssert},{"yield",Tok::KwYield},{"new",Tok::KwNew},
         {"void",Tok::KwVoid},{"int",Tok::KwIntT},{"double",Tok::KwDoubleT},{"boolean",Tok::KwBoolT},{"String",Tok::KwStringT},
         {"if",Tok::KwIf},{"else",Tok::KwElse},{"while",Tok::KwWhile},{"for",Tok::KwFor},{"return",Tok::KwReturn},{"true",Tok::KwTrue},{"false",Tok::KwFalse},
