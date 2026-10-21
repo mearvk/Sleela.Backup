@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -132,6 +132,24 @@ provenance, an explanation chain, and a colorization work-plan item.
 ./impl/build/nordshrift check common-rails/common-rails.sst   # validate; NSS-* diagnostics
 ./impl/build/nordshrift build common-rails/common-rails.sst   # transpile + run on the core
 ```
+
+## Building and checking CommonRails
+
+From this directory, run:
+
+```sh
+make check
+make clean
+```
+
+The CommonRails Makefile builds and runs the C and C++ contract tests, compiles
+and runs the Java contract test, and checks the Sleela and SST sources when the
+local toolchain binaries are available. If those binaries are missing, the two
+toolchain checks report a clear skip; build them first with `make -C ../impl all`
+to run the complete set. The C, C++, and Java checks require their respective
+native compiler/JDK.
+
+The repository-root dispatcher also exposes `make common-rails`.
 
 ## Building the toolchain
 
