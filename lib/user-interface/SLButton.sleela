@@ -14,7 +14,7 @@
  * Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
  * bridge.
  */
-#sleela 1.5
+#sleela 2.1
 class SLButton extends SLWidget {
   // Create a button inside `parent` with a label.
   void createIn(SLWidget parent, String label) {
@@ -22,6 +22,26 @@ class SLButton extends SLWidget {
   }
   void createInHandle(int parentHandle, String label) {
     widget = uiButton(parentHandle, label);
+  }
+
+  // Create a labelled button and attach an icon descriptor in one operation.
+  void createInWithIcon(SLWidget parent, String label, SLIcon icon) {
+    createIn(parent, label);
+    setIcon(icon);
+  }
+  void createInHandleWithIcon(int parentHandle, String label, SLIcon icon) {
+    createInHandle(parentHandle, label);
+    setIcon(icon);
+  }
+
+  // Attach a JPEG icon plus a named fallback symbol (for example, Wifi).
+  void setIcon(SLIcon icon) {
+    if (widget >= 0 && icon != null) {
+      uiWidgetSetIcon(widget, icon.assetPath(), icon.symbolName());
+    }
+  }
+  void setIconPath(String assetPath, String symbolName) {
+    if (widget >= 0) { uiWidgetSetIcon(widget, assetPath, symbolName); }
   }
 
   // True if this button has an activation pending since the last check; the

@@ -52,6 +52,11 @@ typedef enum {
 
 /* The backend that was compiled in and is driving this process. */
 SLUIBackend slui_backend(void);
+
+/* Open the host operating system's network settings. This does not claim to
+ * scan, connect, or disconnect networks; those require a native radio provider.
+ * Returns SLUI_OK when the settings launcher was started, otherwise an error. */
+int slui_wifi_open_settings(void);
 const char *slui_backend_name(SLUIBackend backend);
 const char *slui_version_string(void);
 
@@ -238,9 +243,31 @@ int slui_app_pump(SLUIApp *app, int block);
 int slui_app_run(SLUIApp *app);
 void slui_app_quit(SLUIApp *app, int exit_code);
 
+/* Primary screen / display size in pixels. On success returns SLUI_OK and
+ * writes the dimensions through *w,*h; returns SLUI_ERR_INVALID (and leaves
+ * the outputs untouched) when the backend cannot report a size -- e.g. the
+ * headless build with no display -- so callers can fall back to a modeled
+ * resolution. Either pointer may be NULL to ignore that dimension. */
+SLUIStatus slui_screen_size(SLUIApp *app, int *w, int *h);
+
 /* --------------------------------------------------------------------------
  * Windows. A window owns a root container widget; add children to it.
  * ------------------------------------------------------------------------- */
+
+/* Presentation buffering mode -- how a freshly painted Canvas reaches the
+ * screen. SINGLE blits the Canvas straight to the live window (the original
+ * behavior; cheapest, but a mid-repaint frame can tear, and a resize repaints
+ * visibly). DOUBLE paints into one off-screen back buffer and copies the whole
+ * finished frame to the window in a single operation, so a resize/redraw lands
+ * atomically with no tearing. TRIPLE adds a second back buffer in a small ring
+ * so the next frame can be prepared without waiting on the previous blit --
+ * smoother under rapid resize / animation at a little more memory. */
+typedef enum {
+    SLUI_BUFFERING_SINGLE = 0,
+    SLUI_BUFFERING_DOUBLE = 1,
+    SLUI_BUFFERING_TRIPLE = 2
+} SLUIBufferingMode;
+
 typedef struct {
     const char *title;
     int width, height;
@@ -258,6 +285,20 @@ SLUIWidget *slui_window_root(SLUIWindow *window);
 const SLUITheme *slui_window_theme(const SLUIWindow *window);
 void slui_window_set_theme(SLUIWindow *window, const SLUITheme *theme);
 void slui_window_request_redraw(SLUIWindow *window);
+/* Force one synchronous layout + paint pass now (measure -> arrange -> paint
+ * into the window's canvas). The app loop does this every frame; this entry
+ * point lets a headless host or a test settle widget geometry (so e.g. a
+ * scrolled view's overflow is computed) without spinning the event loop. */
+void slui_window_render(SLUIWindow *window);
+
+/* Choose how painted frames reach the screen (SLUIBufferingMode). DOUBLE (the
+ * default from SleelaUI's side once set) presents a complete frame in one blit
+ * so resizes and redraws do not tear; TRIPLE rings a second back buffer for
+ * smoother rapid resize/animation; SINGLE restores the direct-blit path. The
+ * mode is remembered on the window and survives backend resurface; a backend
+ * that cannot honor it (headless) ignores it gracefully. */
+void slui_window_set_buffering(SLUIWindow *window, int mode);
+int slui_window_buffering(const SLUIWindow *window);
 
 /* A per-window event callback, called for events the widget tree did not fully
  * consume (e.g. window CLOSE). Return non-zero to mark the event handled. */
@@ -323,6 +364,21 @@ SLUIWidget *slui_card(SLUIWidget *parent);
 SLUIWidget *slui_grid(SLUIWidget *parent, int columns, int spacing);
 SLUIWidget *slui_status_bar(SLUIWidget *parent);
 
+/* A scrolled viewport: clips and scrolls its content when the content is larger
+ * than the viewport. The FIRST child attached to the returned widget is the
+ * scroll content (fill it like a box); the view owns its own scroll bars and
+ * shows them automatically per the per-axis policy (0=auto shown only on
+ * overflow, 1=always, 2=never). This is the native overflow->scrollbar muscle.
+ * `policy_h` governs the horizontal bar, `policy_v` the vertical. */
+SLUIWidget *slui_scrolled_view(SLUIWidget *parent, int policy_h, int policy_v);
+/* Programmatic scroll control / query for a scrolled view (no-op / 0 for a
+ * widget that is not a scrolled view). Offsets are in content pixels, clamped
+ * to the scrollable range. */
+void slui_scrolled_view_scroll_to(SLUIWidget *view, int x, int y);
+void slui_scrolled_view_scroll_by(SLUIWidget *view, int dx, int dy);
+int slui_scrolled_view_scroll_x(SLUIWidget *view);
+int slui_scrolled_view_scroll_y(SLUIWidget *view);
+
 /* Display / ornament. */
 SLUIWidget *slui_image(SLUIWidget *parent, const char *glyph, int w, int h);
 SLUIWidget *slui_avatar(SLUIWidget *parent, const char *initial, int diameter);
@@ -377,9 +433,22 @@ void slui_widget_set_size_request(SLUIWidget *w, int min_w, int min_h);
 void slui_widget_set_sensitive(SLUIWidget *w, int sensitive); /* grey out     */
 void slui_widget_set_visible(SLUIWidget *w, int visible);
 
+/* Popup panel primitive. Creates a themed card under parent, initially hidden.
+ * Call slui_popup_set_open(panel, 1) to show it and 0 to dismiss it. The panel
+ * is owned by its parent like every other widget; set_open never frees it.
+ * This is a layout-hosted popup surface (not a separate native window), so the
+ * caller should place it in an appropriate overlay/stack container. */
+SLUIWidget *slui_popup_create(SLUIWidget *parent);
+void slui_popup_set_open(SLUIWidget *popup, int open);
+int slui_popup_is_open(const SLUIWidget *popup);
+
 /* Text accessors (label/button/entry). text buffers are copied in; `out`/`cap`
  * read the current value and return the full length (even if truncated). */
 void slui_widget_set_text(SLUIWidget *w, const char *text);
+/* Attach a JPEG icon to a button. If loading fails, a named vector fallback
+ * such as "Wifi" is drawn instead. The asset path is relative to the process. */
+void slui_widget_set_icon(SLUIWidget *w, const char *asset_path,
+                          const char *symbol_name);
 size_t slui_widget_get_text(const SLUIWidget *w, char *out, size_t cap);
 
 /* State accessors. */

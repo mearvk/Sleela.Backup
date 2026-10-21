@@ -21,7 +21,7 @@ ifeq ($(OS),Windows_NT)
   PLATFORM := windows
   EXE := .exe
   THREADFLAG :=
-  PLATFORM_LIBS := -lws2_32 -lm
+  PLATFORM_LIBS := -lws2_32 -lopengl32 -lgdi32 -lm
 else
   EXE :=
   THREADFLAG := -pthread
@@ -52,8 +52,17 @@ STAGE_OPTIONS := $(STAGE)/Options
 STAGE_LIB := $(STAGE)/lib
 STAGE_DOCS := $(STAGE)/docs
 SLEELA_BIN := $(BUILD)/sleela$(EXE)
+SLEELAVC_BIN := $(BUILD)/sleelvac$(EXE)
 NORDSHRIFT_BIN := $(BUILD)/nordshrift$(EXE)
+# Reusable static archive of the native VM Core engine + its OS-abstraction
+# backends. This is the single "base engine" the premium SLVM generations under
+# ../sleela-virtual-machine/0NN link against so each one is a real, runnable VM
+# (slvm_new/slcore_exchange/slvm_load_file/slvm_run/slvm_free) instead of a
+# parallel toy interpreter. Its public API is impl/core/sleela_core.h.
+SLCORE_LIB := $(BUILD)/libslcore.a
 THREAD_SMOKE := $(BUILD)/thread_smoke
+THREAD_SMOKE_OBJ := $(BUILD)/thread_smoke_test.o
+SOCKET_SMOKE_OBJ := $(BUILD)/socket_smoke_test.o
 THREAD_PLATFORM_SMOKE := $(BUILD)/thread_platform_smoke
 SOCKET_SMOKE := $(BUILD)/socket_smoke
 SYNCHRO_SMOKE := $(BUILD)/synchro_smoke
@@ -89,6 +98,86 @@ NET_OBJ := $(BUILD)/sleela_net.o
 SYNCHRO_OBJ := $(BUILD)/sleela_synchro.o
 MUNCTION_OBJ := $(BUILD)/sleela_munction.o
 BESTOF_OBJ := $(BUILD)/sleela_bestof.o
+# Idea System(TM) realtime canvas: the VM links the real native C/C++
+# render+physics core by default, so `sleela <program>` can drive it. The
+# physics core is OpenMP C++; the GL render layer stays optional (stub here).
+IDEA_CANVAS_DIR := ../idea/realtime
+REGISTRY_OBJ := $(BUILD)/sleela_registry.o
+IDEA_CANVAS_BR_OBJ   := $(BUILD)/sleela_idea_canvas.o
+IDEA_CANVAS_SIM_OBJ  := $(BUILD)/idea_canvas_sim.o
+IDEA_CANVAS_STUB_OBJ := $(BUILD)/idea_canvas_gl_stub.o
+IDEA_CANVAS_GPU_OBJ  := $(BUILD)/idea_canvas_gpu.o
+# Platform GL context source, selected by OS (open standards: WGL/CGL/EGL).
+ifeq ($(PLATFORM),windows)
+  IDEA_CANVAS_CTX_SRC := $(IDEA_CANVAS_DIR)/idea_canvas_ctx_wgl.cpp
+  IDEA_CANVAS_CTX_OBJ := $(BUILD)/idea_canvas_ctx_wgl.o
+else ifeq ($(PLATFORM),macos)
+  IDEA_CANVAS_CTX_SRC := $(IDEA_CANVAS_DIR)/idea_canvas_ctx_cgl.mm
+  IDEA_CANVAS_CTX_OBJ := $(BUILD)/idea_canvas_ctx_cgl.o
+else
+  IDEA_CANVAS_CTX_SRC := $(IDEA_CANVAS_DIR)/idea_canvas_ctx_egl.cpp
+  IDEA_CANVAS_CTX_OBJ := $(BUILD)/idea_canvas_ctx_egl.o
+endif
+IDEA_CANVAS_OBJS := $(IDEA_CANVAS_BR_OBJ) $(IDEA_CANVAS_SIM_OBJ) $(IDEA_CANVAS_STUB_OBJ) $(IDEA_CANVAS_GPU_OBJ) $(IDEA_CANVAS_CTX_OBJ)
+
+# ---- SleelaUI (user-interface/) native toolkit + the ui* VM bridge ----------
+# The ui* SLVM built-ins (uiAppCreate/uiButton/...) lower to OP_UI_CALL and
+# route through core/sleela_ui_vm.c into SleelaUI's C ABI, so a SLeeLa program
+# raises a real host window. We compile the toolkit core here and select the
+# native backend + its system libraries per OS (X11/FreeType/Fontconfig on
+# Linux, GDI/user32 on Windows, Cocoa/CoreText on macOS).
+SLUI_DIR      := ../user-interface
+SLUI_CORE_SRC := $(wildcard $(SLUI_DIR)/src/*.cpp)
+SLUI_CORE_OBJ := $(patsubst $(SLUI_DIR)/src/%.cpp,$(BUILD)/slui/%.o,$(SLUI_CORE_SRC))
+SLUI_NANOJPEG_OBJ := $(BUILD)/slui/nanojpeg.o
+SLUI_VM_OBJ   := $(BUILD)/sleela_ui_vm.o
+ifeq ($(PLATFORM),windows)
+  SLUI_BACKEND_SRC := $(SLUI_DIR)/src/backend/win32.cpp
+  SLUI_BACKEND_DEF := -DSLUI_BACKEND_WIN32_BUILD
+  SLUI_BACKEND_CFLAGS :=
+  SLUI_LIBS := -lgdi32 -luser32 -lshell32
+else ifeq ($(PLATFORM),macos)
+  SLUI_BACKEND_SRC := $(SLUI_DIR)/src/backend/cocoa.mm
+  SLUI_BACKEND_DEF := -DSLUI_BACKEND_COCOA_BUILD
+  SLUI_BACKEND_CFLAGS :=
+  SLUI_LIBS := -framework Cocoa -framework CoreText -framework CoreGraphics
+else
+  SLUI_BACKEND_SRC := $(SLUI_DIR)/src/backend/x11.cpp
+  SLUI_BACKEND_DEF := -DSLUI_BACKEND_X11_BUILD
+  SLUI_BACKEND_CFLAGS := $(shell pkg-config --cflags freetype2 fontconfig 2>/dev/null)
+  SLUI_LIBS := -lX11 $(shell pkg-config --libs freetype2 fontconfig 2>/dev/null)
+  ifeq ($(strip $(SLUI_LIBS)),-lX11)
+    SLUI_LIBS := -lX11 -lfreetype -lfontconfig
+  endif
+endif
+SLUI_BACKEND_OBJ := $(BUILD)/slui/backend.o
+# Shared native Wi-Fi manager plus the selected platform provider. The VM bridge
+# calls this C API directly; the same source is used by the C++ wrapper.
+WIFI_DIR := ../wifi-common
+WIFI_MANAGER_OBJ := $(BUILD)/wifi_manager.o
+WIFI_VM_BRIDGE_OBJ := $(BUILD)/wifi_vm_bridge.o
+ifeq ($(PLATFORM),windows)
+  WIFI_BACKEND_SRC := $(WIFI_DIR)/src/wifi_backend_windows.c
+  WIFI_BACKEND_OBJ := $(BUILD)/wifi_backend_windows.o
+  SLUI_LIBS += -lwlanapi -lole32
+else ifeq ($(PLATFORM),macos)
+  WIFI_BACKEND_SRC := $(WIFI_DIR)/src/wifi_backend_macos.mm
+  WIFI_BACKEND_OBJ := $(BUILD)/wifi_backend_macos.o
+  SLUI_LIBS += -framework CoreWLAN -framework Foundation -framework Security
+else
+  WIFI_BACKEND_SRC := $(WIFI_DIR)/src/wifi_backend_nmcli.c
+  WIFI_BACKEND_OBJ := $(BUILD)/wifi_backend_nmcli.o
+endif
+WIFI_OBJS := $(WIFI_MANAGER_OBJ) $(WIFI_BACKEND_OBJ) $(WIFI_VM_BRIDGE_OBJ)
+SLUI_OBJS := $(SLUI_CORE_OBJ) $(SLUI_NANOJPEG_OBJ) $(SLUI_BACKEND_OBJ) $(SLUI_VM_OBJ) $(WIFI_OBJS)
+# OpenMP is opt-in on macOS/Windows because Apple clang and some MinGW
+# distributions do not ship a compatible OpenMP runtime. Linux GCC enables it
+# by default; callers can override IDEA_CANVAS_OMP explicitly on any platform.
+ifeq ($(PLATFORM),linux)
+  IDEA_CANVAS_OMP ?= -fopenmp
+else
+  IDEA_CANVAS_OMP ?=
+endif
 PATH_OBJ := $(BUILD)/sleela_path.o
 TERMINAL_OBJ := $(BUILD)/sleela_terminal.o
 LIBRARY_OBJ := $(BUILD)/sleela_library.o
@@ -127,6 +216,11 @@ FE_SRC := frontend/lexer.cpp frontend/parser.cpp frontend/java_equivalence.cpp f
           subjects/chemistry/chemistry_api.cpp subjects/finance/financial_api.cpp
 FE_OBJ := $(patsubst %.cpp,$(BUILD)/%.o,$(notdir $(FE_SRC)))
 DRIVER_OBJ := $(BUILD)/driver.o
+# The sleelvac compiler is an INDEPENDENT binary: same front-end source, but its
+# driver object is compiled with -DSLEELA_PRODUCT_SLEELVAC so its product
+# identity (the `version` banner) is baked in at compile time rather than chosen
+# from argv[0]. This guarantees `sleela version` always reports the runtime.
+DRIVER_SLEELVAC_OBJ := $(BUILD)/driver_sleelvac.o
 HTTP_SERVER_OBJ := $(BUILD)/http_server.o
 HTTP_SERVER_CLI_OBJ := $(BUILD)/http_server_cli.o
 HTTP2_SERVER_OBJ := $(BUILD)/http2_server.o
@@ -172,6 +266,8 @@ NS_EMIT_OBJ := $(BUILD)/ns_sleela_emit.o $(BUILD)/ns_lowering.o
 # links). Lives under ../preferred-routers.
 PREFERRED_ROUTER_OBJ := $(BUILD)/preferred_router.o
 VERIFY_TOOL := ../tools/verify-before-execution.py
+# Generator for the trusted manifest (consumed by regen-manifest/check-manifest).
+GENERATE_TOOL := ../tools/generate-sha256-manifest.py
 # Resolve the trusted manifest for both root-dispatched and direct builds.
 # A stale template value (/path/to/...) is not a real installation path; use
 # the repository-relative manifest instead. Real explicit paths remain honored.
@@ -192,20 +288,21 @@ ifeq ($(OS),Windows_NT)
 else
   PYTHON ?= python3
 endif
-ALL_OBJECTS := $(CORE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(MEDIA_OBJ) $(MEDIA_FORMATS_OBJ) $(AUDIO_MIXER_OBJ) $(AI_OBJ) $(DESIGN_ACTIVITY_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(VM_CONFIG_OBJ) $(CONFIG_LOCATION_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(NS_OBJ) $(THREAD_SMOKE) $(SOCKET_SMOKE) $(SYNCHRO_SMOKE) $(MUNCTION_SMOKE) $(BESTOF_SMOKE) $(IO_PLATFORM_SMOKE) $(NET_PLATFORM_SMOKE) $(PATH_PLATFORM_SMOKE) $(TERMINAL_PLATFORM_SMOKE) $(LIBRARY_PLATFORM_SMOKE) $(PIXEL_TERMINAL_SMOKE) $(THREAD_PLATFORM_SMOKE)
+ALL_OBJECTS := $(CORE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(SLUI_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(MEDIA_OBJ) $(MEDIA_FORMATS_OBJ) $(AUDIO_MIXER_OBJ) $(AI_OBJ) $(DESIGN_ACTIVITY_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(VM_CONFIG_OBJ) $(CONFIG_LOCATION_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(DRIVER_SLEELVAC_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(NS_OBJ) $(THREAD_SMOKE) $(SOCKET_SMOKE) $(SYNCHRO_SMOKE) $(MUNCTION_SMOKE) $(BESTOF_SMOKE) $(IO_PLATFORM_SMOKE) $(NET_PLATFORM_SMOKE) $(PATH_PLATFORM_SMOKE) $(TERMINAL_PLATFORM_SMOKE) $(LIBRARY_PLATFORM_SMOKE) $(PIXEL_TERMINAL_SMOKE) $(THREAD_PLATFORM_SMOKE)
 
-.PHONY: all test-platform stage package build-verified rebuild-verified clean test test-java-runtime test-sleela test-version test-nordshrift test-nordshrift-compiler test-nordshrift-semantic test-nordshrift-e2e test-nordshrift-compat test-runtime-artifact-abi test-threads test-thread-platform test-network test-network-platform test-synchro test-munction test-bestof test-io-platform test-path-platform test-terminal-platform test-library-platform test-time-platform test-pixel-terminal test-catalog test-chemistry test-financial test-math test-physics test-economics test-inference test-subjects verify-security build-runtime test-runtime test-memmgr test-memmgr-grades test-system-monitor test-media test-audio-mixer test-ai test-regex test-astrophysics test-sociology test-design-activity test-unsigned-integer
+.PHONY: all install install-all uninstall uninstall-all sleelvac libslcore test-platform stage package build-verified rebuild-verified clean test test-java-runtime test-sleela test-version test-nordshrift test-nordshrift-compiler test-nordshrift-semantic test-nordshrift-e2e test-nordshrift-compat test-runtime-artifact-abi test-threads test-thread-platform test-network test-network-platform test-synchro test-munction test-bestof test-io-platform test-path-platform test-terminal-platform test-library-platform test-time-platform test-pixel-terminal test-catalog test-chemistry test-financial test-math test-physics test-economics test-inference test-subjects verify-security regen-manifest check-manifest build-runtime test-runtime test-memmgr test-memmgr-grades test-system-monitor test-media test-audio-mixer test-ai test-regex test-astrophysics test-sociology test-design-activity test-unsigned-integer
 
-all: verify-security $(SLEELA_BIN) $(NORDSHRIFT_BIN) stage
+all: verify-security $(SLEELA_BIN) $(SLEELAVC_BIN) $(NORDSHRIFT_BIN) $(SLCORE_LIB) stage
 
 # Build a stable, self-describing runtime layout. Build objects remain in build/;
 # the staged result contains only runtime-facing files and the default Config
 # and Options sets. Config is intentionally consolidated so a fresh build has
 # one authoritative default configuration set.
-stage: verify-security $(SLEELA_BIN) $(NORDSHRIFT_BIN)
+stage: verify-security $(SLEELA_BIN) $(SLEELAVC_BIN) $(NORDSHRIFT_BIN)
 	@rm -rf $(STAGE)
 	@mkdir -p $(STAGE_BIN) $(STAGE_CONFIG) $(STAGE_OPTIONS) $(STAGE_LIB) $(STAGE_DOCS)
 	@cp $(SLEELA_BIN) $(STAGE_BIN)/
+	@cp $(SLEELAVC_BIN) $(STAGE_BIN)/
 	@cp $(NORDSHRIFT_BIN) $(STAGE_BIN)/
 	@cp ../sleela.conf.example $(STAGE_CONFIG)/sleela.conf
 	@cp ../config/vm.conf $(STAGE_CONFIG)/vm.conf
@@ -219,7 +316,30 @@ stage: verify-security $(SLEELA_BIN) $(NORDSHRIFT_BIN)
 
 package: stage
 	@echo "=== SLeeLa package layout ready: $(STAGE) ==="
-build-verified: verify-security $(SLEELA_BIN) $(NORDSHRIFT_BIN) stage
+
+# Convenience entry point when working from impl/: delegate to the repository's
+# canonical installer so sleela, sleelvac, nordshrift, runtime files, and config
+# are installed together. PREFIX and DESTDIR match the root Makefile interface.
+PREFIX ?= /usr/local
+DESTDIR ?=
+SLEELA_MANIFEST_CONSENT ?=
+install: all
+	$(MAKE) -C .. install PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" SLEELA_MANIFEST_CONSENT="$(SLEELA_MANIFEST_CONSENT)"
+
+# Refresh EVERY standard location at once: user-local (both layouts),
+# /usr/local, and any stray binaries in EXTRA_BINDIRS (default /usr/bin).
+install-all: all
+	$(MAKE) -C .. install-all SLEELA_MANIFEST_CONSENT="$(SLEELA_MANIFEST_CONSENT)"
+
+# Remove the installed products via the repository-level tracked uninstaller.
+uninstall:
+	$(MAKE) -C .. uninstall PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)"
+
+# Remove SLeeLa from EVERY standard location (mirror of install-all). Use this
+# instead of 'uninstall' when SLeeLa is installed in more than one place.
+uninstall-all:
+	$(MAKE) -C .. uninstall-all
+build-verified: verify-security $(SLEELA_BIN) $(SLEELAVC_BIN) $(NORDSHRIFT_BIN) stage
 rebuild-verified:
 	$(MAKE) clean
 	$(MAKE) build-verified
@@ -231,30 +351,73 @@ verify-security:
 	@command -v $(firstword $(PYTHON)) >/dev/null 2>&1 || { echo "sleela: $(PYTHON) is required for SHA-256 verification" >&2; exit 1; }
 	@$(PYTHON) "$(VERIFY_TOOL)" $(VERIFY_ARGS)
 
+# regen-manifest: rewrite the trusted manifest from the current source tree.
+# Use this AFTER you have intentionally edited verified source (the interpreter
+# core, front end, etc.) and confirmed the diff is what you meant to change.
+# Regenerating blindly would defeat the fail-closed gate, so review first.
+regen-manifest:
+	@command -v $(firstword $(PYTHON)) >/dev/null 2>&1 || { echo "sleela: $(PYTHON) is required to regenerate the manifest" >&2; exit 1; }
+	@if [ ! -r "$(GENERATE_TOOL)" ]; then echo "sleela: manifest generator not readable: $(GENERATE_TOOL)" >&2; exit 1; fi
+	@$(PYTHON) "$(GENERATE_TOOL)" --root "$(CURDIR)/.." --output "$(VERIFY_MANIFEST)"
+
+# check-manifest: fail if the committed manifest is out of sync with the source
+# tree, WITHOUT rewriting it. This is the drift guard for CI and pre-commit: it
+# regenerates into a temp file and diffs against the committed manifest, so a
+# stale manifest is caught before it blocks a verified build - while preserving
+# the fail-closed guarantee (nothing on disk is modified).
+check-manifest:
+	@command -v $(firstword $(PYTHON)) >/dev/null 2>&1 || { echo "sleela: $(PYTHON) is required to check the manifest" >&2; exit 1; }
+	@if [ ! -r "$(GENERATE_TOOL)" ]; then echo "sleela: manifest generator not readable: $(GENERATE_TOOL)" >&2; exit 1; fi
+	@if [ ! -f "$(VERIFY_MANIFEST)" ]; then echo "sleela: trusted SHA-256 manifest not found: $(VERIFY_MANIFEST)" >&2; exit 1; fi
+	@tmp="$$(mktemp)"; \
+	 $(PYTHON) "$(GENERATE_TOOL)" --root "$(CURDIR)/.." --stdout > "$$tmp" || { rm -f "$$tmp"; exit 1; }; \
+	 if diff -u "$(VERIFY_MANIFEST)" "$$tmp" >/dev/null 2>&1; then \
+	   rm -f "$$tmp"; echo "check-manifest: OK - manifest matches the source tree"; \
+	 else \
+	   echo "check-manifest: FAIL - $(VERIFY_MANIFEST) is out of sync with the source tree" >&2; \
+	   echo "  The following entries differ (committed vs regenerated):" >&2; \
+	   diff -u "$(VERIFY_MANIFEST)" "$$tmp" | grep -E '^[-+][[:space:]]+"' >&2 || true; \
+	   echo "  Run 'make regen-manifest' (after reviewing the source diff) and commit the result." >&2; \
+	   rm -f "$$tmp"; exit 1; \
+	 fi
+
 # verify-security is an order-only prerequisite: it must run before any
 # artifact is produced, but must never appear in $^ (some smoke-test link
 # rules link with $^, and a phony target name would leak onto the link line).
 $(ALL_OBJECTS): | verify-security
 
-$(SLEELA_BIN): $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(NS_EMIT_OBJ) $(PREFERRED_ROUTER_OBJ) $(NGHTTP2_LIB)
-	$(CXX) $(CXXFLAGS) $(filter-out $(NGHTTP2_LIB),$^) -o $@ $(LDFLAGS) $(LIBS) $(NGHTTP2_LIB)
+# Sleelvac is the named compiler executable, built as an INDEPENDENT binary. It
+# shares the whole front end with `sleela` but links its own driver object
+# (compiled with -DSLEELA_PRODUCT_SLEELVAC), so its `version` identity is fixed
+# at compile time and `sleela version` can never surface the Sleelvac banner.
+$(SLEELAVC_BIN): $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(SLUI_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(DRIVER_SLEELVAC_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(NS_EMIT_OBJ) $(PREFERRED_ROUTER_OBJ) $(NGHTTP2_LIB)
+	$(CXX) $(CXXFLAGS) $(IDEA_CANVAS_OMP) $(filter-out $(NGHTTP2_LIB),$^) -o $@ $(LDFLAGS) $(LIBS) $(SLUI_LIBS) $(NGHTTP2_LIB)
+
+sleelvac: $(SLEELAVC_BIN)
+
+$(SLEELA_BIN): $(JAVA_RUNTIME_PROBE_OBJ) $(JAVA_RUNTIME_BRIDGE_OBJ) $(AUDIO_NATIVE_OBJ) $(AUDIO_CPP_OBJ) $(HTTP_SERVER_OBJ) $(HTTP_SERVER_CLI_OBJ) $(HTTP2_SERVER_OBJ) $(HTTP3_SERVER_OBJ) $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(SLUI_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(DRIVER_OBJ) $(CATALOG_OBJ) $(XCLASS_OBJ) $(LANGIN_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ) $(NS_EMIT_OBJ) $(PREFERRED_ROUTER_OBJ) $(NGHTTP2_LIB)
+	$(CXX) $(CXXFLAGS) $(IDEA_CANVAS_OMP) $(filter-out $(NGHTTP2_LIB),$^) -o $@ $(LDFLAGS) $(LIBS) $(SLUI_LIBS) $(NGHTTP2_LIB)
 $(AUDIO_NATIVE_OBJ): core/sleela_audio_bridge.cpp core/sleela_audio_bridge.h ../audio/cpp/include/sleela_audio.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -Icore -I.. -c $< -o $@
 
 $(AUDIO_CPP_OBJ): ../audio/cpp/src/sleela_audio.cpp ../audio/cpp/include/sleela_audio.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -I../audio/cpp/include -c $< -o $@
 
-$(NORDSHRIFT_BIN): $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(NS_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(CATALOG_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ)
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
+$(NORDSHRIFT_BIN): $(PLATFORM_OBJ) $(SYSTEM_MONITOR_OBJ) $(DESIGN_ACTIVITY_OBJ) $(NS_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(SLUI_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ) $(SECURITY_OBJ) $(PARAMETERS_OBJ) $(FE_OBJ) $(CATALOG_OBJ) $(CHEMISTRY_OBJ) $(FINANCIAL_OBJ) $(PIXEL_TERMINAL_OBJ)
+	$(CXX) $(CXXFLAGS) $(IDEA_CANVAS_OMP) $^ -o $@ $(LDFLAGS) $(LIBS) $(SLUI_LIBS)
 $(THREAD_PLATFORM_SMOKE): core/thread_platform_smoke.c $(THREAD_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -Icore core/thread_platform_smoke.c $(THREAD_OBJ) -o $@ $(LDFLAGS) $(LIBS)
 # sleela_core.o (sleela_artifact.c) calls into the OS-abstraction backends
 # (net/io/path/library/terminal), so any target that links the core must also
 # link those objects, not just the core + time.
-$(THREAD_SMOKE): core/thread_smoke.c $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(GC_OBJ)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
-$(SOCKET_SMOKE): core/socket_smoke.c $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(GC_OBJ)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(LIBS)
+$(THREAD_SMOKE_OBJ): core/thread_smoke.c | $(BUILD)
+	$(CC) $(CFLAGS) -Icore -c $< -o $@
+$(SOCKET_SMOKE_OBJ): core/socket_smoke.c | $(BUILD)
+	$(CC) $(CFLAGS) -Icore -c $< -o $@
+$(THREAD_SMOKE): $(THREAD_SMOKE_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(SLUI_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(MEMMGR_G2_OBJ) $(MEMMGR_G3_OBJ) $(GC_OBJ)
+	$(CXX) $(CXXFLAGS) $(IDEA_CANVAS_OMP) $^ -o $@ $(LDFLAGS) $(LIBS) $(SLUI_LIBS)
+$(SOCKET_SMOKE): $(SOCKET_SMOKE_OBJ) $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(SLUI_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TERMINAL_OBJ) $(TIME_OBJ) $(MEMORY_OBJ) $(MEMMGR_OBJ) $(MEMMGR_G2_OBJ) $(MEMMGR_G3_OBJ) $(GC_OBJ)
+	$(CXX) $(CXXFLAGS) $(IDEA_CANVAS_OMP) $^ -o $@ $(LDFLAGS) $(LIBS) $(SLUI_LIBS)
 $(SYNCHRO_SMOKE): core/synchro_smoke.c $(SYNCHRO_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -Icore core/synchro_smoke.c $(SYNCHRO_OBJ) -o $@ $(LDFLAGS) $(LIBS)
 $(BESTOF_SMOKE): core/bestof_smoke.c $(BESTOF_OBJ) | $(BUILD)
@@ -283,6 +446,47 @@ $(SYNCHRO_OBJ): core/sleela_synchro.c core/sleela_synchro.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c core/sleela_synchro.c -o $@
 $(MUNCTION_OBJ): core/sleela_munction.c core/sleela_munction.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c core/sleela_munction.c -o $@
+$(REGISTRY_OBJ): ../registry/sleela_registry.c ../registry/sleela_registry.h | $(BUILD)
+	$(CC) $(CFLAGS) -Wno-misleading-indentation -c ../registry/sleela_registry.c -o $@
+$(IDEA_CANVAS_BR_OBJ): core/sleela_idea_canvas.c core/sleela_idea_canvas.h $(IDEA_CANVAS_DIR)/idea_canvas.h | $(BUILD)
+	$(CC) $(CFLAGS) -DSLEELA_WITH_IDEA_CANVAS -Icore -I$(IDEA_CANVAS_DIR) -c core/sleela_idea_canvas.c -o $@
+$(IDEA_CANVAS_SIM_OBJ): $(IDEA_CANVAS_DIR)/idea_canvas_sim.cpp $(IDEA_CANVAS_DIR)/idea_canvas.h $(IDEA_CANVAS_DIR)/idea_canvas_internal.hpp | $(BUILD)
+	$(CXX) -std=c++20 -O2 $(THREADFLAG) $(IDEA_CANVAS_OMP) -I$(IDEA_CANVAS_DIR) -c $(IDEA_CANVAS_DIR)/idea_canvas_sim.cpp -o $@
+$(IDEA_CANVAS_STUB_OBJ): $(IDEA_CANVAS_DIR)/idea_canvas_gl_stub.cpp $(IDEA_CANVAS_DIR)/idea_canvas.h $(IDEA_CANVAS_DIR)/idea_canvas_internal.hpp | $(BUILD)
+	$(CXX) -std=c++20 -O2 $(THREADFLAG) -I$(IDEA_CANVAS_DIR) -c $(IDEA_CANVAS_DIR)/idea_canvas_gl_stub.cpp -o $@
+# GPU backend (stub form by default; define IDEA_CANVAS_WITH_GL + add EGL/OSMesa
+# to IDEA_CANVAS_OMP/LIBS to build the real offscreen GPU compute path).
+$(IDEA_CANVAS_GPU_OBJ): $(IDEA_CANVAS_DIR)/idea_canvas_gpu.cpp $(IDEA_CANVAS_DIR)/idea_canvas.h $(IDEA_CANVAS_DIR)/idea_canvas_internal.hpp | $(BUILD)
+	$(CXX) -std=c++20 -O2 $(THREADFLAG) -I$(IDEA_CANVAS_DIR) -c $(IDEA_CANVAS_DIR)/idea_canvas_gpu.cpp -o $@
+# Platform GL context layer, OS-selected (WGL on Windows, CGL on macOS, EGL on
+# Linux). Default/no-GL build is a compilable stub reporting unsupported.
+$(IDEA_CANVAS_CTX_OBJ): $(IDEA_CANVAS_CTX_SRC) $(IDEA_CANVAS_DIR)/idea_canvas_ctx.h | $(BUILD)
+	$(CXX) -std=c++20 -O2 $(THREADFLAG) -I$(IDEA_CANVAS_DIR) -c $(IDEA_CANVAS_CTX_SRC) -o $@
+# ---- SleelaUI toolkit objects + the ui* VM bridge --------------------------
+$(BUILD)/slui/%.o: $(SLUI_DIR)/src/%.cpp | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -I$(SLUI_DIR)/include -I$(SLUI_DIR)/src $(SLUI_BACKEND_DEF) -c $< -o $@
+$(SLUI_NANOJPEG_OBJ): $(SLUI_DIR)/src/nanojpeg.c $(SLUI_DIR)/src/nanojpeg.h | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wno-shift-negative-value -I$(SLUI_DIR)/src -c $< -o $@
+
+$(SLUI_BACKEND_OBJ): $(SLUI_BACKEND_SRC) | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -I$(SLUI_DIR)/include -I$(SLUI_DIR)/src $(SLUI_BACKEND_DEF) $(SLUI_BACKEND_CFLAGS) -c $< -o $@
+$(SLUI_VM_OBJ): core/sleela_ui_vm.c core/sleela_ui_vm.h core/sleela_ui_ids.h core/wifi_vm_bridge.h $(SLUI_DIR)/include/sleela_ui.h | $(BUILD)
+	$(CC) $(CFLAGS) -Icore -c core/sleela_ui_vm.c -o $@
+
+$(WIFI_MANAGER_OBJ): $(WIFI_DIR)/src/wifi_manager.c $(WIFI_DIR)/include/sleela_wifi/wifi_manager.h | $(BUILD)
+	$(CC) $(CFLAGS) -I$(WIFI_DIR)/include -c $< -o $@
+$(WIFI_VM_BRIDGE_OBJ): core/wifi_vm_bridge.c core/wifi_vm_bridge.h $(WIFI_DIR)/include/sleela_wifi/wifi_manager.h | $(BUILD)
+	$(CC) $(CFLAGS) -I$(WIFI_DIR)/include -Icore -c $< -o $@
+ifeq ($(PLATFORM),macos)
+$(WIFI_BACKEND_OBJ): $(WIFI_BACKEND_SRC) $(WIFI_DIR)/include/sleela_wifi/wifi_manager.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -I$(WIFI_DIR)/include -c $< -o $@
+else
+$(WIFI_BACKEND_OBJ): $(WIFI_BACKEND_SRC) $(WIFI_DIR)/include/sleela_wifi/wifi_manager.h | $(BUILD)
+	$(CC) $(CFLAGS) -I$(WIFI_DIR)/include -c $< -o $@
+endif
 $(BESTOF_OBJ): core/sleela_bestof.c core/sleela_bestof.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c core/sleela_bestof.c -o $@
 $(PATH_OBJ): core/sleela_path.c core/sleela_path.h | $(BUILD)
@@ -367,11 +571,28 @@ $(PARAMETERS_OBJ): ../runtime/Parameters.c ../runtime/Parameters.h | $(BUILD)
 	$(CC) $(CFLAGS) -c ../runtime/Parameters.c -o $@
 $(CORE_OBJ): $(CORE_SRC) core/sleela_core.c core/sleela_core.h ../runtime/garbage_collector.h core/sleela_thread.h core/pthread.h core/sleela_synchro.h core/sleela_munction.h core/sleela_bestof.h | $(BUILD)
 	$(CC) $(CFLAGS) -Icore -c $(CORE_SRC) -o $@
+
+# The exact object set the Core engine needs at link time (the same set the
+# core smoke tests link): the engine translation unit plus every OS-abstraction
+# backend it calls into (thread/io/net/synchro/munction/bestof/idea-canvas/
+# registry/path/terminal/library/os/platform/time/memory/memmgr) and the GC.
+SLCORE_OBJS := $(CORE_OBJ) $(THREAD_OBJ) $(IO_OBJ) $(NET_OBJ) $(SYNCHRO_OBJ) \
+  $(MUNCTION_OBJ) $(BESTOF_OBJ) $(IDEA_CANVAS_OBJS) $(REGISTRY_OBJ) $(PATH_OBJ) \
+  $(TERMINAL_OBJ) $(LIBRARY_OBJ) $(OS_OBJ) $(PLATFORM_OBJ) $(TIME_OBJ) \
+  $(MEMORY_OBJ) $(MEMMGR_OBJ) $(GC_OBJ)
+$(SLCORE_LIB): $(SLCORE_OBJS)
+	$(AR) rcs $@ $(SLCORE_OBJS)
+libslcore: $(SLCORE_LIB)
+	@echo "=== reusable Core engine archive: $(SLCORE_LIB) ==="
 $(CHEMISTRY_OBJ): subjects/chemistry/chemistry.cpp subjects/chemistry/chemistry.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c subjects/chemistry/chemistry.cpp -o $@
 $(FINANCIAL_OBJ): subjects/finance/financial.cpp subjects/finance/financial.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c subjects/finance/financial.cpp -o $@
-$(BUILD)/%.o: frontend/%.cpp | $(BUILD)
+# version.h carries the supported-syntax range (minSupportedSyntax/
+# maxSupportedSyntax) that several front-end units bake in; list it as a
+# prerequisite so changing the range forces a rebuild rather than leaving stale
+# objects that report the old range.
+$(BUILD)/%.o: frontend/%.cpp frontend/version.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 $(BUILD)/native_api.o: subjects/native/native_api.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
@@ -471,8 +692,12 @@ $(JAVA_RUNTIME_PROBE_OBJ): ../runtime/java_runtime_probe.c ../runtime/java_runti
 	$(CC) $(CFLAGS) -c $< -o $@
 $(JAVA_RUNTIME_BRIDGE_OBJ): ../runtime/java_runtime_bridge.c ../runtime/java_runtime_bridge.h ../runtime/java_runtime_probe.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
-$(BUILD)/driver.o: frontend/driver.cpp frontend/compiler.h frontend/artifact.h subjects/native/native_api.h subjects/chemistry/chemistry_api.h subjects/finance/financial_api.h frontend/http_server_cli.h | $(BUILD)
+$(BUILD)/driver.o: frontend/driver.cpp frontend/compiler.h frontend/artifact.h frontend/version.h subjects/native/native_api.h subjects/chemistry/chemistry_api.h subjects/finance/financial_api.h frontend/http_server_cli.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+# Same source, compiled with the compiler product identity for the independent
+# sleelvac binary. Keeps driver.o (runtime) untouched.
+$(BUILD)/driver_sleelvac.o: frontend/driver.cpp frontend/compiler.h frontend/artifact.h frontend/version.h subjects/native/native_api.h subjects/chemistry/chemistry_api.h subjects/finance/financial_api.h frontend/http_server_cli.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -DSLEELA_PRODUCT_SLEELVAC -c $< -o $@
 $(BUILD):
 	mkdir -p $(BUILD)
 
