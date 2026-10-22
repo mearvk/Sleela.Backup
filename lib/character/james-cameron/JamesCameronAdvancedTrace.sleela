@@ -1,0 +1,53 @@
+/*
+ * Advanced Trace for public career chronology and hypothetical life-stat model.
+ * This is a provenance ledger, not a live-person monitoring system.
+ */
+#sleela 2.1
+
+class JamesCameronAdvancedTrace {
+  int recordCount;
+  int sourcedCount;
+  int verifiedCount;
+  int hypotheticalStatCount;
+  int unknownMetricCount;
+  String traceLabel;
+  String scopeNote;
+
+  void load() {
+    recordCount = 0;
+    sourcedCount = 0;
+    verifiedCount = 0;
+    hypotheticalStatCount = 0;
+    unknownMetricCount = 0;
+    traceLabel = "James Cameron — public career and life-capability trace";
+    scopeNote = "Public professional sources only; no private tracking. Hypothetical capability scores are not verified facts.";
+  }
+
+  void addRecord(boolean hasSource, boolean verified) {
+    recordCount = recordCount + 1;
+    if (hasSource) { sourcedCount = sourcedCount + 1; }
+    if (hasSource && verified) { verifiedCount = verifiedCount + 1; }
+  }
+
+  void addHypotheticalStat() { hypotheticalStatCount = hypotheticalStatCount + 1; }
+  void addUnknownMetric() { unknownMetricCount = unknownMetricCount + 1; }
+
+  boolean readyForReview() {
+    return recordCount > 0 && sourcedCount == recordCount;
+  }
+
+  int records() { return recordCount; }
+  int sourcedRecords() { return sourcedCount; }
+  int verifiedRecords() { return verifiedCount; }
+  int hypotheticalStats() { return hypotheticalStatCount; }
+  int unknownMetrics() { return unknownMetricCount; }
+
+  String report() {
+    return traceLabel + ": records=" + recordCount
+      + ", sourced=" + sourcedCount
+      + ", verified=" + verifiedCount
+      + ", hypotheticalStats=" + hypotheticalStatCount
+      + ", unknownMetrics=" + unknownMetricCount
+      + ". " + scopeNote;
+  }
+}

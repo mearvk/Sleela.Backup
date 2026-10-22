@@ -3,9 +3,14 @@
 # Product-specific Makefiles remain authoritative. This root dispatcher only
 # enters those existing build systems; it does not duplicate their source lists.
 
-.PHONY: all autocheck core java28 regex compiler decompiler vm scripting jetbrains install install-product tutorial-check tests server config route clean help
+.PHONY: all uninstall uninstall-all autocheck core java28 regex compiler decompiler vm scripting jetbrains connector connector-test connector-check-deps codecs codecs-test churn churn-test churn-data-check antivirus antivirus-test antivirus-clamav antivirus-integrity antivirus-integrity-check install install-all install-local install-system install-check install-product tutorial-check tests server config route common-rails registry premium-vms clean help
 
-all: autocheck core java28 regex compiler decompiler vm scripting jetbrains install tutorial-check tests config route
+SLEELA_MANIFEST_CONSENT ?=
+
+PREFIX ?= /usr/local
+DESTDIR ?=
+
+all: core java28 regex compiler decompiler vm scripting jetbrains install-check tutorial-check tests config route common-rails codecs churn antivirus registry premium-vms
 
 # The impl build is fail-closed on a trusted SHA-256 manifest. Default it to the
 # repository's manifest (absolute path) so `make` works from the repo root; an
@@ -40,8 +45,86 @@ scripting:
 jetbrains:
 	$(MAKE) -C jetbrains all
 
-install:
-	$(MAKE) -C install all
+# Optional native connectors have third-party client-library dependencies.
+# Keep them out of the default build; invoke explicitly when those dependencies are installed.
+connector:
+	$(MAKE) -C lib/connector all
+
+connector-test:
+	$(MAKE) -C lib/connector test
+
+connector-check-deps:
+	$(MAKE) -C lib/connector check-deps
+
+# Audio codec registry/plugins use the codecs package's own build and test rules.
+codecs:
+	$(MAKE) -C codecs all
+
+codecs-test:
+	$(MAKE) -C codecs test
+
+# Churn data/model sets and their Java constraint-report tools.
+churn:
+	$(MAKE) -C churn all
+
+churn-test:
+	$(MAKE) -C churn test
+
+churn-data-check:
+	$(MAKE) -C churn data-check
+
+# Sleelavirin's portable C core and self-tests (no third-party engine required).
+antivirus:
+	$(MAKE) -C antivirus all
+
+antivirus-test:
+	$(MAKE) -C antivirus test
+
+antivirus-clamav:
+	$(MAKE) -C antivirus clamav
+
+antivirus-integrity:
+	$(MAKE) -C antivirus integrity-manifest
+
+antivirus-integrity-check:
+	@test -n "$(MANIFEST)" || { echo "Usage: make antivirus-integrity-check MANIFEST=build/INTEGRITY-MANIFEST.json" >&2; exit 2; }
+	$(MAKE) -C antivirus integrity-check MANIFEST="$(MANIFEST)"
+
+install-check:
+	$(MAKE) -C install install-check
+
+# Conventional installation. Scope-aware: a user-local PREFIX stays as the
+# current user; a system PREFIX (with no DESTDIR) elevates via sudo for the
+# system copy only. Every variant first offers to (re)generate and verify the
+# base-code SHA-256 manifest (yes/no; answer non-interactively with
+# SLEELA_MANIFEST_CONSENT=yes|no|skip).
+install: core
+	$(MAKE) -C install install PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" \
+		SLEELA_MANIFEST_CONSENT="$(SLEELA_MANIFEST_CONSENT)"
+
+# User-local install that never uses sudo (defaults PREFIX to $HOME/.local).
+install-local: core
+	$(MAKE) -C install install-local PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" \
+		SLEELA_MANIFEST_CONSENT="$(SLEELA_MANIFEST_CONSENT)"
+
+# System-wide install via the dedicated sudo script (system paths only).
+install-system: core
+	$(MAKE) -C install install-system PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" \
+		SLEELA_MANIFEST_CONSENT="$(SLEELA_MANIFEST_CONSENT)"
+
+# Refresh EVERY standard location in one command: user-local (both layouts),
+# /usr/local, and any stray binaries in EXTRA_BINDIRS (default /usr/bin).
+install-all: core
+	$(MAKE) -C install install-all SLEELA_MANIFEST_CONSENT="$(SLEELA_MANIFEST_CONSENT)"
+
+# Remove files recorded by the conventional installer for this PREFIX.
+# The installer removes only tracked SLeeLa files and preserves configuration.
+uninstall:
+	$(MAKE) -C install uninstall PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)"
+
+# Remove SLeeLa from EVERY standard location (mirror of install-all).
+uninstall-all:
+	$(MAKE) -C install uninstall-all
 
 # Interactive deployment of the compiled binaries; choose user-local or system-wide.
 install-product: autocheck
@@ -61,11 +144,30 @@ route:
 	@echo "SLeeLa unified route data: route/ROUTE.DATA.json"
 
 config:
-	@echo "SLeeLa unified configuration: config/sleela.conf"
-	@echo "Canonical runtime location: <PROJECT_ROOT>/.sleela/config"
-	@echo "Override with config.mode=absolute and config.absolute_path"
+	@make -C config test
+
+common-rails:
+	$(MAKE) -C common-rails check
+
+# Build the registry core and materialize the baseline registry table (text
+# store + MySQL export) a fresh install reviews. Part of `all`.
+registry:
+	./build-registry.sh
+
+# Build the eleven premium SLVM generations as real runnable VMs. Each links
+# the shared native Core engine archive (impl/build/libslcore.a, produced by
+# `core`) and runs compiled .sleela artifacts; `sleela vm run premium <n> <prog>`
+# boots the chosen generation. Depends on `core` for the Core archive.
+premium-vms: core
+	@for n in 001 002 003 004 005 006 007 008 009 010 011; do \
+	  echo "=== premium SLVM $$n ==="; \
+	  $(MAKE) -C sleela-virtual-machine/$$n all || exit 1; \
+	done
+	@echo "SLeeLa premium VMs built: sleela-virtual-machine/0NN/vm-build/slvm-NN"
 
 clean:
+	@for n in 001 002 003 004 005 006 007 008 009 010 011; do $(MAKE) -C sleela-virtual-machine/$$n clean; done
+	$(MAKE) -C registry clean
 	$(MAKE) -C impl clean
 	$(MAKE) -C java28 clean
 	$(MAKE) -C regex clean
@@ -73,23 +175,47 @@ clean:
 	$(MAKE) -C lib/decompiler clean
 	$(MAKE) -C lib/vm clean
 	$(MAKE) -C tests clean
+	$(MAKE) -C codecs clean
+	$(MAKE) -C churn clean
+	$(MAKE) -C antivirus clean
+	@make -C config clean
 
 help:
 	@echo "SLeeLa repository build dispatcher"
-	@echo "  make all       Build core, Java 28, regex, compiler, decompiler, VM, JetBrains helper, and tests"
+	@echo "  make all       Build core, Java 28, regex, compiler, decompiler, VM, codecs, and tests"
 	@echo "  make core      Build impl/"
 	@echo "  make java28    Build java28/"
 	@echo "  make regex     Build regex/ and its test suites"
 	@echo "  make compiler  Build lib/compiler/"
 	@echo "  make decompiler Build lib/decompiler/"
 	@echo "  make vm        Build lib/vm/"
+	@echo "  make codecs    Build the C/C++ codec registry and plugins"
+	@echo "  make codecs-test Build and run codec registry/manager tests"
+	@echo "  make churn     Compile the five churn constraint-report tools and validate data"
+	@echo "  make churn-test Run all five churn constraint reports"
+	@echo "  make churn-data-check Validate churn JSON/XML/CSV/TXT files"
+	@echo "  make antivirus Build Sleelavirin C core and self-test executable"
+	@echo "  make antivirus-test Build and run Sleelavirin C/native scanner self-tests"
+	@echo "  make antivirus-clamav Check optional ClamAV scanner integration"
+	@echo "  make antivirus-integrity Generate SHA-256 inventory for antivirus source and indexes"
+	@echo "  make antivirus-integrity-check MANIFEST=PATH Verify the SHA-256 inventory"
 	@echo "  make jetbrains Show JetBrains source acquisition helpers"
-	@echo "  make install     Verify Quick and Safe installer entry points"
+	@echo "  make connector Build all optional native database/data-source connectors"
+	@echo "  make connector-test Run available offline connector tests"
+	@echo "  make connector-check-deps Report native connector dependencies"
+	@echo "  make install-check Verify Quick and Safe installer entry points"
+	@echo "  make install [PREFIX=/usr/local] [DESTDIR=...] Scope-aware install (local prefix stays local; system prefix elevates)"
+	@echo "  make install-local [PREFIX=$HOME/.local] User-local install; never uses sudo"
+	@echo "  make install-system [PREFIX=/usr/local] System install; uses sudo for system paths only"
+	@echo "      (every variant first offers the base-code SHA-256 manifest step; SLEELA_MANIFEST_CONSENT=yes|no|skip answers it)"
 	@echo "  make install-product  Build and interactively install compiled products (user-local or system-wide)"
 	@echo "  make tutorial-check Verify tutorial lesson sequence, example XML, and expected-evidence pairing"
 	@echo "  make tests     Build and run tests/"
 	@echo "  make server    Build api/server/"
 	@echo "  make route     Validate unified route data"
+	@echo "  make config    Validate configuration policy and run location/VM smoke tests"
+	@echo "  make common-rails Build and run CommonRails C/C++/Java/Sleela/SST checks"
+	@echo "  make premium-vms Build the 11 premium SLVM generations as real runnable VMs"
 	@echo "  make clean     Remove outputs from dispatched build systems"
 	@echo ""
 	@echo "Product-specific build folders and Makefiles remain authoritative."

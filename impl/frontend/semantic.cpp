@@ -49,12 +49,23 @@ static bool builtin(const std::string&n){
  "arrayNew","arrayLength","arrayGet","arraySet","arrayPush",
  "osPlatform","osCapability","osGetEnv","osSetEnv","osCurrentDir","osChangeDir","osHostName","osUserName","osTempDir","osProcessId",
  "osExists","osIsDir","osFileSize","osMakeDir","osRemove","osRename","osRun","osSpawn","osWait","osKill","osProcessClose",
- "conduct","role","insight","congruent","route","sysdepth","degreemax"};
- return s.count(n)!=0;
+ "conduct","role","insight","congruent","route","sysdepth","degreemax",
+ "ideaCanvasCreate","ideaCanvasDestroy","ideaCanvasCols","ideaCanvasRows","ideaCanvasCount",
+ "ideaCanvasSetParams","ideaCanvasExcite","ideaCanvasStep","ideaCanvasAdvance","ideaCanvasTimestep",
+ "ideaCanvasIntensityAt","ideaCanvasHasRenderer","ideaCanvasOpenWindow","ideaCanvasShouldClose",
+ "ideaCanvasPresent","ideaCanvasRun",
+ "ideaCanvasSetBackendPolicy","ideaCanvasPolicy","ideaCanvasActiveBackend","ideaCanvasGpuAvailable","ideaCanvasMeasuredHz","ideaCanvasMigrate"};
+ if(s.count(n)!=0) return true;
+ // SleelaUI (ui*) bridge built-ins: any ui<Capital>... name is a native UI
+ // call lowered by the compiler to OP_UI_CALL (see sleela_ui_ids.h / the
+ // tryEmitUiBuiltin table). Accept the whole family here so the analyzer does
+ // not reject a valid toolkit call as an unknown method.
+ if(n.size()>2 && n[0]=='u' && n[1]=='i' && n[2]>='A' && n[2]<='Z') return true;
+ return false;
 }
 struct MethodSig{const Method* m=nullptr;std::string owner;};
 class Analyzer{
- const Program&p; const SyntaxVersion&syntax; SemanticResult r;
+ const Program&p; const SyntaxVersion&syntax; const bool requireMain; SemanticResult r;
  std::set<std::string> structs; std::set<std::string> classNames; std::map<std::string,std::map<std::string,Type>> fields;
  std::map<std::string,MethodSig> methods; std::map<std::string,Type> globals; std::map<std::string,std::string> owners;
  std::map<std::string,std::string> superOf; // derived class -> resolved base (syntax 1.10)
@@ -165,7 +176,7 @@ class Analyzer{
  bool declare(const std::string&n,const Type&t){auto&v=scopes.back().vars;if(v.count(n)){err("duplicate local variable '"+n+"'");return false;}v[n]=t;return true;}
  Type lookup(const std::string&n)const{for(auto i=scopes.rbegin();i!=scopes.rend();++i){auto x=i->vars.find(n);if(x!=i->vars.end())return x->second;}auto cf=fields.find(cls);if(cf!=fields.end()){auto x=cf->second.find(n);if(x!=cf->second.end())return x->second;}auto g=globals.find(cls+"::"+n);if(g!=globals.end())return g->second;g=globals.find(n);if(g!=globals.end())return g->second;if(n=="next")return{Kind::Int,{}};return{Kind::Error,n};}
  void declarations(){
-  if(!methods.count("main"))err("no 'main' method found");
+  if(requireMain&&!methods.count("main"))err("no 'main' method found");
   for(const auto&c:p.classes){for(const auto&f:c.fields){if(f.isProtected&&!f.isStatic)err("protected field '"+f.name+"' must also be static");}
    for(const auto&m:c.methods){std::set<std::string> seen;for(const auto&x:m.params){if(!known(x.type))err("unknown parameter type '"+x.type+"'");if(x.type=="void")err("parameter '"+x.name+"' cannot be void");if(!seen.insert(x.name).second)err("duplicate parameter '"+x.name+"' in method '"+m.name+"'");}}}
  }
@@ -206,7 +217,7 @@ class Analyzer{
    Type g=expr(*x->value);if(!assignable(want,g))err("method '"+cur->name+"' returns "+nameOf(g)+", expected "+nameOf(want));return;}
   if(auto i=dynamic_cast<const IfStmt*>(&s)){requireBool(expr(*i->cond),"if condition");stmt(*i->thenS);if(i->elseS)stmt(*i->elseS);return;}
   if(auto w=dynamic_cast<const WhileStmt*>(&s)){requireBool(expr(*w->cond),"while condition");stmt(*w->body);return;}
-  if(auto f=dynamic_cast<const ForStmt*>(&s)){push();if(f->init)stmt(*f->init);if(f->cond)requireBool(expr(*f->cond),"for condition");if(f->update)stmt(*f->update);stmt(*f->body);pop();return;}
+  if(auto f=dynamic_cast<const ForStmt*>(&s)){push();if(f->init)stmt(*f->init);if(f->cond)requireBool(expr(*f->cond),"for condition");if(f->threadStable)requireBool(expr(*f->threadStable),"for thread-stability guard");if(f->heapHealthy)requireBool(expr(*f->heapHealthy),"for VM heap-health guard");if(f->update)stmt(*f->update);stmt(*f->body);pop();return;}
   if(auto d=dynamic_cast<const DoStmt*>(&s)){stmt(*d->body);requireBool(expr(*d->cond),"do-while condition");return;}
   if(dynamic_cast<const BreakStmt*>(&s))return;
   if(dynamic_cast<const ContinueStmt*>(&s))return;
@@ -339,6 +350,11 @@ class Analyzer{
   if(n=="sysdepth"||n=="degreemax"||n=="timeUtcMillis"||n=="timeUtcNanos"||n=="timeMonotonicNanos"||n=="timePrecisionMillis"){return{Kind::Int,{}};}
   if(n=="synchroMean"||n=="synchroMin"||n=="synchroMax"||n=="synchroP95"||n=="synchroLoss"||n=="bestOfMean"||n=="bestOfLoss"||n=="bestOfJitter"||n=="bestOfCertainty"){return{Kind::Double,{}};}
   if(n=="Munction.start"||n=="read"||n=="recv"||n=="sockread"||n=="timeNtp"){return{Kind::Unknown,{}};}
+  // SleelaUI (ui*) bridge return types: string getters, one double getter, the
+  // rest return int handles/counts/status.
+  if(n=="uiVersion"||n=="uiBackendName"||n=="uiWidgetGetText"){return{Kind::String,{}};}
+  if(n=="uiWidgetGetValue"){return{Kind::Double,{}};}
+  if(n.size()>2 && n[0]=='u' && n[1]=='i' && n[2]>='A' && n[2]<='Z'){return{Kind::Int,{}};}
   return{Kind::Unknown,{}};
  }
  Type fluent(const MethodCall&m){
@@ -355,7 +371,7 @@ class Analyzer{
   return tn(target.retType);
 }
 public:
- Analyzer(const Program&x,const SyntaxVersion&s):p(x),syntax(s){}
+ Analyzer(const Program&x,const SyntaxVersion&s,bool needMain):p(x),syntax(s),requireMain(needMain){}
  SemanticResult run(){
   collect();
   declarations();
@@ -368,5 +384,6 @@ public:
 }
 };
 }
-SemanticResult analyzeSemantics(const Program&p,const SyntaxVersion&s){return Analyzer(p,s).run();}
+SemanticResult analyzeSemantics(const Program&p,const SyntaxVersion&s){return analyzeSemantics(p,s,true);}
+SemanticResult analyzeSemantics(const Program&p,const SyntaxVersion&s,bool requireMain){return Analyzer(p,s,requireMain).run();}
 }
