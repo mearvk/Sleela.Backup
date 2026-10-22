@@ -15,7 +15,7 @@
  * Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
  * bridge.
  */
-#sleela 1.5
+#sleela 2.1
 class SLWidget {
   // Alignment ordinals (mirror SLUIAlign in the toolkit C ABI).
   static final int ALIGN_START  = 0;
@@ -70,6 +70,36 @@ class SLWidget {
   }
 
   // ---- Accents -----------------------------------------------------------
+  // Create a reusable hidden popup panel within a parent layout. The caller
+  // should place it in a stack/overlay-capable container and manage visibility.
+  int createPopupPanel() {
+    if (widget < 0) return -1;
+    return uiPopupCreate(widget);
+  }
+  void setPopupOpen(int popupHandle, boolean open) {
+    if (popupHandle >= 0) uiPopupSetOpen(popupHandle, open ? 1 : 0);
+  }
+  boolean isPopupOpen(int popupHandle) {
+    return popupHandle >= 0 && uiPopupIsOpen(popupHandle) != 0;
+  }
+
+  // ---- Native Wi-Fi provider (shared wifi-common C/C++ core) -------------
+  // Scan returns WIFI_STATUS_OK on success; query the bounded result cache
+  // with wifiNetworkCount/SSID/BSSID/signal/security. Indexes are zero-based.
+  int wifiScan() { return uiWifiScan(); }
+  int wifiNetworkCount() { return uiWifiNetworkCount(); }
+  String wifiNetworkSsid(int index) { return uiWifiNetworkSsid(index); }
+  String wifiNetworkBssid(int index) { return uiWifiNetworkBssid(index); }
+  int wifiNetworkSignal(int index) { return uiWifiNetworkSignal(index); }
+  String wifiNetworkSecurity(int index) { return uiWifiNetworkSecurity(index); }
+  // Connect through OS-managed authentication or a trusted saved profile. The bridge never accepts
+  // raw passwords from Sleela source or places credentials on command lines.
+  int wifiConnect(int index, String profileName) {
+    return uiWifiConnect(index, profileName);
+  }
+  int wifiDisconnect() { return uiWifiDisconnect(); }
+  String wifiStatusName(int status) { return uiWifiStatusName(status); }
+
   // Mark this as the SINGLE suggested (accent) action in its group.
   void setSuggested(boolean suggested) {
     if (widget >= 0) { uiWidgetSuggested(widget, suggested ? 1 : 0); }

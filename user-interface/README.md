@@ -1,4 +1,4 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
 # SleelaUI™
 
@@ -91,6 +91,14 @@ The interactive controls are keyboard-navigable (Tab/Shift-Tab focus ring,
 Enter/Space activate, arrows for ranges) and expose their state through the C
 ABI. The full catalogue — C constructor, SLeeLa class, description, and focus
 behaviour per widget — is in [`WIDGETS.DESCRIPTION.md`](WIDGETS.DESCRIPTION.md).
+
+### Button icons
+
+Buttons can display a JPEG image asset beside their label and retain a named,
+backend-independent vector fallback for when the image is unavailable. In C,
+use `slui_widget_set_icon(button, "icons/wifi.jpg", "Wifi")`; in SLeeLa, use
+`uiWidgetSetIcon(button, "user-interface/icons/wifi.jpg", "Wifi")` or
+`SLButton.setIcon(SLIcon)`. The current asset decoder supports baseline JPEG.
 
 ### Layout & flow manager
 
