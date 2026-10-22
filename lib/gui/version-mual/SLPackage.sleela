@@ -1,0 +1,29 @@
+/*
+ * lib/gui/version-mual/SLPackage.sleela
+ * SLeeLa Standard Library Definition.
+ * Definition: Defines the SLeeLa standard-library package for gui.
+ */
+#sleela 2.1
+// Library facade for module package: gui
+// Exposes the package to the SLeeLa compiler, Loader, and Nordshrift.
+// This package is the SLeeLa-facing *consequence* of the top-level gui/ work
+// (the Java host, the native C ABI bridge gui/native/sleela_gui_bridge.*, and
+// the 1..14 document-change listener). The Master Classes (SLGuiBackend,
+// SLGuiWindow, SLGuiAction, SLGuiRuntime, SLGuiHost, SLGuiDocument,
+// SLGuiDocumentListener, SLGuiBridge, SLGuiIntegration) are first-class
+// one-class-per-file source units; this facade only names the package itself,
+// mirroring lib/citizen/SLPackage.sleela.
+class SLPackage {
+  // Version identity: this is the mual line — the 1.0 GUI baseline. The gual
+  // line is the 2.0 package (version(), featureLevel()); mual stays the stable
+  // baseline. featureLevel() lets callers branch on the line.
+  static final int FEATURE_LEVEL = 1;   // 1 = mual/1.0 ; 2 = gual/2.0
+  String packageName;
+  String packageVersion;
+  void configure(String name) { packageName = name; packageVersion = "1.0"; }
+  String name() { return packageName; }
+  String version() { return packageVersion; }
+  int featureLevel() { return FEATURE_LEVEL; }
+  boolean isTwoPointZero() { return FEATURE_LEVEL >= 2; }
+  boolean available() { return packageName != null; }
+}
