@@ -1,4 +1,4 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
 # SLeeLa Native Compiler
 
@@ -13,6 +13,10 @@ Requires CMake 3.20+ and a C++20 compiler.
     cmake -S compiler -B build/compiler -DCMAKE_BUILD_TYPE=Release
     cmake --build build/compiler --config Release
     ctest --test-dir build/compiler --build-config Release --output-on-failure
+
+### Makefile wrapper (Linux, macOS, and Windows with GNU Make)
+
+From this directory, run `make` to configure and build, `make test` to run the test suite, and `make run-example` to check the arithmetic example. `make emit-ir` prints its intermediate representation. `make stage` installs to the user-controlled `build/stage` directory by default. Override `BUILD_TYPE`, `BUILD_DIR`, `PREFIX`, `GENERATOR`, or `JOBS` as needed. Run `make help` for the target list. The Makefile delegates to CMake so the same project configuration is used across platforms.
 
 Try it:
 
