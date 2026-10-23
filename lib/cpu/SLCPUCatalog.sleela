@@ -1,0 +1,231 @@
+<< lib/cpu/SLCPUCatalog.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLCPUCatalog — the by-name front door to the CPU roster.
+     Where SLHardwareRegistry catalogs memory/SSD/HDD/USB/GPU parts by name, this
+     is the missing CPU family: a registry of the runnable SL<ARCH>CPU models so
+     a caller can pick a processor by key (e.g. "6502", "arm", "riscv", "x86",
+     "ps5", "xbox-series-x") instead of hard-coding `new SL6502CPU()`. Each entry
+     records a stable key, a human label, the architecture family, the rated spec
+     clock (MHz) and data-path width, so a fleet can be assembled from the roster
+     and its performance accounted. The catalog hands back a configured,
+     bring-up-ready SLCPURuntime via make(key); list()/keys() enumerate the
+     roster for a chooser UI or a fleet runner.
+   
+   Family: cpu. Selects/instantiates models that extend SLCPURuntime; consumed by
+     SLCPUFleet and any "choose a CPU" surface. >>
+#sleela 2.1
+class SLCPUCatalog {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11034;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-13";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int MAX = 128;
+
+  String[] key;         // stable selection key, e.g. "6502"
+  String[] label;       // human label, e.g. "MOS 6502"
+  String[] family;      // architecture family, e.g. "6502", "arm", "x86"
+  int[]    specMHz;     // rated spec clock (MHz)
+  int[]    width;       // data-path width (bits)
+  int      count;
+
+  void configure() {
+    key = new String[MAX]; label = new String[MAX]; family = new String[MAX];
+    specMHz = new int[MAX]; width = new int[MAX]; count = 0;
+    seedRoster();
+  }
+
+  // Register one model in the roster.
+  void add(String k, String human, String fam, int mhz, int bits) {
+    if (count >= MAX) { return; }
+    key[count] = k; label[count] = human; family[count] = fam;
+    specMHz[count] = mhz; width[count] = bits; count = count + 1;
+  }
+
+  int size() { return count; }
+  boolean has(String k) { return indexOf(k) >= 0; }
+  int indexOf(String k) {
+    for (int i = 0; i < count; i = i + 1) { if (key[i] == k) { return i; } }
+    return -1;
+  }
+  String labelOf(String k)  { int i = indexOf(k); return (i < 0) ? "" : label[i]; }
+  String familyOf(String k) { int i = indexOf(k); return (i < 0) ? "" : family[i]; }
+  int specOf(String k)      { int i = indexOf(k); return (i < 0) ? 0 : specMHz[i]; }
+  int widthOf(String k)     { int i = indexOf(k); return (i < 0) ? 0 : width[i]; }
+
+  String keyAt(int i)   { if (i < 0 || i >= count) { return ""; } return key[i]; }
+  String labelAt(int i) { if (i < 0 || i >= count) { return ""; } return label[i]; }
+  int specAt(int i)     { if (i < 0 || i >= count) { return 0; } return specMHz[i]; }
+
+  // A newline-separated listing of the roster, for a chooser or report.
+  String list() {
+    String s = "";
+    for (int i = 0; i < count; i = i + 1) {
+      s = s + key[i] + "\t" + label[i] + "\t" + family[i] + "\t"
+            + specMHz[i] + " MHz\t" + width[i] + "-bit\n";
+    }
+    return s;
+  }
+
+  // Instantiate and configure the model selected by key, as a runnable
+  // SLCPURuntime. Returns null if the key is unknown. The concrete model's
+  // configure() does bring-up (register set, memory, spec clock); the family
+  // switch maps a catalog key onto its SL<ARCH>CPU class.
+  SLCPURuntime make(String k) {
+    String fam = familyOf(k);
+    if (fam == "") { return null; }
+    SLCPURuntime cpu = instantiate(fam);
+    if (cpu == null) { return null; }
+    return cpu;
+  }
+
+  // Map an architecture family onto its concrete runnable class. Covers the
+  // classic cores directly; console/system families reuse the CPU core they
+  // shipped (e.g. a Genesis is a 68000-class core), so the roster stays runnable
+  // without a bespoke class per SKU.
+  SLCPURuntime instantiate(String fam) {
+    if (fam == "6502")  { SL6502CPU c = new SL6502CPU();   c.configure(); return c; }
+    if (fam == "z80")   { SLZ80CPU c = new SLZ80CPU();     c.configure(); return c; }
+    if (fam == "6809")  { SL6809CPU c = new SL6809CPU();   c.configure(); return c; }
+    if (fam == "68000") { SL68000CPU c = new SL68000CPU(); c.configure(); return c; }
+    if (fam == "arm")   { SLARMCPU c = new SLARMCPU();     c.configure(); return c; }
+    if (fam == "mips")  { SLMIPSCPU c = new SLMIPSCPU();   c.configure(); return c; }
+    if (fam == "riscv") { SLRISCVCPU c = new SLRISCVCPU(); c.configure("IM"); return c; }
+    if (fam == "x86")   { SLX86CPU c = new SLX86CPU();     c.configure(); return c; }
+    if (fam == "powerpc") { SLPowerPCCPU c = new SLPowerPCCPU(); c.configure(); return c; }
+    if (fam == "sparc") { SLSparcCPU c = new SLSparcCPU(); c.configure(); return c; }
+    if (fam == "vax")   { SLVAXCPU c = new SLVAXCPU();     c.configure(); return c; }
+    if (fam == "superh"){ SLSuperHCPU c = new SLSuperHCPU(); c.configure(); return c; }
+    // --- prominent modern/brand CPUs (added folders) ---
+    if (fam == "intel-core")  { SLIntelCoreCPU c = new SLIntelCoreCPU();   c.configure(); return c; }
+    if (fam == "intel-xeon")  { SLIntelXeonCPU c = new SLIntelXeonCPU();   c.configure(); return c; }
+    if (fam == "intel-8086")  { SLIntel8086CPU c = new SLIntel8086CPU();   c.configure(); return c; }
+    if (fam == "amd-ryzen")   { SLAMDRyzenCPU c = new SLAMDRyzenCPU();     c.configure(); return c; }
+    if (fam == "amd-epyc")    { SLAMDEPYCCPU c = new SLAMDEPYCCPU();       c.configure(); return c; }
+    // EPYC 9005 "Turin" per-SKU classes (Zen 5 / Zen 5c)
+    if (fam == "epyc-9965")   { SLAMDEPYC9965 c = new SLAMDEPYC9965();     c.configure(); return c; }
+    if (fam == "epyc-9755")   { SLAMDEPYC9755 c = new SLAMDEPYC9755();     c.configure(); return c; }
+    if (fam == "epyc-9645")   { SLAMDEPYC9645 c = new SLAMDEPYC9645();     c.configure(); return c; }
+    if (fam == "epyc-9575f")  { SLAMDEPYC9575F c = new SLAMDEPYC9575F();   c.configure(); return c; }
+    if (fam == "epyc-9475f")  { SLAMDEPYC9475F c = new SLAMDEPYC9475F();   c.configure(); return c; }
+    if (fam == "epyc-9355")   { SLAMDEPYC9355 c = new SLAMDEPYC9355();     c.configure(); return c; }
+    if (fam == "epyc-9175f")  { SLAMDEPYC9175F c = new SLAMDEPYC9175F();   c.configure(); return c; }
+    if (fam == "amd-threadripper") { SLAMDThreadripperCPU c = new SLAMDThreadripperCPU(); c.configure(); return c; }
+    // Threadripper 9000 "Shimada Peak" per-SKU classes (Zen 5)
+    if (fam == "tr-9980x")    { SLAMDThreadripper9980X c = new SLAMDThreadripper9980X(); c.configure(); return c; }
+    if (fam == "tr-9970x")    { SLAMDThreadripper9970X c = new SLAMDThreadripper9970X(); c.configure(); return c; }
+    if (fam == "tr-9960x")    { SLAMDThreadripper9960X c = new SLAMDThreadripper9960X(); c.configure(); return c; }
+    if (fam == "tr-pro-9995wx") { SLAMDThreadripperPro9995WX c = new SLAMDThreadripperPro9995WX(); c.configure(); return c; }
+    if (fam == "tr-pro-9985wx") { SLAMDThreadripperPro9985WX c = new SLAMDThreadripperPro9985WX(); c.configure(); return c; }
+    if (fam == "tr-pro-9975wx") { SLAMDThreadripperPro9975WX c = new SLAMDThreadripperPro9975WX(); c.configure(); return c; }
+    if (fam == "tr-pro-9965wx") { SLAMDThreadripperPro9965WX c = new SLAMDThreadripperPro9965WX(); c.configure(); return c; }
+    if (fam == "tr-pro-9955wx") { SLAMDThreadripperPro9955WX c = new SLAMDThreadripperPro9955WX(); c.configure(); return c; }
+    if (fam == "tr-pro-9945wx") { SLAMDThreadripperPro9945WX c = new SLAMDThreadripperPro9945WX(); c.configure(); return c; }
+    if (fam == "amd-athlon")  { SLAMDAthlonCPU c = new SLAMDAthlonCPU();   c.configure(); return c; }
+    if (fam == "apple-m1")    { SLAppleM1CPU c = new SLAppleM1CPU();       c.configure(); return c; }
+    if (fam == "apple-m4")    { SLAppleM4CPU c = new SLAppleM4CPU();       c.configure(); return c; }
+    if (fam == "snapdragon")  { SLSnapdragonCPU c = new SLSnapdragonCPU(); c.configure(); return c; }
+    if (fam == "neoverse")    { SLArmNeoverseCPU c = new SLArmNeoverseCPU(); c.configure(); return c; }
+    if (fam == "grace")       { SLNvidiaGraceCPU c = new SLNvidiaGraceCPU(); c.configure(); return c; }
+    if (fam == "ampere")      { SLAmpereAltraCPU c = new SLAmpereAltraCPU(); c.configure(); return c; }
+    if (fam == "power9")      { SLIBMPower9CPU c = new SLIBMPower9CPU();   c.configure(); return c; }
+    if (fam == "power10")     { SLIBMPower10CPU c = new SLIBMPower10CPU(); c.configure(); return c; }
+    if (fam == "ultrasparc")  { SLSunUltraSPARCCPU c = new SLSunUltraSPARCCPU(); c.configure(); return c; }
+    if (fam == "sifive")      { SLSiFiveU74CPU c = new SLSiFiveU74CPU();   c.configure(); return c; }
+    if (fam == "6800")        { SL6800CPU c = new SL6800CPU();            c.configure(); return c; }
+    if (fam == "65c816")      { SL65C816CPU c = new SL65C816CPU();        c.configure(); return c; }
+    return null;
+  }
+
+  // A representative starter roster spanning eras and families. A deployment may
+  // add() more entries (every runnable SL<ARCH>CPU is eligible) without changing
+  // this class. Spec clocks are rated reference values in MHz.
+  void seedRoster() {
+    add("6502",  "MOS 6502",            "6502",   1,    8);
+    add("z80",   "Zilog Z80",           "z80",    4,    8);
+    add("6809",  "Motorola 6809",       "6809",   2,    8);
+    add("68000", "Motorola 68000",      "68000",  8,   16);
+    add("arm",   "ARM (ARMv4 A32)",     "arm",    200, 32);
+    add("mips",  "MIPS R3000",          "mips",   33,  32);
+    add("riscv", "RISC-V RV32IM",       "riscv",  100, 32);
+    add("x86",   "Intel x86 (IA-32)",   "x86",    166, 32);
+    add("ppc",   "PowerPC",             "powerpc",233, 32);
+    add("sparc", "SPARC",               "sparc",  143, 32);
+    add("vax",   "DEC VAX",             "vax",    5,   32);
+    add("sh4",   "SuperH SH-4",         "superh", 200, 32);
+    // --- prominent modern/brand CPUs ---
+    add("8086",      "Intel 8086",            "intel-8086", 5,    16);
+    add("intel-core","Intel Core (x86-64)",   "intel-core", 3600, 64);
+    add("xeon",      "Intel Xeon (x86-64)",   "intel-xeon", 3800, 64);
+    add("athlon",    "AMD Athlon (K7)",       "amd-athlon", 1000, 32);
+    add("ryzen",     "AMD Ryzen (Zen)",       "amd-ryzen",  4500, 64);
+    add("epyc",      "AMD EPYC (Zen)",        "amd-epyc",   3700, 64);
+    // EPYC 9005 "Turin" individual SKUs (rated clock = max boost MHz)
+    add("epyc-9965", "AMD EPYC 9965 (192C Turin)",   "epyc-9965",  3700, 64);
+    add("epyc-9755", "AMD EPYC 9755 (128C Turin)",   "epyc-9755",  4100, 64);
+    add("epyc-9645", "AMD EPYC 9645 (96C Turin)",    "epyc-9645",  3700, 64);
+    add("epyc-9575f","AMD EPYC 9575F (64C Turin)",   "epyc-9575f", 5000, 64);
+    add("epyc-9475f","AMD EPYC 9475F (48C Turin)",   "epyc-9475f", 4800, 64);
+    add("epyc-9355", "AMD EPYC 9355 (32C Turin)",    "epyc-9355",  4400, 64);
+    add("epyc-9175f","AMD EPYC 9175F (16C Turin)",   "epyc-9175f", 5000, 64);
+    add("threadripper","AMD Ryzen Threadripper 9000 (Zen 5)","amd-threadripper",5400,64);
+    // Threadripper 9000 "Shimada Peak" individual SKUs
+    add("tr-9980x",  "Threadripper 9980X (64C)",     "tr-9980x",   5400, 64);
+    add("tr-9970x",  "Threadripper 9970X (32C)",     "tr-9970x",   5400, 64);
+    add("tr-9960x",  "Threadripper 9960X (24C)",     "tr-9960x",   5400, 64);
+    add("tr-9995wx", "Threadripper PRO 9995WX (96C)","tr-pro-9995wx",5400,64);
+    add("tr-9985wx", "Threadripper PRO 9985WX (64C)","tr-pro-9985wx",5400,64);
+    add("tr-9975wx", "Threadripper PRO 9975WX (32C)","tr-pro-9975wx",5400,64);
+    add("tr-9965wx", "Threadripper PRO 9965WX (24C)","tr-pro-9965wx",5400,64);
+    add("tr-9955wx", "Threadripper PRO 9955WX (16C)","tr-pro-9955wx",5400,64);
+    add("tr-9945wx", "Threadripper PRO 9945WX (12C)","tr-pro-9945wx",5400,64);
+    add("m1",        "Apple M1",              "apple-m1",   3200, 64);
+    add("m4",        "Apple M4",              "apple-m4",   4400, 64);
+    add("snapdragon","Qualcomm Snapdragon",   "snapdragon", 3300, 64);
+    add("neoverse",  "ARM Neoverse",          "neoverse",   3000, 64);
+    add("grace",     "NVIDIA Grace",          "grace",      3400, 64);
+    add("ampere",    "Ampere Altra",          "ampere",     3000, 64);
+    add("power9",    "IBM POWER9",            "power9",     3800, 64);
+    add("power10",   "IBM POWER10",           "power10",    4000, 64);
+    add("ultrasparc","Sun UltraSPARC",        "ultrasparc", 1200, 64);
+    add("sifive",    "SiFive U74 (RV64GC)",   "sifive",     1500, 64);
+    add("6800",      "Motorola 6800",         "6800",       1,     8);
+    add("65c816",    "WDC 65C816",            "65c816",     4,    16);
+  }
+}

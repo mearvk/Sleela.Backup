@@ -1,0 +1,99 @@
+<< lib/ballum/SLBallumDisplay.sleela
+   SLeeLa Standard Library Definition.
+   Definition: A connected display description, mirroring ballum_display_t. >>
+#sleela 2.1
+< Family: ballum. The SLeeLa-side description of one connected display, >
+< mirroring the native ballum_display_t struct. A host SLVM binding fills these >
+< fields from ballum_manager_enumerate/describe; the capability bitmask mirrors >
+< ballum_capability_t so a program can check what the display actually supports >
+< before enabling a control. >
+class SLBallumDisplay {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11537;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-23";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-23";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  // --- capability flags (mirror ballum_capability_t) ---
+  static final int CAP_NONE = 0;
+  static final int CAP_PER_PIXEL = 1;          // 1 << 0
+  static final int CAP_REGION_BLIT = 2;        // 1 << 1
+  static final int CAP_BRIGHTNESS = 4;         // 1 << 2
+  static final int CAP_COLOR_TEMPERATURE = 8;  // 1 << 3
+  static final int CAP_GAMMA = 16;             // 1 << 4
+
+  int id;
+  String name;
+  int width;
+  int height;
+  int refreshMilliHz;
+  int primary;          // 1 if the primary display
+  int capabilities;     // OR of CAP_* flags
+
+  void configure(int displayId, String displayName, int w, int h) {
+    id = displayId;
+    name = displayName;
+    width = w;
+    height = h;
+    refreshMilliHz = 0;
+    primary = 0;
+    capabilities = CAP_NONE;
+  }
+
+  void setCapabilities(int caps) { capabilities = caps; }
+  void setPrimary(boolean isPrimary) { primary = isPrimary ? 1 : 0; }
+
+  int displayId() { return id; }
+  String displayName() { return name; }
+  int pixelWidth() { return width; }
+  int pixelHeight() { return height; }
+  boolean isPrimary() { return primary == 1; }
+
+  // Capability queries a GUI checks before enabling a control.
+  boolean has(int cap) { return (capabilities / cap) % 2 == 1; }
+  boolean supportsPerPixel() { return has(CAP_PER_PIXEL); }
+  boolean supportsBlit() { return has(CAP_REGION_BLIT); }
+  boolean supportsBrightness() { return has(CAP_BRIGHTNESS); }
+  boolean supportsColorTemperature() { return has(CAP_COLOR_TEMPERATURE); }
+  boolean supportsGamma() { return has(CAP_GAMMA); }
+
+  // Is (x, y) a valid pixel on this display?
+  boolean contains(int x, int y) {
+    return x >= 0 && y >= 0 && x < width && y < height;
+  }
+}

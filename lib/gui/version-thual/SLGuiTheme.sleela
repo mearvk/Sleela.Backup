@@ -1,0 +1,84 @@
+< Shared SLeeLa GUI family palette. Keep chrome tokens identical across lines. >
+#sleela 2.1
+class SLGuiTheme {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11433;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-20";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-20";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final String TITLE_BAR = "#1D2025";
+  static final String MENU_BAR = "#1D2025";
+  static final String URL_BAR = "#383C47";
+  static final String PANEL = "#292D35";
+  static final String SURFACE = "#22262D";
+  static final String TEXT = "#E8EAED";
+  static final String MUTED_TEXT = "#B0B7C3";
+  static final String BORDER = "#444A56";
+  static final String ACCENT = "#4F8CFF";
+  static final String FOCUS = "#8AB4F8";
+  static final String DANGER = "#D9534F";
+  static final String SUCCESS = "#3FA776";
+
+  // Typed SLColor words (0xRRGGBBAA) used by SLTheme at runtime.
+  static final int TITLE_BAR_COLOR = 0x1D2025FF;
+  static final int MENU_BAR_COLOR = 0x1D2025FF;
+  static final int URL_BAR_COLOR = 0x383C47FF;
+  static final int PANEL_COLOR = 0x292D35FF;
+  static final int SURFACE_COLOR = 0x22262DFF;
+  static final int TEXT_COLOR = 0xE8EAEDFF;
+  static final int MUTED_TEXT_COLOR = 0xB0B7C3FF;
+  static final int BORDER_COLOR = 0x444A56FF;
+  static final int ACCENT_COLOR = 0x4F8CFFFF;
+  static final int FOCUS_COLOR = 0x8AB4F8FF;
+  static final int DANGER_COLOR = 0xD9534FFF;
+  static final int SUCCESS_COLOR = 0x3FA776FF;
+
+  String titleBar() { return TITLE_BAR; }
+  String menuBar() { return MENU_BAR; }
+  String urlBar() { return URL_BAR; }
+  String panel() { return PANEL; }
+  String surface() { return SURFACE; }
+  String text() { return TEXT; }
+  String mutedText() { return MUTED_TEXT; }
+  String border() { return BORDER; }
+  String accent() { return ACCENT; }
+  String focus() { return FOCUS; }
+  String danger() { return DANGER; }
+  String success() { return SUCCESS; }
+}

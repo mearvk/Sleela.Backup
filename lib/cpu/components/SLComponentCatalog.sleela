@@ -1,0 +1,198 @@
+<< lib/cpu/components/SLComponentCatalog.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLComponentCatalog — the parts bin. It hands back
+     ready-configured, real-world-spec'd components a user picks to build a
+     Sleela executor: memory modules (DRAM through DDR5), storage (floppy, MFM
+     HDD, SATA SSD, NVMe), optical drives (CD/DVD/Blu-ray), and system buses
+     (ISA/PCI/AGP/PCIe). Each preset carries authentic speeds, timings, and
+     capacities so a chosen configuration behaves like the real part.
+   
+   This is the user-facing selection surface: build an executor by naming parts
+   (e.g. ddr4_3200(), nvmeGen3(), bluRay()), not by filling in raw numbers.
+   
+   Family: cpu.components. Produces SLMemoryModule, SLMemoryInterface,
+     SLCadenceConnector, SLStorageDevice, SLOpticalDrive, SLSystemBus,
+     SLMotherboard. >>
+#sleela 2.1
+class SLComponentCatalog {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10496;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-09";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  // ---------------- Memory presets ----------------
+  SLMemoryModule mem(String name, int tech, int capMiB, int bus, int clk, int cl, int ddr) {
+    SLMemoryModule m = new SLMemoryModule();
+    m.configure(name, tech, capMiB, bus, clk, cl, ddr);
+    return m;
+  }
+  SLMemoryModule sram_fast(int capKiB)   { return mem("SRAM (cache-grade)", 0, capKiB / 1024 + 1, 32, 400, 1, 1); }
+  SLMemoryModule dram_fpm(int capMiB)    { return mem("DRAM FPM 60ns", 1, capMiB, 32, 33, 5, 1); }
+  SLMemoryModule sdram_pc100(int capMiB) { return mem("SDRAM PC100", 2, capMiB, 64, 100, 2, 1); }
+  SLMemoryModule ddr_400(int capMiB)     { return mem("DDR-400 (PC-3200)", 3, capMiB, 64, 200, 3, 2); }
+  SLMemoryModule ddr2_800(int capMiB)    { return mem("DDR2-800", 4, capMiB, 64, 400, 5, 2); }
+  SLMemoryModule ddr3_1600(int capMiB)   { return mem("DDR3-1600", 5, capMiB, 64, 800, 9, 2); }
+  SLMemoryModule ddr4_3200(int capMiB)   { return mem("DDR4-3200", 6, capMiB, 64, 1600, 16, 2); }
+  SLMemoryModule ddr5_6000(int capMiB)   { return mem("DDR5-6000", 7, capMiB, 64, 3000, 36, 2); }
+  SLMemoryModule ddr5_6400(int capMiB)   { return mem("DDR5-6400", 7, capMiB, 64, 3200, 40, 2); }
+
+  // Channel-aware memory: same DIMM spec populated across N channels. `capMiB`
+  // is the per-module capacity; the module reports N× capacity and N× aggregate
+  // bandwidth. These match the AMD Threadripper 9000 platforms directly.
+  SLMemoryModule memChannels(String name, int tech, int capMiB, int bus, int clk, int cl, int ddr, int channels) {
+    SLMemoryModule m = new SLMemoryModule();
+    m.configureChannels(name, tech, capMiB, bus, clk, cl, ddr, channels);
+    return m;
+  }
+  // DDR5-6400 on a 4-channel HEDT board (Threadripper 9980X/9970X/9960X, TRX50).
+  SLMemoryModule ddr5_6400_quadChannel(int capMiBPerModule) {
+    return memChannels("DDR5-6400 (4-channel)", 7, capMiBPerModule, 64, 3200, 40, 2, 4);
+  }
+  // DDR5-6400 on an 8-channel workstation board (Threadripper PRO WX, WRX90).
+  SLMemoryModule ddr5_6400_octaChannel(int capMiBPerModule) {
+    return memChannels("DDR5-6400 (8-channel)", 7, capMiBPerModule, 64, 3200, 40, 2, 8);
+  }
+
+  // ---------------- Memory interface (cadence overlay) presets ----------------
+  // An OOD adapter that wraps a REAL module and makes it refresh as though it
+  // were `cadenceTech`. The module keeps its native data rate, capacity, and
+  // backing store; only the observed refresh duty cycle changes. Compose BOTH:
+  // pick a module, then wrap it with one of these.
+  SLMemoryInterface memInterface(String name, SLMemoryModule realModule, int cadenceTech) {
+    SLMemoryInterface i = new SLMemoryInterface();
+    i.configure(name, realModule, cadenceTech);
+    return i;
+  }
+  // One preset per DDR generation: present any real module with that
+  // generation's refresh cadence (the common special case: run a DDR5 module so
+  // it refreshes like DDR2). The tech ids match SLMemoryModule.TECH_* / the
+  // cadences an SLCadenceConnector resolves: DDR=3 .. DDR5=7. These convenience
+  // forms build the interface and connect the cadence connector for you; for
+  // explicit control, build an SLCadenceConnector and call iface.connect(c).
+  SLMemoryInterface ddrCadenceInterface(SLMemoryModule realModule) {
+    return memInterface("DDR-cadence interface", realModule, 3);
+  }
+  SLMemoryInterface ddr2CadenceInterface(SLMemoryModule realModule) {
+    return memInterface("DDR2-cadence interface", realModule, 4);
+  }
+  SLMemoryInterface ddr3CadenceInterface(SLMemoryModule realModule) {
+    return memInterface("DDR3-cadence interface", realModule, 5);
+  }
+  SLMemoryInterface ddr4CadenceInterface(SLMemoryModule realModule) {
+    return memInterface("DDR4-cadence interface", realModule, 6);
+  }
+  SLMemoryInterface ddr5CadenceInterface(SLMemoryModule realModule) {
+    return memInterface("DDR5-cadence interface", realModule, 7);
+  }
+
+  // Standalone Dynamite cadence connectors (one per DDR generation), resolved
+  // and ready to plug into a memory interface's slot via iface.connect(c). Use
+  // these when you want to stage/defer the cadence explicitly rather than let a
+  // *CadenceInterface preset build and connect it in one step.
+  SLCadenceConnector cadenceConnector(int cadenceTech) {
+    SLCadenceConnector c = new SLCadenceConnector();
+    c.initialize(cadenceTech, "catalog cadence connector");
+    c.resolve();
+    return c;
+  }
+  SLCadenceConnector ddrCadence()  { return cadenceConnector(3); }
+  SLCadenceConnector ddr2Cadence() { return cadenceConnector(4); }
+  SLCadenceConnector ddr3Cadence() { return cadenceConnector(5); }
+  SLCadenceConnector ddr4Cadence() { return cadenceConnector(6); }
+  SLCadenceConnector ddr5Cadence() { return cadenceConnector(7); }
+
+  // ---------------- Storage presets ----------------
+  SLStorageDevice store(String name, int cls, int iface, int capMiB, int rpm, int seekUs, int mbs) {
+    SLStorageDevice d = new SLStorageDevice();
+    d.configure(name, cls, iface, capMiB, rpm, seekUs, mbs);
+    return d;
+  }
+  SLStorageDevice floppy144()  { return store("3.5\" HD floppy", 0, 1, 1, 360, 84000, 1); }           // ~1.44MB, slow
+  SLStorageDevice mfmHdd()     { return store("MFM HDD (ST-506)", 1, 0, 20, 3600, 65000, 1); }         // 20MB, ~65ms seek
+  SLStorageDevice ideHdd()     { return store("IDE HDD 5400rpm", 1, 1, 40000, 5400, 9000, 60); }        // 40GB
+  SLStorageDevice sataHdd()    { return store("SATA HDD 7200rpm", 1, 3, 2000000, 7200, 8500, 180); }    // 2TB
+  SLStorageDevice sataSsd()    { return store("SATA SSD", 2, 3, 1000000, 0, 100, 550); }                // 1TB, ~0.1ms
+  SLStorageDevice nvmeGen3()   { return store("NVMe Gen3 SSD", 3, 5, 1000000, 0, 20, 3500); }           // 3.5GB/s
+  SLStorageDevice nvmeGen4()   { return store("NVMe Gen4 SSD", 3, 5, 2000000, 0, 15, 7000); }           // 7GB/s
+  SLStorageDevice tapeLto()    { return store("LTO tape", 4, 2, 6000000, 0, 60000000, 300); }           // huge, high latency
+
+  // ---------------- Optical presets ----------------
+  SLOpticalDrive optical(String name, int medium, int mult, boolean write, int capMiB) {
+    SLOpticalDrive o = new SLOpticalDrive();
+    o.configure(name, medium, mult, write, capMiB);
+    return o;
+  }
+  SLOpticalDrive cdrom52()  { return optical("52x CD-ROM", 0, 52, false, 700); }
+  SLOpticalDrive cdrw()     { return optical("CD-RW 48x", 0, 48, true, 700); }
+  SLOpticalDrive dvd16()    { return optical("16x DVD-ROM", 1, 16, false, 4700); }
+  SLOpticalDrive dvdrw()    { return optical("DVD±RW 24x", 1, 24, true, 4700); }
+  SLOpticalDrive bluRay()   { return optical("Blu-ray 16x", 2, 16, false, 25000); }
+  SLOpticalDrive bdxl()     { return optical("BDXL writer 16x", 2, 16, true, 100000); }
+
+  // ---------------- Bus presets ----------------
+  SLSystemBus bus(String name, int type, int clk, int width, int lanes, int laneMBs) {
+    SLSystemBus b = new SLSystemBus();
+    b.configure(name, type, clk, width, lanes, laneMBs);
+    return b;
+  }
+  SLSystemBus isa()       { return bus("ISA 8MHz", 0, 8, 16, 1, 0); }
+  SLSystemBus pci33()     { return bus("PCI 33MHz 32-bit", 1, 33, 32, 1, 0); }
+  SLSystemBus agp8x()     { return bus("AGP 8x", 2, 533, 32, 1, 0); }
+  SLSystemBus pcieGen3x16(){ return bus("PCIe 3.0 x16", 3, 8000, 1, 16, 985); }
+  SLSystemBus pcieGen4x16(){ return bus("PCIe 4.0 x16", 3, 16000, 1, 16, 1969); }
+  SLSystemBus pcieGen5x16(){ return bus("PCIe 5.0 x16", 3, 32000, 1, 16, 3938); }
+  SLSystemBus fsb(int mhz){ return bus("Front-side bus", 4, mhz, 64, 1, 0); }
+
+  // ---------------- Motherboard presets ----------------
+  SLMotherboard board(String name, int socket, String chipset, int channels,
+                      int slots, int lanes, int gen, int busType) {
+    SLMotherboard b = new SLMotherboard();
+    b.configure(name, socket, chipset, channels, slots, lanes, gen, busType);
+    return b;
+  }
+  // AMD Threadripper 9000 HEDT: sTR5 + TRX50, 4-channel DDR5, up to 88 PCIe 5.0 lanes.
+  SLMotherboard trx50() {
+    return board("TRX50 (Threadripper HEDT)", 1, "TRX50", 4, 4, 88, 5, 3);
+  }
+  // AMD Threadripper PRO 9000 WX: sTR5 + WRX90, 8-channel DDR5, up to 128 PCIe 5.0 lanes.
+  SLMotherboard wrx90() {
+    return board("WRX90 (Threadripper PRO WX)", 1, "WRX90", 8, 8, 128, 5, 3);
+  }
+}
