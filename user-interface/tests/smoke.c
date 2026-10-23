@@ -106,6 +106,7 @@ int main(void) {
     SLUIWidget* btn = slui_button(col, "Click");
     slui_widget_on_activate(btn, on_click, NULL);
     slui_widget_set_suggested(btn, 1);
+    slui_widget_set_icon(btn, "icons/wifi.jpg", "Wifi"); /* exercise JPEG icons */
 
     SLUIWidget* tog = slui_toggle(col, "Flag", 0);
     CHECK(slui_widget_get_toggle(tog) == 0, "toggle starts off");
@@ -167,6 +168,52 @@ int main(void) {
     CHECK(slui_info_bar(col, "note", 0) != NULL, "info bar created");
     CHECK(slui_scroll_bar(col, SLUI_ORIENT_VERTICAL, 0.0, 0.3) != NULL,
           "scroll bar created");
+
+    /* --- scrolled view: overflow detection + clamped offset ------------ */
+    {
+        SLUIWidget* sv = slui_scrolled_view(col, 0, 0); /* auto/auto */
+        CHECK(sv != NULL, "scrolled view created");
+        /* Pin the viewport small, then add a tall content box so it overflows. */
+        slui_widget_set_size_request(sv, 200, 100);
+        SLUIWidget* content = slui_box(sv, SLUI_ORIENT_VERTICAL, 4);
+        for (int i = 0; i < 40; ++i) slui_label(content, "scrolling line");
+        slui_window_show(win);
+        slui_window_render(win); /* force a layout+paint so arrange() runs */
+        /* Programmatic scroll clamps into range and is read back. */
+        slui_scrolled_view_scroll_to(sv, 0, 100000);
+        CHECK(slui_scrolled_view_scroll_y(sv) > 0, "scrolled view scrolls on overflow");
+        slui_scrolled_view_scroll_to(sv, 0, -50);
+        CHECK(slui_scrolled_view_scroll_y(sv) == 0, "scroll offset clamps at zero");
+        slui_scrolled_view_scroll_by(sv, 0, 30);
+        CHECK(slui_scrolled_view_scroll_y(sv) == 30, "scroll_by advances the offset");
+    }
+
+    /* --- scrolled view: horizontal overflow of a wide row ------------- */
+    {
+        SLUIWidget* sh = slui_scrolled_view(col, 0, 0); /* auto/auto */
+        CHECK(sh != NULL, "wide scrolled view created");
+        slui_widget_set_size_request(sh, 200, 60);      /* narrow viewport */
+        SLUIWidget* row = slui_box(sh, SLUI_ORIENT_HORIZONTAL, 8);
+        for (int i = 0; i < 20; ++i) slui_button(row, "a wide button label");
+        slui_window_show(win);
+        slui_window_render(win);
+        slui_scrolled_view_scroll_to(sh, 100000, 0);
+        CHECK(slui_scrolled_view_scroll_x(sh) > 0, "wide content scrolls horizontally");
+    }
+
+    /* --- presentation buffering: default + mode round-trip --------------- */
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_DOUBLE,
+          "window defaults to double buffering");
+    slui_window_set_buffering(win, SLUI_BUFFERING_TRIPLE);
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_TRIPLE,
+          "buffering set to triple");
+    slui_window_set_buffering(win, SLUI_BUFFERING_SINGLE);
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_SINGLE,
+          "buffering set to single");
+    slui_window_set_buffering(win, 99); /* out of range -> clamped to triple */
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_TRIPLE,
+          "out-of-range buffering clamps to triple");
+    slui_window_render(win); /* present once under triple to exercise the ring */
 
     /* The activation latch returns an activation at most once. */
     slui_widget_set_toggle(chk, 0); /* state change, not an activation */
