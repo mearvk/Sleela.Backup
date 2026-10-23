@@ -1,0 +1,254 @@
+<< lib/gui/version-military/SLGuiScreenFit.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuiScreenFit — the military-line helper that sizes a
+     window from the ACTUAL screen size / resolution. It offers three support
+     tiers so a host can ask for as much or as little cleverness as it wants:
+   
+       BASIC    — a fixed fraction of the screen, clamped to a sane min/max.
+       MODERATE — a fraction plus a work-area margin and a centered position.
+       ADVANCED — resolution-CLASS buckets (≤720p / 1080p / 1440p / 4K+), each
+                  with its own target fraction and a cap, aspect-ratio aware,
+                  honoring the min/max window window and the work-area inset.
+   
+     It is a pure model. The host feeds in the real screen via setScreen(w,h)
+     — sourced from the native `uiScreenWidth(app)` / `uiScreenHeight(app)`
+     built-ins — and reads the resolved width/height/x/y back out to pass to
+     `uiWindowCreate`. When the screen is unknown (0, e.g. a headless host) it
+     falls back to a modeled 1920×1080 so sizing is always defined. Every knob
+     clamps to a safe window, the GUAL/MILITARY clamp-to-a-window discipline.
+   
+   Family: gui. Companion to SLGuiWindowState (which owns the live geometry);
+     this class decides the initial, screen-relative size and placement. >>
+#sleela 2.1
+class SLGuiScreenFit {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11426;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-20";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-19";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  // Support tiers.
+  static final int TIER_BASIC    = 0;
+  static final int TIER_MODERATE = 1;
+  static final int TIER_ADVANCED = 2;
+
+  // Resolution classes (ADVANCED tier buckets), by the SHORTER screen edge.
+  static final int RES_SD    = 0;   // ≤  720  (SD / small)
+  static final int RES_HD    = 1;   // ≤ 1080  (Full HD)
+  static final int RES_QHD   = 2;   // ≤ 1440  (QHD)
+  static final int RES_UHD   = 3;   //  > 1440  (4K+ / ultra)
+
+  int tier;
+  int screenW; int screenH;     // actual screen px (modeled fallback if unknown)
+  int screenKnown;              // 1 when a real screen was reported
+  int marginPx;                 // work-area inset kept clear on every side
+  int minW; int minH;           // smallest window we will ever propose
+  int maxW; int maxH;           // largest window we will ever propose
+  int fillPct;                  // BASIC/MODERATE: % of screen to occupy
+
+  // Resolved result (filled by fit()).
+  int outW; int outH; int outX; int outY;
+
+  static final int MODEL_W = 1920;   // modeled fallback resolution
+  static final int MODEL_H = 1080;
+
+  int clamp(int v, int lo, int hi) {
+    if (v < lo) { return lo; }
+    if (v > hi) { return hi; }
+    return v;
+  }
+  int imin(int a, int b) { return (a < b) ? a : b; }
+  int imax(int a, int b) { return (a > b) ? a : b; }
+
+  // Install documented defaults. `supportTier` picks basic/moderate/advanced.
+  void configure(int supportTier) {
+    tier = clamp(supportTier, TIER_BASIC, TIER_ADVANCED);
+    screenW = MODEL_W; screenH = MODEL_H; screenKnown = 0;
+    marginPx = 48;
+    minW = 640;  minH = 480;
+    maxW = 7680; maxH = 4320;      // allow up to 8K; real cap is the screen
+    fillPct = 75;                   // occupy 75% of the screen by default
+  }
+
+  // Feed the ACTUAL screen from uiScreenWidth/uiScreenHeight. A non-positive
+  // value means "unknown" (headless), so we keep the modeled fallback.
+  void setScreen(int w, int h) {
+    if (w > 0 && h > 0) { screenW = w; screenH = h; screenKnown = 1; }
+    else { screenW = MODEL_W; screenH = MODEL_H; screenKnown = 0; }
+  }
+
+  void setFillPct(int pct)   { fillPct = clamp(pct, 20, 100); }
+  void setMargin(int px)     { marginPx = clamp(px, 0, 400); }
+  // Keep the min/max interval valid when a caller raises the minimum.
+  // The minimum is authoritative: if it overtakes the old maximum, advance
+  // the maximum with it instead of leaving fit()/honored() contradictory.
+  void setMinSize(int w, int h) {
+    if (w > 0) { minW = w; if (maxW < minW) { maxW = minW; } }
+    if (h > 0) { minH = h; if (maxH < minH) { maxH = minH; } }
+  }
+  void setMaxSize(int w, int h) {
+    // A max below the min is refused (kept at least at min) — fail-safe.
+    if (w >= minW) { maxW = w; }
+    if (h >= minH) { maxH = h; }
+  }
+
+  // The usable work area = screen minus the margin on each side.
+  int workW() {
+    // A minimum preference must never force a window wider than the real screen.
+    int available = screenW - 2 * marginPx;
+    if (available < 1) { available = screenW; }
+    return imin(screenW, available);
+  }
+  int workH() {
+    // On short screens, prefer a smaller window over violating screen bounds.
+    int available = screenH - 2 * marginPx;
+    if (available < 1) { available = screenH; }
+    return imin(screenH, available);
+  }
+
+  // ADVANCED: classify the screen by its shorter edge.
+  int resolutionClass() {
+    int shortEdge = imin(screenW, screenH);
+    if (shortEdge <= 720)  { return RES_SD; }
+    if (shortEdge <= 1080) { return RES_HD; }
+    if (shortEdge <= 1440) { return RES_QHD; }
+    return RES_UHD;
+  }
+
+  // ADVANCED: the target fill % for a resolution class — larger screens give
+  // the window proportionally LESS of the glass (a 4K window at 90% is huge).
+  int classFillPct() {
+    int rc = resolutionClass();
+    if (rc == RES_SD)  { return 92; }   // small screens: nearly full
+    if (rc == RES_HD)  { return 80; }
+    if (rc == RES_QHD) { return 70; }
+    return 60;                          // UHD/4K: a comfortable 60%
+  }
+  // ADVANCED: an absolute cap per class so a window never becomes unwieldy.
+  int classCapW() {
+    int rc = resolutionClass();
+    if (rc == RES_SD)  { return 1280; }
+    if (rc == RES_HD)  { return 1760; }
+    if (rc == RES_QHD) { return 2240; }
+    return 2880;
+  }
+  int classCapH() {
+    int rc = resolutionClass();
+    if (rc == RES_SD)  { return 800; }
+    if (rc == RES_HD)  { return 1080; }
+    if (rc == RES_QHD) { return 1440; }
+    return 1800;
+  }
+
+  // Compute the window size+position for the configured tier. Returns the
+  // resolved width; outW/outH/outX/outY hold the full result.
+  int fit() {
+    int w; int h;
+    if (tier == TIER_BASIC) {
+      // Fraction of the raw screen, clamped to the hard min/max.
+      w = (screenW * fillPct) / 100;
+      h = (screenH * fillPct) / 100;
+    } else if (tier == TIER_MODERATE) {
+      // Fraction of the WORK area (screen minus margins).
+      w = (workW() * fillPct) / 100;
+      h = (workH() * fillPct) / 100;
+    } else {
+      // ADVANCED: resolution-class fraction of the work area, then the class cap.
+      int pct = classFillPct();
+      w = (workW() * pct) / 100;
+      h = (workH() * pct) / 100;
+      w = imin(w, classCapW());
+      h = imin(h, classCapH());
+    }
+
+    // The actual available area is a HARD upper bound. On small screens,
+    // reduce the configured minimum rather than allowing minW/minH to win.
+    int availW = workW();
+    int availH = workH();
+    int effectiveMinW = imin(minW, availW);
+    int effectiveMinH = imin(minH, availH);
+    int effectiveMaxW = imax(effectiveMinW, imin(maxW, availW));
+    int effectiveMaxH = imax(effectiveMinH, imin(maxH, availH));
+    w = clamp(imin(w, availW), effectiveMinW, effectiveMaxW);
+    h = clamp(imin(h, availH), effectiveMinH, effectiveMaxH);
+
+    // Center within the full screen.
+    int x = (screenW - w) / 2; if (x < 0) { x = 0; }
+    int y = (screenH - h) / 2; if (y < 0) { y = 0; }
+
+    outW = w; outH = h; outX = x; outY = y;
+    return outW;
+  }
+
+  // ---- readers ------------------------------------------------------------
+  int width()  { return outW; }
+  int height() { return outH; }
+  int x()      { return outX; }
+  int y()      { return outY; }
+  int getTier() { return tier; }
+  boolean screenIsKnown() { return screenKnown == 1; }
+
+  String tierName() {
+    if (tier == TIER_BASIC)    { return "basic"; }
+    if (tier == TIER_MODERATE) { return "moderate"; }
+    return "advanced";
+  }
+  String resolutionClassName() {
+    int rc = resolutionClass();
+    if (rc == RES_SD)  { return "SD(≤720)"; }
+    if (rc == RES_HD)  { return "HD(1080)"; }
+    if (rc == RES_QHD) { return "QHD(1440)"; }
+    return "UHD(4K+)";
+  }
+
+  // Internally consistent: a positive, in-range result that fits the screen.
+  boolean honored() {
+    // Effective minimums shrink on small screens; viewport fit always wins.
+    if (outW < imin(minW, workW()) || outH < imin(minH, workH())) { return false; }
+    if (outW > imin(maxW, workW()) || outH > imin(maxH, workH())) { return false; }
+    if (outW > screenW || outH > screenH) { return false; }
+    return outW > 0 && outH > 0 && maxW >= minW && maxH >= minH;
+  }
+
+  String report() {
+    return "screenfit[" + tierName() + "]: screen " + screenW + "x" + screenH
+        + (screenKnown == 1 ? " (actual) " : " (modeled) ")
+        + "class=" + resolutionClassName()
+        + " -> window " + outW + "x" + outH + " @(" + outX + "," + outY + ")";
+  }
+}

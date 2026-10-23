@@ -1,0 +1,56 @@
+< Frame envelope with payload bounds; not a bit-level encoder. >
+#sleela 2.1
+class CDMAFrame {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11301;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-18";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-18";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  String frameId; String family; int sequenceNumber; int payloadBytes; int maximumPayloadBytes;
+  boolean valid; String diagnostic;
+  void configure(String id, String protocolFamily, int sequence, int payloadSize, int maxPayloadSize) {
+    frameId = ""; family = ""; sequenceNumber = 0; payloadBytes = 0; maximumPayloadBytes = 0; valid = false; diagnostic = "";
+    if (id == "" || protocolFamily == "") { diagnostic = "E_EMPTY: frame ID and family required"; return; }
+    if (sequence < 0 || payloadSize < 0 || maxPayloadSize <= 0) { diagnostic = "E_RANGE: invalid sequence or payload bounds"; return; }
+    if (payloadSize > maxPayloadSize) { diagnostic = "E_PAYLOAD_LIMIT: payload exceeds maximum"; return; }
+    frameId = id; family = protocolFamily; sequenceNumber = sequence; payloadBytes = payloadSize; maximumPayloadBytes = maxPayloadSize; valid = true;
+  }
+  boolean isValid() { return valid; }
+  String message() { return diagnostic; }
+}

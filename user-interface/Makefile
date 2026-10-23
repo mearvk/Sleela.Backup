@@ -38,6 +38,20 @@ INSTALL    ?= install
 
 INCLUDES := -Iinclude -Isrc
 
+# Optional system image codecs. JPEG remains provided by bundled NanoJPEG.
+PNG_CFLAGS := $(shell $(PKG_CONFIG) --cflags libpng 2>/dev/null)
+PNG_LIBS := $(shell $(PKG_CONFIG) --libs libpng 2>/dev/null)
+AVIF_CFLAGS := $(shell $(PKG_CONFIG) --cflags libavif 2>/dev/null)
+AVIF_LIBS := $(shell $(PKG_CONFIG) --libs libavif 2>/dev/null)
+ifneq ($(strip $(PNG_LIBS)),)
+  IMAGE_CFLAGS += -DSLUI_HAVE_LIBPNG $(PNG_CFLAGS)
+  IMAGE_LIBS += $(PNG_LIBS)
+endif
+ifneq ($(strip $(AVIF_LIBS)),)
+  IMAGE_CFLAGS += -DSLUI_HAVE_LIBAVIF $(AVIF_CFLAGS)
+  IMAGE_LIBS += $(AVIF_LIBS)
+endif
+
 # Portable core (backend-independent) translation units.
 CORE_SRC := src/slui_theme.cpp src/slui_widget.cpp src/slui_window.cpp \
             src/slui_api.cpp src/slui_draw.cpp src/slui_throbber.cpp \
@@ -53,7 +67,7 @@ ifeq ($(OS),Windows_NT)
   BACKEND_SRC := src/backend/win32.cpp
   BACKEND_DEF := -DSLUI_BACKEND_WIN32_BUILD
   BACKEND_CFLAGS :=
-  BACKEND_LIBS := -lgdi32 -luser32
+  BACKEND_LIBS := -lgdi32 -luser32 -lshell32
 else
   EXE :=
   UNAME_S := $(shell uname -s)
@@ -75,20 +89,22 @@ endif
 
 LIB      := $(BUILD)/libsleelaui.a
 GALLERY  := $(BUILD)/slui-gallery$(EXE)
+MILITARY := $(BUILD)/slui-military-console$(EXE)
 SMOKE    := $(BUILD)/slui-smoke$(EXE)
 
 CORE_OBJ    := $(CORE_SRC:%.cpp=$(BUILD)/%.o)
+NANOJPEG_OBJ := $(BUILD)/src/nanojpeg.o
 BACKEND_OBJ := $(BUILD)/$(basename $(BACKEND_SRC)).o
 HEADLESS_OBJ := $(BUILD)/src/backend/headless.o
 
-.PHONY: all lib example smoke snapshot throbber-snapshot relief-snapshot font-snapshot mood-snapshot install install-strip uninstall clean help
+.PHONY: all lib example military smoke snapshot throbber-snapshot relief-snapshot font-snapshot mood-snapshot install install-strip uninstall clean help
 
 all: lib
 
 lib: $(LIB)
 
 # ---- static library (core + native backend) -------------------------------
-$(LIB): $(CORE_OBJ) $(BACKEND_OBJ)
+$(LIB): $(CORE_OBJ) $(NANOJPEG_OBJ) $(BACKEND_OBJ)
 	@mkdir -p $(dir $@)
 	$(AR) rcs $@ $^
 	@echo "SleelaUI library: $@  (backend: $(PLATFORM))"
@@ -96,7 +112,11 @@ $(LIB): $(CORE_OBJ) $(BACKEND_OBJ)
 # C++ core objects.
 $(BUILD)/src/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(BACKEND_DEF) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(BACKEND_DEF) $(IMAGE_CFLAGS) -c $< -o $@
+
+$(NANOJPEG_OBJ): src/nanojpeg.c src/nanojpeg.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wno-shift-negative-value -c $< -o $@
 
 # Native backend object (adds backend cflags; .mm compiled as Obj-C++ on macOS).
 ifeq ($(PLATFORM),macos)
@@ -115,8 +135,17 @@ example: $(GALLERY)
 $(GALLERY): examples/gallery.c $(LIB)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDES) -c examples/gallery.c -o $(BUILD)/gallery.o
-	$(CXX) $(CXXFLAGS) $(BUILD)/gallery.o $(LIB) $(BACKEND_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(BUILD)/gallery.o $(LIB) $(BACKEND_LIBS) $(IMAGE_LIBS) -o $@
 	@echo "SleelaUI gallery: $@"
+
+# ---- military console (the designed SLeeLa military GUI, pure C) -----------
+military: $(MILITARY)
+
+$(MILITARY): examples/military-console.c $(LIB)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INCLUDES) -c examples/military-console.c -o $(BUILD)/military-console.o
+	$(CXX) $(CXXFLAGS) $(BUILD)/military-console.o $(LIB) $(BACKEND_LIBS) $(IMAGE_LIBS) -o $@
+	@echo "SleelaUI military console: $@"
 
 # ---- headless smoke test (no window system) --------------------------------
 # Built against the headless backend so it runs on CI with no display on any OS.
@@ -127,55 +156,55 @@ $(HEADLESS_OBJ): src/backend/headless.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -DSLUI_BACKEND_HEADLESS_BUILD -c $< -o $@
 
-$(SMOKE): tests/smoke.c $(CORE_OBJ) $(HEADLESS_OBJ)
+$(SMOKE): tests/smoke.c $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDES) -c tests/smoke.c -o $(BUILD)/smoke.o
-	$(CXX) $(CXXFLAGS) $(BUILD)/smoke.o $(CORE_OBJ) $(HEADLESS_OBJ) -o $@
+	$(CXX) $(CXXFLAGS) $(BUILD)/smoke.o $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ) $(IMAGE_LIBS) -o $@
 
 # ---- offscreen snapshot (display-free preview via the headless backend) ----
 SNAPSHOT := $(BUILD)/slui-snapshot$(EXE)
 snapshot: $(SNAPSHOT)
 	$(SNAPSHOT) docs/preview.png
 
-$(SNAPSHOT): tools/snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ)
+$(SNAPSHOT): tools/snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tools/snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(IMAGE_CFLAGS) tools/snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ) $(IMAGE_LIBS) -o $@
 
 # ---- throbber snapshot (display-free water-field preview) ------------------
 THROBBER_SNAPSHOT := $(BUILD)/slui-throbber-snapshot$(EXE)
 throbber-snapshot: $(THROBBER_SNAPSHOT)
 	$(THROBBER_SNAPSHOT) docs/throbber.png
 
-$(THROBBER_SNAPSHOT): tools/throbber_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ)
+$(THROBBER_SNAPSHOT): tools/throbber_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tools/throbber_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(IMAGE_CFLAGS) tools/throbber_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ) $(IMAGE_LIBS) -o $@
 
 # ---- relief snapshot (display-free lighting/relief preview) ----------------
 RELIEF_SNAPSHOT := $(BUILD)/slui-relief-snapshot$(EXE)
 relief-snapshot: $(RELIEF_SNAPSHOT)
 	$(RELIEF_SNAPSHOT) docs/relief.png
 
-$(RELIEF_SNAPSHOT): tools/relief_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ)
+$(RELIEF_SNAPSHOT): tools/relief_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tools/relief_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(IMAGE_CFLAGS) tools/relief_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ) $(IMAGE_LIBS) -o $@
 
 # ---- font snapshot (display-free font-effects preview) ---------------------
 FONT_SNAPSHOT := $(BUILD)/slui-font-snapshot$(EXE)
 font-snapshot: $(FONT_SNAPSHOT)
 	$(FONT_SNAPSHOT) docs/font.png
 
-$(FONT_SNAPSHOT): tools/font_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ)
+$(FONT_SNAPSHOT): tools/font_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tools/font_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(IMAGE_CFLAGS) tools/font_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ) $(IMAGE_LIBS) -o $@
 
 # ---- mood snapshot (display-free mood/wash/tanor preview) ------------------
 MOOD_SNAPSHOT := $(BUILD)/slui-mood-snapshot$(EXE)
 mood-snapshot: $(MOOD_SNAPSHOT)
 	$(MOOD_SNAPSHOT) docs/mood.png
 
-$(MOOD_SNAPSHOT): tools/mood_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ)
+$(MOOD_SNAPSHOT): tools/mood_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) tools/mood_snapshot.cpp $(CORE_OBJ) $(HEADLESS_OBJ) -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(IMAGE_CFLAGS) tools/mood_snapshot.cpp $(CORE_OBJ) $(NANOJPEG_OBJ) $(HEADLESS_OBJ) $(IMAGE_LIBS) -o $@
 
 # ---- install ---------------------------------------------------------------
 install: $(LIB)

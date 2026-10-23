@@ -1,11 +1,50 @@
-/*
- * MoralDeliberation.sleela
- * COORENAGRAPH moral vocabulary.
- * Part of speech: noun
- * Definition: The process of applying ethical principles to facts to reach a responsible, consent-filled decision.
- */
+<< MoralDeliberation.sleela
+   COORENAGRAPH moral vocabulary.
+   Part of speech: noun
+   Definition: The process of applying ethical principles to facts to reach a responsible, consent-filled decision. >>
 
 class MoralDeliberation {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11324;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-19";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-09-29";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
     String term() {
         return "MoralDeliberation";
     }
@@ -16,5 +55,57 @@ class MoralDeliberation {
 
     String definition() {
         return "The process of applying ethical principles to facts to reach a responsible, consent-filled decision.";
+    }
+
+    // --- COORENAGRAPH linguistic / graph members, specific to "MoralDeliberation"
+
+    // Related adverb form(s) of this object.
+    int adverbCount() { return 1; }
+    String[] adverbs() {
+        String[] a = new String[1];
+        a[0] = "deliberately";
+        return a;
+    }
+
+    // Related verb form(s) of this object.
+    int verbCount() { return 2; }
+    String[] verbs() {
+        String[] v = new String[2];
+        v[0] = "deliberate";
+        v[1] = "weigh";
+        return v;
+    }
+
+    // Related noun form(s) of this object.
+    int nounCount() { return 2; }
+    String[] nouns() {
+        String[] n = new String[2];
+        n[0] = "deliberation";
+        n[1] = "judgment";
+        return n;
+    }
+
+    // Co-sections: sibling concepts co-located with this object in the graph.
+    int cosectCount() { return 3; }
+    String[] cosects() {
+        String[] c = new String[3];
+        c[0] = "Ethics";
+        c[1] = "Principled";
+        c[2] = "Probity";
+        return c;
+    }
+
+    // The moral dimension / axis this object occupies.
+    String dimension() {
+        return "process";
+    }
+
+    // Interchangeable (near-synonym) terms for this object.
+    int interchangeCount() { return 2; }
+    String[] interchanges() {
+        String[] i = new String[2];
+        i[0] = "moral reasoning";
+        i[1] = "ethical judgment";
+        return i;
     }
 }

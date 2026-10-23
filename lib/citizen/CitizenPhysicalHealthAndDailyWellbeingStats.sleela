@@ -1,0 +1,99 @@
+#sleela 2.1
+/*
+ * CitizenPhysicalHealthAndDailyWellbeingStats.sleela
+ * Individual category class extracted from citizen/sleela/CitizenStats.sleela.
+ * Source category: Physical health and daily wellbeing (game-defined scales).
+ * Monetary values use integer minor units where the field name says Cents.
+ */
+class CitizenPhysicalHealthAndDailyWellbeingStats {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10992;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-11";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+    int healthScore;
+    int maxHealthScore;
+    int fitness;
+    int mobility;
+    int vision;
+    int hearing;
+    int speech;
+    int nutrition;
+    int hydration;
+    int sleepQuality;
+    int stressLevel;
+    int mentalWellbeing;
+    int physicalWellbeing;
+    int chronicConditionCount;
+    int acuteConditionSeverity;
+    int injurySeverity;
+    int infectionRisk;
+    int vaccinationStatus;
+    int healthcareAccess;
+    int healthInsuranceCoverage;
+    int medicationAdherence;
+    int substanceRisk;
+    int disabilitySupportLevel;
+
+    CitizenPhysicalHealthAndDailyWellbeingStats() {
+        healthScore = 100;
+        maxHealthScore = 100;
+        fitness = 50;
+        mobility = 100;
+        vision = 100;
+        hearing = 100;
+        speech = 100;
+        nutrition = 100;
+        hydration = 100;
+        sleepQuality = 100;
+        stressLevel = 0;
+        mentalWellbeing = 100;
+        physicalWellbeing = 100;
+        chronicConditionCount = 0;
+        acuteConditionSeverity = 0;
+        injurySeverity = 0;
+        infectionRisk = 0;
+        vaccinationStatus = 0;
+        healthcareAccess = 0;
+        healthInsuranceCoverage = 0;
+        medicationAdherence = 100;
+        substanceRisk = 0;
+        disabilitySupportLevel = 0;
+    }
+}

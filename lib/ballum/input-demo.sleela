@@ -1,0 +1,128 @@
+#sleela 2.1
+< input-demo.sleela -- the runnable demo of the Ballum touchscreen + mouse >
+< input listener. It inlines the gesture state machine (mirroring SLBallumInput) >
+< and a main that polls the uiBallum* VM bridge, turning raw DOWN/MOVE/UP events >
+< (mouse or touch) into CLICK and DRAG gestures. On a headless host no backend >
+< supplies input, so uiBallumHasInput() is 0 and poll() returns NONE -- the demo >
+< reports that honestly and exits (it never blocks). >
+<  >
+< Gesture codes: 0 none 1 down 2 move 3 click 4 drag-begin 5 drag-move 6 drag-end. >
+< Raw event types: 1 down 2 move 3 up. >
+class InputDemo {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11535;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-23";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-23";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int NONE = 0;
+  static final int DOWN = 1;
+  static final int MOVE = 2;
+  static final int CLICK = 3;
+  static final int DRAG_BEGIN = 4;
+  static final int DRAG_MOVE = 5;
+  static final int DRAG_END = 6;
+
+  int dragThreshold;
+  int pressed;
+  int dragging;
+  int downX;
+  int downY;
+  int curX;
+  int curY;
+
+  void init() { dragThreshold = 4; pressed = 0; dragging = 0; downX = 0; downY = 0; curX = 0; curY = 0; }
+  int absDiff(int a, int b) { if (a >= b) { return a - b; } return b - a; }
+
+  int fold(int raw) {
+    if (raw == NONE) { return NONE; }
+    curX = uiBallumEventX();
+    curY = uiBallumEventY();
+    if (raw == 1) { pressed = 1; dragging = 0; downX = curX; downY = curY; return DOWN; }
+    if (raw == 2) {
+      if (pressed == 1) {
+        if (dragging == 1) { return DRAG_MOVE; }
+        if (absDiff(curX, downX) > dragThreshold || absDiff(curY, downY) > dragThreshold) { dragging = 1; return DRAG_BEGIN; }
+        return MOVE;
+      }
+      return MOVE;
+    }
+    // raw == 3 (up)
+    if (pressed == 1 && dragging == 1) { pressed = 0; dragging = 0; return DRAG_END; }
+    if (pressed == 1) { pressed = 0; return CLICK; }
+    return NONE;
+  }
+
+  String name(int g) {
+    if (g == DOWN) { return "down"; }
+    if (g == MOVE) { return "move"; }
+    if (g == CLICK) { return "click"; }
+    if (g == DRAG_BEGIN) { return "drag-begin"; }
+    if (g == DRAG_MOVE) { return "drag-move"; }
+    if (g == DRAG_END) { return "drag-end"; }
+    return "none";
+  }
+
+  void main() {
+    print("=== Ballum input (touchscreen + mouse) ===");
+    print("backend: " + uiBallumBackendName() + "  input available=" + uiBallumHasInput());
+    init();
+
+    // Drain a bounded number of polls so the demo never blocks.
+    int budget = 64;
+    int handled = 0;
+    int i = 0;
+    while (i < budget) {
+      int raw = uiBallumPoll();
+      if (raw == 0) { i = budget; }
+      else {
+        int g = fold(raw);
+        print("  " + name(g) + " @ (" + curX + "," + curY + ")"
+              + " button=" + uiBallumEventButton()
+              + " source=" + uiBallumEventSource());
+        handled = handled + 1;
+        i = i + 1;
+      }
+    }
+
+    if (handled == 0) {
+      print("no pointer events (headless or idle); listener ready for click, move, drag");
+    }
+    print("done");
+  }
+}
