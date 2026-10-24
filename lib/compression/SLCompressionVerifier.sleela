@@ -1,0 +1,138 @@
+<< lib/compression/SLCompressionVerifier.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines the SLeeLa standard-library type SLCompressionVerifier used within the compression library family. >>
+#sleela 2.1
+< Family: compression. The verification layer — the SLeeLa mirror of the native >
+< manager's resolve/probe path (sleela_compression_manager_resolve_extension, >
+< sleela_compression_manager_resolve_probe) and each plugin's probe() contract >
+< (compression/include/sleela_compressor_plugin.h). A GUI or app uses the >
+< Verifier to answer "which algorithm is this?" and "is this input actually >
+< that format?" before asking the Controller to decompress. >
+<  >
+< Verification has three layers, matching the native design: >
+< 1. resolveExtension(ext)  -- filename extension -> algorithm id >
+< 2. probeMagic(tag)        -- a leading content signature -> algorithm id >
+< 3. result codes           -- honest status, never a false success >
+<  >
+< Result codes (sleela_compression_result): 0 ok, -1 unsupported, -2 invalid, >
+< -3 format, -4 io, -5 state(not loaded), -6 buffer too small. >
+class SLCompressionVerifier {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11543;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-23";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-23";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < ---- extension resolution (mirrors sleela_compression_by_extension) ----- >
+  < Returns the algorithm id for a known extension, or -1 if unrecognized. >
+  int resolveExtension(String ext) {
+    if (ext == ".bin") { return 0; }
+    if (ext == ".rle") { return 1; }
+    if (ext == ".huff") { return 2; }
+    if (ext == ".lzw" || ext == ".Z") { return 3; }
+    if (ext == ".deflate") { return 4; }
+    if (ext == ".zz") { return 5; }
+    if (ext == ".gz") { return 6; }
+    if (ext == ".bz2") { return 7; }
+    if (ext == ".lzma") { return 8; }
+    if (ext == ".xz") { return 9; }
+    if (ext == ".zst") { return 10; }
+    if (ext == ".lz4") { return 11; }
+    if (ext == ".br") { return 12; }
+    if (ext == ".sz") { return 13; }
+    if (ext == ".zip") { return 14; }
+    return -1;
+  }
+
+  < ---- content-signature probe (mirrors each plugin's probe()) ------------ >
+  < Given a short leading-byte signature tag (as text), return the algorithm id >
+  < that claims it, or -1. The actual byte comparison lives in the native >
+  < plugin; here the Verifier encodes which magic belongs to which algorithm so >
+  < a GUI can pre-classify. >
+  int probeMagic(String tag) {
+    < SLeeLa Huffman stream marker >
+    if (tag == "SHF1") { return 2; }
+    < SLeeLa LZW stream marker >
+    if (tag == "SLZW") { return 3; }
+    < gzip magic + deflate method >
+    if (tag == "1F8B08") { return 6; }
+    < bzip2 magic >
+    if (tag == "BZh") { return 7; }
+    < LZMA properties + dict size >
+    if (tag == "5D0000") { return 8; }
+    < xz magic >
+    if (tag == "FD377A585A00") { return 9; }
+    < Zstandard frame magic >
+    if (tag == "28B52FFD") { return 10; }
+    < LZ4 frame magic >
+    if (tag == "04224D18") { return 11; }
+    < Snappy stream identifier >
+    if (tag == "FF060000734E") { return 13; }
+    < ZIP 'PK' signature >
+    if (tag == "PK") { return 14; }
+    return -1;
+  }
+
+  < headerless(id): true for algorithms with no reliable magic (Store, RLE, >
+  < raw DEFLATE, Brotli), where probing by content cannot confirm the format — >
+  < the caller must select it out-of-band by id or extension. >
+  boolean headerless(int id) { return id == 0 || id == 1 || id == 4 || id == 12; }
+
+  < ---- loadability / lifecycle verification ------------------------------- >
+  < verifyLoadable(id): 0 if the id is a real algorithm that can be loaded, >
+  < else -2 (invalid). Mirrors the manager's id_ok guard. >
+  int verifyLoadable(int id) {
+    if (id >= 0 && id < 15) { return 0; }
+    return -2;
+  }
+
+  < ---- result-code text (mirrors sleela_compression_result_text) ---------- >
+  String resultText(int code) {
+    if (code == 0) { return "ok"; }
+    if (code == -1) { return "unsupported (backend not present)"; }
+    if (code == -2) { return "invalid arguments"; }
+    if (code == -3) { return "input is not this algorithm's format"; }
+    if (code == -4) { return "I/O or allocation failure"; }
+    if (code == -5) { return "algorithm not loaded"; }
+    if (code == -6) { return "output buffer too small"; }
+    return "unknown";
+  }
+
+  boolean ok(int code) { return code == 0; }
+}
