@@ -6,9 +6,16 @@ The manifest is consumed by ``tools/verify-before-execution.py`` (and the
 listed file matches its recorded SHA-256 digest.
 
 By default this records the SLeeLa-authored C/C++ source that the build actually
-compiles: the execution core, the front end, the Nordshrift driver, the shared
-catalog, the xclass loader, and the subject libraries. Vendored trees (for
-example ``bash/``) and generated ``build/`` output are excluded.
+compiles (the execution core, the front end, the Nordshrift driver, the shared
+catalog, the xclass loader, and the subject libraries) AND the SLeeLa standard
+library source under ``lib/`` (every ``*.sleela`` plus its C/C++ helpers). The
+runtime loads and executes ``lib/`` classes (e.g. the GUI Master Classes a
+program pulls in with ``import gui.version-military;``), so they are part of the
+trusted computing base and belong inside the integrity boundary. Vendored trees
+(for example ``bash/``) and generated ``build/`` output are excluded, and
+arbitrary user ``.sleela`` programs are deliberately NOT covered -- the gate
+protects the toolchain and the standard library it runs, not the programs it
+runs for the user.
 
 Usage:
     # Regenerate the default committed manifest (paths relative to repo root):
@@ -33,9 +40,42 @@ DEFAULT_SOURCE_DIRS = [
     "impl/catalog",
     "impl/xclass",
     "impl/subjects",
+    "wifi-common",
+    "ballum",
+    "http-1.0",
 ]
+# The SLeeLa standard library the runtime loads and executes. Every *.sleela
+# library class plus its native C/C++ helpers is a trusted input (a program's
+# `import ...` runs these), so they are covered by the execution gate too.
+LIBRARY_SOURCE_DIRS = [
+    "lib",
+]
+# Suffixes recorded from LIBRARY_SOURCE_DIRS (source the runtime trusts). This is
+# SOURCE_SUFFIXES plus the SLeeLa source extension.
+LIBRARY_SUFFIXES = {".sleela", ".c", ".h", ".cpp", ".hpp", ".cc", ".hh"}
 # Individual files outside those directories that the build also consumes.
 DEFAULT_EXTRA_FILES = [
+    # Idea System(TM) realtime canvas: the native-CPU render+physics core the
+    # VM links by default so `sleela <program>` can drive it.
+    "idea/realtime/idea_canvas.h",
+    "idea/realtime/idea_canvas_internal.hpp",
+    "idea/realtime/idea_canvas_sim.cpp",
+    "idea/realtime/idea_canvas_gl_stub.cpp",
+    "idea/realtime/idea_canvas_gpu.cpp",
+    "idea/realtime/idea_canvas_ctx.h",
+    "idea/realtime/idea_canvas_ctx_egl.cpp",
+    "idea/realtime/idea_canvas_ctx_wgl.cpp",
+    "idea/realtime/idea_canvas_ctx_cgl.mm",
+    # Sleela-Native: clean-room original renderer/model/audio (MIT).
+    "idea/sleela-native/sln_math.h",
+    "idea/sleela-native/sln_scene.h",
+    "idea/sleela-native/sln_audio.h",
+    "idea/sleela-native/sln_audio.cpp",
+    "idea/sleela-native/sln_gl_loader.h",
+    "idea/sleela-native/sln_gl_loader.cpp",
+    "idea/sleela-native/sln_render_gl.h",
+    "idea/sleela-native/sln_render_gl.cpp",
+    "idea/sleela-native/sln_demo.cpp",
     "Parameters.c",
     "runtime/garbage_collector.c",
     "runtime/garbage_collector.h",
@@ -58,7 +98,7 @@ DEFAULT_EXTRA_FILES = [
     # gate protects the interpreter, not the arbitrary programs it runs.)
     "SHEET.sheet",
 ]
-SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".hpp", ".cc", ".hh"}
+SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".mm"}
 
 
 def sha256_of(path: Path) -> str:
@@ -88,6 +128,13 @@ def collect(root: Path) -> list[dict[str, str]]:
             continue
         for path in sorted(base.rglob("*")):
             if path.is_file() and path.suffix in SOURCE_SUFFIXES:
+                add(path)
+    for d in LIBRARY_SOURCE_DIRS:
+        base = root / d
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.is_file() and path.suffix in LIBRARY_SUFFIXES:
                 add(path)
     for f in DEFAULT_EXTRA_FILES:
         p = root / f
