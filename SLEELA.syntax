@@ -1,19 +1,23 @@
 # Sleela — Language Syntax Specification
 
     Language:        Sleela
-    Syntax version:  1.11  (1.3..1.10 baseline plus nested classes)
-    Compiler:        Sleelvac(TM) 0.3.29-dev  (version gate accepts syntax 1.3 .. 1.11)
+    Syntax version:  2.2  (1.3..1.11 baseline carried forward)
+    Compiler:        Sleelvac(TM) 0.3.29-dev  (version gate accepts syntax 1.0 .. 2.2)
     Surface:         Java-like
     Core:            Turing-complete, thread-friendly C/C++ execution core
     Companion:       SHEET.sheet (system-object catalog), SST.model (NS-SST-0001),
                      lib/LIBRARY.SYMBOLS.md (authoritative /lib class vocabulary),
                      markdown/EXTENDS.md (the two `extends` meanings, syntax 1.10)
-    Status:          Normative for the syntax 1.3..1.11 surface
+    Status:          Normative for the syntax 1.3..2.2 surface
 
     Versioning note: two distinct version numbers apply and must not be
     conflated. The **syntax version** (MAJOR.MINOR, declared per file with
-    `#sleela 1.11`) is the grammar version defined here and enforced by
-    `impl/frontend/version.{h,cpp}` (documented supported range 1.3 .. 1.11).
+    `#sleela 2.2`) is the grammar version defined here and enforced by
+    `impl/frontend/version.{h,cpp}` (documented supported range 1.0 .. 2.2).
+    Syntax 2.2 is the current spec level: it adds **generic type signatures**
+    (type parameters on classes and methods, parameterized types, and
+    wildcards — section 16), with the 1.3..1.11 feature surface described below
+    carried forward unchanged.
     Syntax 1.11 adds **nested classes** (section 14): a class body may declare
     one level of nested class. The "rule of two" bounds lexical nesting to
     depth 2 (the enclosing class and one nested class); to go deeper, declare
@@ -46,7 +50,7 @@ Java-like code, Sleela can **address every object type named in `SHEET.sheet`**
 through its *conducted methods*, and it honors the **Constitution** invariants
 (system depth 3024, complexity degree ≤ 4).
 
-This document is normative for the syntax 1.3..1.8 surface the front end accepts.
+This document is normative for the syntax 1.3..2.2 surface the front end accepts.
 Every production and built-in below is implemented in `impl/frontend` and
 executes on `impl/core`.
 
@@ -55,10 +59,24 @@ executes on `impl/core`.
 
 ### 1.1 Encoding & trivia
 Source is UTF-8. Whitespace (space, tab, CR, LF) separates tokens and is
-otherwise insignificant. Two comment forms:
+otherwise insignificant. Comment forms:
 
     // line comment — to end of line
     /* block comment — may span lines */
+
+The preferred (go-forward) house style uses leading angle brackets. The opener
+must be the first non-whitespace on its line:
+
+    < line comment — closed by a matching `>` or end of line >
+    << block comment — spans lines, closed by `>>` >>
+
+The legacy `//` and `/* */` forms remain valid for untouched code; new and
+modified code uses the `<` / `<<` angle-bracket forms.
+
+The descriptive-metadata header required by the Metadata Class standard (§15) is
+written in this comment style; in new code it is the angle-bracket form
+`< ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >`,
+with the header text kept verbatim so the block stays greppable.
 
 ### 1.2 Keywords (reserved)
 
@@ -81,11 +99,24 @@ variables `camelCase` (convention, not enforced).
 
 ### 1.4 Literals
 
-    int-lit    ::= digit+                         // 64-bit signed
-    double-lit ::= digit+ "." digit+
+    int-lit    ::= dec-lit | hex-lit | bin-lit | oct-lit   // 64-bit signed
+    dec-lit    ::= digit+
+    hex-lit    ::= ("0x" | "0X") hexdigit (hexdigit | "_")*
+    bin-lit    ::= ("0b" | "0B") bit (bit | "_")*
+    oct-lit    ::= ("0o" | "0O") octdigit (octdigit | "_")*
+    hexdigit   ::= digit | "a".."f" | "A".."F"
+    octdigit   ::= "0".."7"
+    bit        ::= "0" | "1"
+    double-lit ::= digit+ "." digit+ (("e" | "E") ("+" | "-")? digit+)?
     bool-lit   ::= "true" | "false"
     string-lit ::= '"' (char | escape)* '"'       // escapes: \n \t \r \\ \"
     null-lit   ::= "null"
+
+Radix-prefixed integer literals (hex `0x`, binary `0b`, octal `0o`) all denote
+the same 64-bit signed `int` type as a decimal literal; the prefix only selects
+the base. An underscore `_` may separate digits for readability (e.g.
+`0xFF_EC`, `0b1010_0001`) and is ignored. A prefix with no following digit
+(e.g. `0x`) is a lexical error.
 
 ### 1.5 Operators & punctuation
 
@@ -93,8 +124,26 @@ variables `camelCase` (convention, not enforced).
     comparison   ==  !=  <   <=  >   >=
     logical      &&  ||  !
     assignment   =
+    transfer     :::                         // structural-offload send (below)
     grouping     (   )   {   }
     separators   ;   ,
+
+The **structural-offload send** `:::` transfers a `String`'s data to a receiver
+as a VM-performed, element-by-element stream — the framing and iteration are
+done by the interpreter, not by a source `for` loop:
+
+    send-expr ::= expr ":::" receiver          // left-to-right, low precedence
+    receiver  ::= expr                          // evaluates to a receiver handle
+
+`source ::: receiver` frames `source` (one UTF-8 code point per element) into
+`receiver` through the VM's transport, then evaluates to the **source**, so the
+same String keeps flowing to further receivers — `x ::: a ::: b` sends `x` to
+`a`, then `x` to `b`. The left operand must be `String`; the receiver evaluates
+to a reach handle (e.g. `Munction.start(name)`). It lowers to the `OP_SSEND`
+opcode; the VM holds a structural send handler and the receiver transport, so
+SLeeLa source only states the framing intent. Example (x already has a value):
+
+    String x ::: solution(nxm);     // the VM streams x's elements into solution
 
 --------------------------------------------------------------------------------
 ## 2. Program structure
@@ -102,7 +151,7 @@ variables `camelCase` (convention, not enforced).
     program     ::= top-decl+
     top-decl    ::= struct-decl | class-decl
     struct-decl ::= "struct" ident "{" struct-field* "}"   // §3.4 (syntax 1.2+)
-    class-decl  ::= "class" ident "{" member* "}"
+    class-decl  ::= "class" ident [type-params] "{" member* "}"   // type-params: §16 (2.2+)
     member      ::= field-decl | method-decl | nested-class   // nested: §14 (syntax 1.11+)
     nested-class::= "class" ident "{" (field-decl | method-decl)* "}"  // one level only
 
@@ -119,6 +168,7 @@ A program is one or more classes, optionally preceded or interleaved with
                  | unsigned-type
                  | character-set-type
                  | struct-name                      // any declared struct (1.2+)
+                 | generic-type                      // §16 (syntax 2.2+)
 
     unsigned-type ::= ident                        // if it matches U[1-9][0-9]*
     character-set-type ::= ident                   // if it matches C[1-9][0-9]*
@@ -126,12 +176,31 @@ A program is one or more classes, optionally preceded or interleaved with
     // C<n>: character-entry capacity 1..1048576.
     // Both forms are lexed as identifiers; type resolution validates the whole name.
 
+    // generic-type: a reference type applied to type arguments (§16, 2.2+),
+    // e.g. Class<?>, Box<Thing>, Collection<? extends java.lang.Number>.
+    // A type argument is a reference-type name or a wildcard — NOT a keyword
+    // primitive/String (so List<String> is rejected; see §16.4).
+    generic-type   ::= qualified-name "<" type-arg ("," type-arg)* ">"
+    type-arg       ::= generic-type | qualified-name | wildcard
+    wildcard       ::= "?" [("extends" | "super") (generic-type | qualified-name)]
+
 `U<n>` is an unsigned, fixed-width integer type whose width `n` is a decimal integer in the inclusive range `1..1048576`; leading zeroes, zero, non-decimal characters, and widths above `1048576` are invalid. Its value range is `0..(2^n - 1)`. For example, `U1`, `U8`, `U16`, `U32`, `U64`, and `U1048576` are valid type names. Width and unsignedness must be preserved in compiler signatures and VM/module metadata; implementations must not silently lower values to signed or fixed 64-bit host integers. A runtime operation not yet supported for a width must produce an explicit diagnostic. `int` remains 64-bit. `void` is a return type only. The core is dynamically typed
 underneath; syntax 1.2 scalar type annotations are surface-level (parsed, not
 enforced), so a declared type documents intent without constraining the runtime
 value. 
 
 `C<n>` is a character-set capacity signature, where `n` is a decimal integer in the inclusive range `1..1048576`. Unlike `U<n>`, which specifies a bit width, `C<n>` specifies the maximum number of distinct character entries addressable by a character catalogue. `C1048576` therefore denotes a capacity of `1024 * 1024 = 1,048,576` entries. It does not assert that every slot is populated, that every entry has a verified meaning, or that the set is Unicode-compatible. The actual registry population must be reported separately. A character-set record should distinguish catalogue ID, code point/identifier, glyph, semantic annotation, and source provenance. `C<n>` is a source-catalogue contract; full compiler/runtime integration must be tested before claiming end-to-end runtime support. `U<n>` and `C<n>` are different parameterized families even though both use decimal parameters.
+
+`String` is a first-class scalar type. Its literal form is `string-lit` (§1.4);
+source code operates on it with concatenation (`+`) and equality (`==` / `!=`)
+only — there is no `char` type and no char-level indexing at the language level.
+Richer text operations are provided by the `lib/text` String family
+(`SLString`, `SLStringBuilder`, `SLStringBuffer`, `SLFormatter`, …), which
+implements length-independent work in-language and crosses an explicit VM/OS
+bridge for char-level operations (see `lib/text/SLString.sleela`). The companion
+Nordshrift `.sst` sheet grammar carries the same first-class `String` type in
+its `strings:` block (see the Nordshrift Sheet Reference), so a value typed
+`String` has consistent standing in both the source language and the build sheet.
 
 A **struct type name** (§3.4) is additionally used at compile time to
 resolve `.field` offsets, so struct-typed variables/parameters/fields must be
@@ -151,9 +220,16 @@ that spawned threads (§7) read or write.
     method-decl ::= ["static"] type ident "(" params? ")" block
     params      ::= param ("," param)*
     param       ::= type ident
+    // type-params: a class (not a method) may carry a leading type-parameter
+    // list — §16.2 (2.2+). Method-level type parameters are NOT accepted (§16.4).
+    type-params ::= "<" type-param ("," type-param)* ">"
+    type-param  ::= ident ["extends" type ("&" type)*]
 
 `static` is accepted and optional; all methods behave as static (bound to the
 class, not an instance). Method **locals** are per-thread; **fields** are shared.
+A **class** declaration may carry leading type parameters
+(`class Box<T extends Number> { ... }`); they parse as a signature-level
+annotation (§16.2). Method-level type parameters are not accepted (§16.4).
 
 ### 3.4 Structs (syntax 1.2+)
 
@@ -221,8 +297,25 @@ store. It is recognised when the whole right-hand side is the contextual word
     while-stmt ::= "while" "(" expr ")" statement
 
 ### 4.5 For
-    for-stmt   ::= "for" "(" [simple] ";" [expr] ";" [simple] ")" statement
+    for-stmt   ::= "for" "(" [simple] ";" [expr] ";" [simple]
+                   [ ";" expr [ ";" expr ] ] ")" statement
     simple     ::= var-decl-noSemi | assign-noSemi | expr
+
+The first three terms retain the standard initializer, condition, and update
+semantics. The optional fourth term is a Boolean thread-loop stability guard;
+the optional fifth term is a Boolean VM GC/heap health guard. Guards are
+evaluated once at the start of each iteration, after the loop condition and
+before the body. A false guard exits the loop before the body executes.
+The thread guard is evaluated before the heap guard. Both guards are
+statically required to have Boolean type. The heap guard must be connected
+to a real VM/GC health signal by the host/runtime; a source expression alone
+does not inspect VM internals or automatically raise an exception. Hosts may
+set a diagnostic flag or raise their configured memory-health exception
+before making the guard false. Existing three-term loops are unchanged.
+
+Examples:
+    for (let i = 0; i < limit; i = i + 1; threadStable) work(i);
+    for (let i = 0; i < limit; i = i + 1; threadStable; heapHealthy) work(i);
 
 ### 4.6 Print (built-in output)
     print-stmt ::= "print" "(" expr ")" ";"
@@ -771,3 +864,210 @@ exactly like a top-level class.
 
 Nested classes require `#sleela 1.11`. A document that nests a class under a
 lower declared version is rejected ("nested classes require #sleela 1.11").
+
+## 15. The Metadata Class standard (the metapattern)
+
+A **metadata class** is a Sleela class whose purpose is to carry the
+provenance, standing, and intent of a unit of work — not its runtime behavior.
+The pattern was first established by the codec and compression library
+families (`lib/codecs/SLCodec*.sleela`, `lib/compression/SLCompression*.sleela`):
+a block of **catalogued attributes with getter/setter pairs**, faithful to the
+subject's real-world origin where publicly known. This section raises that
+block from a local convention to a **professional standard** for the Sleela
+source format.
+
+The standard is informative at the grammar level — the metapattern uses only
+ordinary fields and methods (sections 3.2, 3.3) — and **normative at the
+authoring level**: it defines what a metadata class must contain, who is
+expected to write one, and how the jurisdictional and legal dimensions are
+framed. A tool MAY read these attributes; it MUST NOT infer runtime capability
+from them (capability is the plugin/manager's concern, never the metadata).
+
+### 15.1 Class of intellect — who writes a metadata class
+
+The standard recognizes two authoring tiers. The tier sets the *expectation*,
+not a compiler gate.
+
+- **Worker class.** Everyday Sleela — tutorials, examples, single-purpose
+  wrappers. A metadata block is **welcome and encouraged** here as a mark of
+  craft, but only the baseline identity attributes (§15.2) are expected.
+- **Executive+ class.** Library-family classes, registry entries, and anything
+  that represents a standard, a product, or a jurisdictional artifact. Here the
+  **full metadata record is expected** — baseline identity *plus* the legality
+  and probation-of-intent attributes (§15.3, §15.4). An executive-grade class
+  that omits the record is incomplete, even if it compiles.
+
+The metapattern thus sets a *pace in the collective intellect*: the higher the
+standing of the code, the more complete its self-description.
+
+### 15.2 Baseline identity attributes
+
+The original eleven catalogued attributes, each a field with a matching
+`get`/`set` pair. Values are faithful to the subject's real origin where
+publicly known; unknown values use `"none"` or `"unknown"`, never a guess
+presented as fact.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `metaVersion` | `String` | Record version (`"MAJOR.MINOR.PATCH"`). |
+| `metaId` | `int` | Stable registry id (mirrors the native handler id). |
+| `metaAuthor` | `String` | Originating author or body. |
+| `metaDate` | `String` | Record date (`"YYYY-MM-DD"`). |
+| `metaCopyright` | `String` | Copyright / licensing posture. |
+| `metaTrademark` | `String` | Trademark, or `"none"`. |
+| `metaCorporation` | `String` | Stewarding corporation or organization. |
+| `metaOrigin` | `String` | Jurisdictional origin (§15.4). |
+| `metaBirthDate` | `String` | Year/date the subject came into being. |
+| `metaScienceRating` | `int` | Maturity/robustness on a 1..10 scale. |
+| `metaNationalSchedule` | `String` | The governing standard/specification schedule (§15.3). |
+
+Canonical shape (from `lib/codecs/SLCodecMidi.sleela`):
+
+```sleela
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override each codec's record.
+     Values are faithful to the codec's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 17;
+  String metaAuthor = "MIDI Manufacturers Association";
+  String metaDate = "2026-09-28";
+  String metaCopyright = "Open specification";
+  String metaTrademark = "MIDI";
+  String metaCorporation = "MIDI Manufacturers Association";
+  String metaOrigin = "International";
+  String metaBirthDate = "1983";
+  int metaScienceRating = 10;
+  String metaNationalSchedule = "MMA MIDI 1.0 / SMF";
+```
+
+(The legacy `//` header remains valid in the existing `lib/codecs/*` sources;
+new code uses the angle-bracket form shown here — §1.1. The `metaScienceRating`
+inline note "maturity/robustness on a 1..10 scale" moves to its own `<...>`
+line when present, since angle-bracket comments start the line.)
+
+Each field is paired with accessors — `getMetaVersion()`/`setMetaVersion(...)`,
+`getAuthor()`/`setAuthor(...)`, and so on — so a GUI, loader, or catalog can
+read the record and, **where appropriate**, override it. Overriding a legality
+or schedule field (§15.3) is a privileged act and should be logged by the
+caller; the metadata class itself does not police this.
+
+### 15.3 Legality — the schedule and standing attributes
+
+Legality in a metadata class is expressed, not enforced. The **schedule**
+(`metaNationalSchedule`) names the governing standard, specification, treaty, or
+statute under which the subject is defined — e.g. `"RFC 1952"`, `"ITU-T G.711"`,
+`"MMA MIDI 1.0 / SMF"`, `"PKWARE APPNOTE (ZIP)"`. The copyright, trademark, and
+corporation fields together state the **fiduciary standing**: who owns, who
+stewards, and under what terms. An executive+ class treats these as mandatory:
+they are the audit surface a legal, administrative, or executive reviewer reads
+first.
+
+Rule: a schedule value must name a *real, citable* instrument or be `"none"`.
+A metadata class never invents a legal schedule to appear legitimate.
+
+### 15.4 Probation of intent — jurisdictional scope
+
+`metaOrigin` frames **where the subject's authority and intent are seated**,
+along a widening scale. This is the "probation of intent": a declaration, open
+to review, of the scope under which the artifact is offered. The standard
+vocabulary, smallest to largest:
+
+| Scope | Meaning |
+|---|---|
+| `"National"` | Seated in a single nation (name the nation where known, e.g. `"United States"`, `"France"`). |
+| `"International"` | Multi-national / standards-body seated (e.g. ISO, IETF, ITU, MMA). |
+| `"Galactic"` | Reserved for artifacts whose intended scope exceeds terrestrial jurisdiction — the top of the pace-setting scale. |
+
+Adjacent framings a reviewer reads alongside origin — **Legal, Fiduciary,
+Admin, Executive** — are expressed through the §15.3 schedule/standing fields
+rather than as separate scope tokens: *Legal* = the schedule, *Fiduciary* =
+copyright/trademark/corporation, *Admin/Executive* = the authoring tier (§15.1)
+and the act of maintaining the record. A nation name is a permitted, more
+specific value of `"National"`; `"International"` and `"Galactic"` are the
+broadening steps above it.
+
+### 15.5 Fidelity and honesty
+
+The metapattern's one hard contract: **values are faithful to the subject's
+real origin where publicly known.** A metadata class is a statement of record.
+It may be overridden by a caller, summarized by a catalog, or left at baseline
+by a worker-class author — but it must never assert a false author, a
+fabricated schedule, or an inflated scope. Honesty of the record is what lets
+the higher classes of Sleela intellect rely on it to set the pace.
+
+## 16. Syntax 2.2 — generic type signatures
+
+Syntax 2.2 is the normative home of **generic type signatures**: parameterized
+reference types and wildcards in type positions. The feature carries the
+Java-family authorship surface (the `java.*` transition corpus under
+`impl/tests/java_transition/`) into the Sleela grammar so that JDK-mirrored
+declarations — most visibly `java.lang.Object` itself (`Class<?> getClass()`) —
+have a defined form here. This section states exactly what the front end
+accepts; the forms it does **not** yet accept are listed in §16.4 so that a
+document relying on 2.2 does not mistake planned surface for implemented
+surface.
+
+### 16.1 Parameterized reference types (use side)
+
+A declared or qualified reference type may be **applied to type arguments** in a
+type position — a field, parameter, return, or local *type*. A type argument is
+either a **reference-type name** (a bare or dotted class name, which may itself
+be parameterized) or a **wildcard** `?`, optionally bounded with `extends`
+(upper) or `super` (lower):
+
+    Class<?>                                  raw;      // return/param/field type
+    Box<Thing>                                boxed;
+    java.util.Collection<? extends java.lang.Number>  reading;
+
+The grammar is given in §3.1 (`generic-type`, `type-arg`, `wildcard`). Nesting a
+parameterized argument is permitted (`Holder<Box<Thing>>`). The angle brackets
+here are part of a type and are distinct from the `<`/`>` comparison operators
+(§1.5) and from the scalar `U<n>`/`C<n>` parameterized families (§3.1), which
+take a decimal parameter rather than a type argument.
+
+### 16.2 Class type parameters (declaration side)
+
+A class may declare leading **type parameters** (§3.3 `type-params`):
+
+    class Box<T extends java.lang.Number> { ... }
+
+The declaration parses and the parameter list is retained in the class's Java
+metadata. A type variable (`T`) is **not**, however, resolved as a usable type
+inside the body in this release: a field or local declared with type `T` is
+reported as an unknown type. Treat class type parameters as a **parsed,
+signature-level** annotation — useful for JDK-mirrored authorship and
+round-trip — not as a type you can name in member declarations yet.
+
+### 16.3 Semantics — erasure
+
+The analyzer treats generics by **type erasure**, as on the JVM: a parameterized
+type is judged by its **erased raw head** — the name to the left of `<` — and
+the type arguments do **not** participate in known-ness or assignability
+decisions. `Class<?>` erases to `Class`, `Box<Thing>` to `Box`. Generics are
+therefore a **surface-level** contract in the same spirit as the syntax 1.2
+scalar annotations (§3.1): they are parsed, checked for well-formedness, and
+carried in signatures/metadata, but they do not introduce a reified runtime
+type. This is what lets `Class<?> getClass()` type-check without a
+generic-instantiation model.
+
+### 16.4 Not yet accepted (explicitly out of scope)
+
+The following Java generic forms are recognized as intended surface but are
+**rejected** by this front end; do not infer their support from §16.1–16.2:
+
+- **Method-level type parameters** — a leading `<R ...>` on a *method* (as in
+  `<R extends Object> R convert(...)`) is a syntax error. Only class type
+  parameters parse (§16.2).
+- **Keyword primitives / `String` as a type argument** — `List<String>`,
+  `Map<String, int>` and the like are rejected, because a type argument is
+  parsed as a reference-type name, not a keyword type. Use the reference form
+  the library exposes, or an unparameterized type, until this is lifted.
+- **Instantiation-aware checking** — type arguments are erased (§16.3); there
+  is no checking that an argument satisfies a declared bound at a use site.
+
+### 16.5 Version gate
+
+Generic type signatures are specified by `#sleela 2.2`. They are accepted across
+the 2.x surface the front end drives (documented supported range 1.0 .. 2.2);
+2.2 is the version a document should declare to rely on them normatively.
