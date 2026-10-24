@@ -1,0 +1,101 @@
+#sleela 2.1
+<< CitizenHousingUtilitiesAndHouseholdServicesStats.sleela
+   Individual category class extracted from citizen/sleela/CitizenStats.sleela.
+   Source category: Housing, utilities, and household services.
+   Monetary values use integer minor units where the field name says Cents. >>
+class CitizenHousingUtilitiesAndHouseholdServicesStats {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10985;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-11";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+    string housingType;
+    string tenureType;
+    int housingQuality;
+    int housingSecurity;
+    int roomsInHome;
+    int peoplePerRoom;
+    int overcrowdingRisk;
+    int homelessnessRisk;
+    int waterAccess;
+    int sanitationAccess;
+    int electricityAccess;
+    int heatingAccess;
+    int coolingAccess;
+    int internetAccess;
+    int phoneAccess;
+    int wasteCollectionAccess;
+    int publicTransportAccess;
+    int distanceToHealthcare;
+    int distanceToSchool;
+    int neighborhoodSafety;
+    int neighborhoodQuality;
+    int environmentalQuality;
+    int householdEnergyUse;
+    int householdWaterUse;
+    int housingAssistance;
+
+    CitizenHousingUtilitiesAndHouseholdServicesStats() {
+        housingType = "unknown";
+        tenureType = "unknown";
+        housingQuality = 0;
+        housingSecurity = 0;
+        roomsInHome = 0;
+        peoplePerRoom = 0;
+        overcrowdingRisk = 0;
+        homelessnessRisk = 0;
+        waterAccess = 0;
+        sanitationAccess = 0;
+        electricityAccess = 0;
+        heatingAccess = 0;
+        coolingAccess = 0;
+        internetAccess = 0;
+        phoneAccess = 0;
+        wasteCollectionAccess = 0;
+        publicTransportAccess = 0;
+        distanceToHealthcare = 0;
+        distanceToSchool = 0;
+        neighborhoodSafety = 0;
+        neighborhoodQuality = 0;
+        environmentalQuality = 0;
+        householdEnergyUse = 0;
+        householdWaterUse = 0;
+        housingAssistance = 0;
+    }
+}

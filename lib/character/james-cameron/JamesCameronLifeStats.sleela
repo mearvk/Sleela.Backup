@@ -1,0 +1,147 @@
+<< User-configurable simulation inputs for a public-career case study.
+   Scores are scenario knobs, not measured attributes of the named person.
+   A value of zero for sustainability means unknown. >>
+#sleela 2.1
+class JamesCameronLifeStats {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11511;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  String subjectName;
+  String scaleDefinition;
+  String profileStatus;
+  String evidenceNote;
+  String sourceUrl;
+  int scenarioIntelligence;
+  int scenarioCreativity;
+  int scenarioSystemsThinking;
+  int scenarioTechnicalInnovation;
+  int scenarioExecution;
+  int scenarioExploration;
+  int scenarioCollaboration;
+  int scenarioResilience;
+  int sustainability;
+  int publicCareerYears;
+  int majorProfessionalDomains;
+  int academyAwardsPersonallyWon;
+  int billionDollarFilms;
+  int dataConfidence;
+
+  void load() {
+    subjectName = "James Cameron";
+    scaleDefinition = "1..30 simulation scale; 0 means unknown";
+    profileStatus = "user-specified-hypothetical-scenario";
+    evidenceNote = "Capability values are scenario inputs only. Career counts use public sources.";
+    sourceUrl = "https://explorers.nationalgeographic.org/directory/james-cameron";
+    scenarioIntelligence = 19;
+    scenarioCreativity = 20;
+    scenarioSystemsThinking = 19;
+    scenarioTechnicalInnovation = 19;
+    scenarioExecution = 18;
+    scenarioExploration = 18;
+    scenarioCollaboration = 16;
+    scenarioResilience = 18;
+    sustainability = 0;
+    publicCareerYears = 48;
+    majorProfessionalDomains = 5;
+    academyAwardsPersonallyWon = 3;
+    billionDollarFilms = 4;
+    dataConfidence = 90;
+  }
+
+  boolean setPublicCareerMetrics(int years, int domains, int awards, int billionFilms,
+                                 int confidence, String source) {
+    if (years < 0 || domains < 0 || awards < 0 || billionFilms < 0
+        || confidence < 0 || confidence > 100) { return false; }
+    publicCareerYears = years;
+    majorProfessionalDomains = domains;
+    academyAwardsPersonallyWon = awards;
+    billionDollarFilms = billionFilms;
+    dataConfidence = confidence;
+    if (source != null) { sourceUrl = source; }
+    return true;
+  }
+  int intelligenceModifier() {
+    if (scenarioIntelligence == 0) { return 0; }
+    return floorHalf(scenarioIntelligence - 10);
+  }
+  int intelligencePlanningIndex() {
+    if (scenarioIntelligence == 0) { return 0; }
+    return 100 + (scenarioIntelligence - 10) * 5;
+  }
+  int creativeSystemsIndex() {
+    if (scenarioCreativity == 0 || scenarioSystemsThinking == 0
+        || scenarioTechnicalInnovation == 0) { return 0; }
+    return (scenarioCreativity + scenarioSystemsThinking + scenarioTechnicalInnovation) * 100 / 90;
+  }
+  < Weighted career-leverage scenario index (0..100), not a real-world measure. >
+  < Weights: creativity 25%, systems 20%, innovation 20%, execution 20%, >
+  < exploration 10%, collaboration 5%; all component scores use 1..30. >
+  int careerLeverageIndex() {
+    if (scenarioCreativity == 0 || scenarioSystemsThinking == 0
+        || scenarioTechnicalInnovation == 0 || scenarioExecution == 0
+        || scenarioExploration == 0 || scenarioCollaboration == 0) { return 0; }
+    int weighted = scenarioCreativity * 25 + scenarioSystemsThinking * 20
+      + scenarioTechnicalInnovation * 20 + scenarioExecution * 20
+      + scenarioExploration * 10 + scenarioCollaboration * 5;
+    return weighted / 30;
+  }
+  int floorHalf(int value) {
+    if (value >= 0) { return value / 2; }
+    return (value - 1) / 2;
+  }
+  boolean hasVerifiedCareerMetrics() {
+    return dataConfidence >= 80 && sourceUrl != null && sourceUrl.length() > 0;
+  }
+  String report() {
+    return subjectName + " life-capability scenario"
+      + " status=" + profileStatus
+      + " scenario_INT=" + scenarioIntelligence
+      + " INT_modifier=" + intelligenceModifier()
+      + " INT_planning_index=" + intelligencePlanningIndex()
+      + " creative_systems_index=" + creativeSystemsIndex()
+      + " career_leverage_index=" + careerLeverageIndex()
+      + " career_years=" + publicCareerYears
+      + " domains=" + majorProfessionalDomains
+      + " awards=" + academyAwardsPersonallyWon
+      + " billion_dollar_films=" + billionDollarFilms
+      + " confidence=" + dataConfidence;
+  }
+}

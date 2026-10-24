@@ -48,10 +48,12 @@ extern "C" {
 using namespace nordshrift;
 
 static const char* kVersion =
-    "Nordshrift 2.7.1-dev (NS-SST-0001; source validation; semantic analysis; semantic subject model; Sleelvac™ runnable .sleela target)";
+    "Nordshrift 2.7.1-dev (NS-SST-0001 spec 2.2; source validation; semantic analysis; semantic subject model; Sleelvac™ runnable .sleela target)";
 
 static int usage() {
     std::cerr <<
+        "Nordshrift - the SLeeLa .sst transpiler driver (NS-SST-0001 spec 2.2)\n"
+        "\n"
         "Usage:\n"
         "  nordshrift check <sheet.sst>              validate a sheet; print diagnostics\n"
         "  nordshrift build <sheet.sst>              compile the sheet's sources to its target\n"
@@ -303,7 +305,7 @@ static void validateSourcePrograms(const Sheet& sheet, const std::string& sheetP
                 std::cout << " line=" << connector.line
                           << " admissible=" << (sleela::permissible::isAdmissible(connector) ? "candidate" : "incomplete") << "\n";
             }
-            sleela::SemanticResult semantic = sleela::analyzeSemantics(program, vr.declared);
+            sleela::SemanticResult semantic = sleela::analyzeSemantics(program, vr.declared, false);
             for (const auto& err : semantic.errors)
                 diags.error("NSS-E-SEM-001", srcPath, 0, err, "SST-SOURCE-SEMANTIC");
             for (const auto& warn : semantic.warnings)
@@ -413,9 +415,9 @@ static int doBuild(const std::string& path) {
     }
 
     // Emit a component/subject manifest artifact from the declared network,
-    // finance, and subject series, so declaring those blocks has a real,
-    // inspectable build effect. Written next to the sheet for the sleela
-    // target; printed for java/c (matching the source emission behavior).
+    // finance, subject, reach, measure, and strings series, so declaring those
+    // blocks has a real, inspectable build effect. Written next to the sheet for
+    // the sleela target; printed for java/c (matching the source emission behavior).
     if (hasComponentManifest(sheet)) {
         std::string manifest = emitComponentManifest(sheet, lang, sheet.target.packageRoot);
         if (lang == TargetLang::Sleela) {
@@ -427,7 +429,7 @@ static int doBuild(const std::string& path) {
             if (mf) {
                 mf << manifest;
                 std::cout << "nordshrift: manifest -> " << out.string()
-                          << " (network/finance/subject component manifest)\n";
+                          << " (component manifest)\n";
             } else {
                 std::cerr << "nordshrift: cannot write manifest '" << out.string() << "'\n";
                 rc = 1;
