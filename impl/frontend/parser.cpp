@@ -22,7 +22,9 @@ unsigned Parser::parseJavaModifiers(){
         case Tok::KwNative:m|=JavaNative;break; case Tok::KwSynchronized:m|=JavaSynchronized;break;
         case Tok::KwVolatile:m|=JavaVolatile;break; case Tok::KwTransient:m|=JavaTransient;break;
         case Tok::KwStrictfp:m|=JavaStrictfp;break; case Tok::KwSealed:m|=JavaSealed;break;
-        case Tok::KwNonSealed:m|=JavaNonSealed;break; case Tok::KwDefault:m|=JavaDefault;break;
+        case Tok::KwNonSealed:m|=JavaNonSealed;break; case Tok::KwConst:m|=JavaConst;break;
+        case Tok::KwUsualMem:m|=JavaMemUsual;break; case Tok::KwAccurateMem:m|=JavaMemAccurate;break;
+        case Tok::KwDefault:m|=JavaDefault;break;
         default: continue;
     } i_++; again=true;}
     return m;
@@ -164,8 +166,15 @@ Program Parser::parseProgram(){
                 if(!parsedDynamite)i_=save;
             }
             if(!parsedDynamite) {
-                p.imports.push_back(expect(Tok::Ident,"module name").text);
+                std::string module=expect(Tok::Ident,"module name").text;
+                // Permit qualified library roots (for example
+                // gui.version-military) as well as simple native modules.
+                while(!check(Tok::Semicolon)&&!check(Tok::Eof)){
+                    module += cur().text;
+                    ++i_;
+                }
                 expect(Tok::Semicolon,"';'");
+                p.imports.push_back(std::move(module));
             }
         }
         else if(check(Tok::KwExtends)){ contentStarted=true; p.documentExtensions.push_back(parseDocumentExtension()); }
@@ -224,7 +233,7 @@ DocumentExtension Parser::parseDocumentExtension(){
 ClassDecl Parser::parseClass(unsigned classModifiers,std::vector<annotation::Annotation> annotations,int depth){
     Tok kind=cur().kind; ClassDecl c; c.java.kind=tokenTypeKind(kind); c.java.modifiers=classModifiers; c.java.annotations=std::move(annotations);
     if(kind!=Tok::KwClass&&kind!=Tok::KwInterface&&kind!=Tok::KwEnum&&kind!=Tok::KwRecord) error("expected Java type declaration");
-    i_++; c.name=expect(Tok::Ident,"type name").text; c.java.qualifiedName=c.name; c.java.typeParameters=parseTypeParameters();
+    i_++; if(check(Tok::KwStringT)){ c.name=cur().text; ++i_; } else c.name=expect(Tok::Ident,"type name").text; c.java.qualifiedName=c.name; c.java.typeParameters=parseTypeParameters();
     if(accept(Tok::KwExtends)) c.java.superclass=parseQualifiedName();
     if(accept(Tok::KwImplements)) c.java.interfaces=parseTypeList(Tok::LBrace);
     expect(Tok::LBrace,"'{'");
@@ -375,10 +384,20 @@ StmtP Parser::parseSimpleStatement(){
 }
 ExprP Parser::parseExpr(){return parseAssignment();}
 ExprP Parser::parseAssignment(){
-    ExprP e=parseConditional();
+    ExprP e=parseStructOffload();
     if(check(Tok::Assign)||check(Tok::PlusAssign)||check(Tok::MinusAssign)||check(Tok::StarAssign)||check(Tok::SlashAssign)||check(Tok::PercentAssign)){
         std::string op=cur().text; i_++; return std::make_unique<AssignmentExpr>(op,std::move(e),parseAssignment());
     }
+    return e;
+}
+// Structural-offload send: `source ::: receiver(args)`. The `:::` operator tells
+// the VM to perform a structured, element-by-element transfer of the left
+// operand's data into the right-hand receiver (framing done by the interpreter,
+// not a source for-loop). Low precedence, left-associative, so it composes:
+//   a ::: b(n) ::: c(m)  ==  (a ::: b(n)) ::: c(m).
+ExprP Parser::parseStructOffload(){
+    ExprP e=parseConditional();
+    while(accept(Tok::TripleColon)){ e=std::make_unique<Binary>(":::",std::move(e),parseConditional()); }
     return e;
 }
 ExprP Parser::parseConditional(){
@@ -419,7 +438,7 @@ ExprP Parser::parseUnary(){
 ExprP Parser::parsePrimary(){
     const Token&t=cur();
     switch(t.kind){
-    case Tok::Int:i_++;return parsePostfix(std::make_unique<IntLit>(std::stoll(t.text)));
+    case Tok::Int:{i_++;long long iv;const std::string&nt=t.text;if(nt.size()>2&&nt[0]=='0'&&(nt[1]=='b'||nt[1]=='B'))iv=std::stoll(nt.substr(2),nullptr,2);else iv=std::stoll(nt,nullptr,0);return parsePostfix(std::make_unique<IntLit>(iv));}
     case Tok::Double:i_++;return parsePostfix(std::make_unique<DoubleLit>(std::stod(t.text)));
     case Tok::Str:i_++;return parsePostfix(std::make_unique<StrLit>(t.text));
     case Tok::KwTrue:i_++;return parsePostfix(std::make_unique<BoolLit>(true));
@@ -517,7 +536,7 @@ std::unique_ptr<Block> Parser::parseBlock(){expect(Tok::LBrace,"'{'");auto b=std
 StmtP Parser::parseIf(){expect(Tok::KwIf,"'if'");expect(Tok::LParen,"'('");auto s=std::make_unique<IfStmt>();s->cond=parseExpr();expect(Tok::RParen,"')'");s->thenS=parseStatement();if(accept(Tok::KwElse))s->elseS=parseStatement();return s;}
 StmtP Parser::parseWhile(){expect(Tok::KwWhile,"'while'");expect(Tok::LParen,"'('");auto s=std::make_unique<WhileStmt>();s->cond=parseExpr();expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
 StmtP Parser::parseDo(){expect(Tok::KwDo,"'do'");auto s=std::make_unique<DoStmt>();s->body=parseStatement();expect(Tok::KwWhile,"'while'");expect(Tok::LParen,"'('");s->cond=parseExpr();expect(Tok::RParen,"')'");expect(Tok::Semicolon,"';'");return s;}
-StmtP Parser::parseFor(){expect(Tok::KwFor,"'for'");expect(Tok::LParen,"'('");auto s=std::make_unique<ForStmt>();if(!check(Tok::Semicolon))s->init=parseSimpleStatement();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon))s->cond=parseExpr();expect(Tok::Semicolon,"';'");if(!check(Tok::RParen))s->update=std::make_unique<ExprStmt>(parseExpr());expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
+StmtP Parser::parseFor(){expect(Tok::KwFor,"'for'");expect(Tok::LParen,"'('");auto s=std::make_unique<ForStmt>();if(!check(Tok::Semicolon))s->init=parseSimpleStatement();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon))s->cond=parseExpr();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon)&&!check(Tok::RParen))s->update=std::make_unique<ExprStmt>(parseExpr());if(accept(Tok::Semicolon)){if(check(Tok::Semicolon)||check(Tok::RParen))error("four-term for loop requires a thread-stability Boolean expression");s->threadStable=parseExpr();if(accept(Tok::Semicolon)){if(check(Tok::RParen))error("five-term for loop requires a VM heap-health Boolean expression");s->heapHealthy=parseExpr();}}expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
 StmtP Parser::parseSynchronized(){expect(Tok::KwSynchronized,"'synchronized'");expect(Tok::LParen,"'('");auto s=std::make_unique<SynchronizedStmt>();s->monitor=parseExpr();expect(Tok::RParen,"')'");s->body=parseBlock();return s;}
 StmtP Parser::parseTry(){expect(Tok::KwTry,"'try'");auto s=std::make_unique<TryStmt>();s->body=parseBlock();while(accept(Tok::KwCatch)){expect(Tok::LParen,"'('");CatchClause c; c.type=expect(Tok::Ident,"exception type").text;c.variable=expect(Tok::Ident,"exception variable").text;expect(Tok::RParen,"')'");c.body=parseBlock();s->catches.push_back(std::move(c));}if(accept(Tok::KwFinally))s->finallyBlock=parseBlock();if(s->catches.empty()&&!s->finallyBlock)error("try requires catch or finally");return s;}
 StmtP Parser::parseSwitch(){expect(Tok::KwSwitch,"'switch'");expect(Tok::LParen,"'('");auto s=std::make_unique<SwitchStmt>();s->selector=parseExpr();expect(Tok::RParen,"')'");expect(Tok::LBrace,"'{'");while(!check(Tok::RBrace)&&!check(Tok::Eof)){SwitchCase sc;if(accept(Tok::KwDefault)){sc.isDefault=true;expect(Tok::Colon,"':'");}else{expect(Tok::KwCase,"'case'");sc.labels.push_back(parseExpr());while(accept(Tok::Comma))sc.labels.push_back(parseExpr());expect(Tok::Colon,"':'");}while(!check(Tok::KwCase)&&!check(Tok::KwDefault)&&!check(Tok::RBrace)&&!check(Tok::Eof))sc.statements.push_back(parseStatement());s->cases.push_back(std::move(sc));}expect(Tok::RBrace,"'}'");return s;}

@@ -1,19 +1,60 @@
-#sleela 1.5
-// moral-capacitor.sleela -- the self-contained, runnable demonstrator of the
-// Moral Capacitor(TM) (lib/moral-capacitor/SLMoralCapacitor and friends). The
-// SLeeLa compiler's `run` compiles one file as a single unit, so this aggregate
-// inlines a compact capacitor + a `main` that gates four operations across the
-// VM, OS, and Machine surfaces and prints each verdict with its charge/threshold
-// and reason. The split per-class files are the full component; this file is the
-// executable counterpart, mirroring the os-build.sleela / machine-build.sleela
-// convention.
-//
-// The point it demonstrates: a capacitor accumulates moral charge from ethical
-// frameworks and only DISCHARGES (PERMIT) when charge meets the threshold and no
-// red line is tripped; otherwise it DEFERs or DENYs. Routine reversible work
-// permits; a non-consensual irreversible disk erase trips a veto and is denied.
+#sleela 2.1
+< moral-capacitor.sleela -- the self-contained, runnable demonstrator of the >
+< Moral Capacitor(TM) (lib/moral-capacitor/SLMoralCapacitor and friends). The >
+< SLeeLa compiler's `run` compiles one file as a single unit, so this aggregate >
+< inlines a compact capacitor + a `main` that gates four operations across the >
+< VM, OS, and Machine surfaces and prints each verdict with its charge/threshold >
+< and reason. The split per-class files are the full component; this file is the >
+< executable counterpart, mirroring the os-build.sleela / machine-build.sleela >
+< convention. >
+<  >
+< The point it demonstrates: a capacitor accumulates moral charge from ethical >
+< frameworks and only DISCHARGES (PERMIT) when charge meets the threshold and no >
+< red line is tripped; otherwise it DEFERs or DENYs. Routine reversible work >
+< permits; a non-consensual irreversible disk erase trips a veto and is denied. >
 
-struct Op { String actor; String action; String target; int reversible; int consented; }
+struct Op {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10859;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-10";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; } String actor; String action; String target; int reversible; int consented; }
 
 class MoralCapacitorDemo {
 
@@ -28,21 +69,26 @@ class MoralCapacitorDemo {
         return o;
     }
 
-    // Charge the capacitor from the frameworks' reading of the operation.
+    < Charge the capacitor from the frameworks' reading of the operation. >
     int chargeFor(Op o) {
         int charge = 0;
-        if (o.consented == 1) { charge = charge + 2; }   // consent
+        < consent >
+        if (o.consented == 1) { charge = charge + 2; }
         else { charge = charge - 2; }
-        if (o.reversible == 1) { charge = charge + 2; }   // beneficence
+        < beneficence >
+        if (o.reversible == 1) { charge = charge + 2; }
         else { charge = charge - 1; }
-        if (o.consented == 1) { charge = charge + 1; }   // deontology
-        if (o.reversible == 1) { charge = charge + 1; }  // utilitarianism
-        if (o.consented == 1 && o.reversible == 1) { charge = charge + 1; } // virtue
+        < deontology >
+        if (o.consented == 1) { charge = charge + 1; }
+        < utilitarianism >
+        if (o.reversible == 1) { charge = charge + 1; }
+        < virtue >
+        if (o.consented == 1 && o.reversible == 1) { charge = charge + 1; }
         if (charge < 0) { charge = 0; }
         return charge;
     }
 
-    // Is an absolute red line tripped for this operation?
+    < Is an absolute red line tripped for this operation? >
     String veto(Op o) {
         if (o.action == "weaponize") { return "weapons / CBRN enablement"; }
         if (o.action == "surveil" && o.consented == 0) { return "non-consensual surveillance"; }
@@ -53,7 +99,7 @@ class MoralCapacitorDemo {
         return "";
     }
 
-    // Evaluate: DENY on veto, PERMIT if charge >= threshold, else DEFER/DENY.
+    < Evaluate: DENY on veto, PERMIT if charge >= threshold, else DEFER/DENY. >
     String evaluate(Op o, int threshold, int allowDefer) {
         int charge = chargeFor(o);
         String v = veto(o);
@@ -74,19 +120,19 @@ class MoralCapacitorDemo {
     void main() {
         banner("Moral Capacitor(TM): gating VM / OS / Machine operations");
 
-        // VM: routine reversible memory growth, threshold 2 -> permit.
+        < VM: routine reversible memory growth, threshold 2 -> permit. >
         print(evaluate(op("vm", "allocate", "guest-memory", 1, 1), 2, 1));
 
-        // OS: delete a path with consent, reversible=0, strict threshold 6, no defer.
+        < OS: delete a path with consent, reversible=0, strict threshold 6, no defer. >
         print(evaluate(op("os", "erase", "/tmp/build-cache", 0, 1), 6, 0));
 
-        // OS: wipe a disk WITHOUT consent, irreversible -> veto -> deny.
+        < OS: wipe a disk WITHOUT consent, irreversible -> veto -> deny. >
         print(evaluate(op("os", "erase", "/dev/sda", 0, 0), 6, 0));
 
-        // Machine: boot a guest with consent, threshold 5 -> permit.
+        < Machine: boot a guest with consent, threshold 5 -> permit. >
         print(evaluate(op("machine", "boot", "linux-guest", 1, 1), 5, 1));
 
-        // Machine: execute a prohibited purpose -> veto -> deny.
+        < Machine: execute a prohibited purpose -> veto -> deny. >
         print(evaluate(op("machine", "surveil", "target-host", 1, 0), 3, 1));
 
         banner("Done");
