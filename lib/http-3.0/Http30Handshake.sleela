@@ -1,0 +1,65 @@
+#sleela 2.1
+< Capability levels are project-specific; not HTTP/3 or QUIC negotiation. >
+class Http30Handshake {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11481;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  int localCapabilities = 1;
+  int peerCapabilities = 1;
+  int selectedLevel = 1;
+  boolean macVerified = false;
+  boolean complete = false;
+  void setLocalCapabilities(int value) { localCapabilities = value; }
+  void setPeerCapabilities(int value) { peerCapabilities = value; }
+  void verifyOffer(boolean verified) { macVerified = verified; }
+  int negotiate() {
+    int common = localCapabilities & peerCapabilities;
+    if (!macVerified) { selectedLevel = 0; complete = false; return 0; }
+    if ((common & 8) != 0) selectedLevel = 4;
+    else if ((common & 4) != 0) selectedLevel = 3;
+    else if ((common & 2) != 0) selectedLevel = 2;
+    else if ((common & 1) != 0) selectedLevel = 1;
+    else selectedLevel = 0;
+    complete = selectedLevel > 0;
+    return selectedLevel;
+  }
+  boolean isComplete() { return complete; }
+}

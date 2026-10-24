@@ -43,7 +43,21 @@ enum JavaModifier : unsigned {
     JavaStrictfp     = 1u << 10,
     JavaSealed       = 1u << 11,
     JavaNonSealed    = 1u << 12,
-    JavaDefault      = 1u << 13
+    JavaDefault      = 1u << 13,
+    // Sleela `const`: a developer-intent modifier meaning "I intend to keep this
+    // variable constant until the System Design is complete." It is a design-time
+    // marker (recorded on the declaration's modifier set), NOT a hard immutability
+    // guarantee like `final`; it composes freely with public/static/final.
+    JavaConst        = 1u << 14,
+    // Sleela memory-tier modifiers: designate which memory tier a function/
+    // program should run against, so the VM routes "usual activities" to the
+    // DDR2 tier and competency/accuracy-critical work to the DDR5 tier.
+    //   usualmem    -> DDR2 tier (usual activities)
+    //   accuratemem -> DDR5 tier (competency / accuracy)
+    // Unmarked declarations inherit the program's main tier (DDR5 by default).
+    // They compose with other modifiers and are mutually exclusive by intent.
+    JavaMemUsual     = 1u << 15,   // usualmem    (DDR2)
+    JavaMemAccurate  = 1u << 16    // accuratemem (DDR5)
 };
 
 struct JavaTypeMetadata {
@@ -111,6 +125,13 @@ struct ArrayAccess:Expr{ExprP base,index;ArrayAccess(ExprP b,ExprP i):base(std::
 // Method reference `base::method`.
 struct MethodReferenceExpr:Expr{ExprP base;std::string method;MethodReferenceExpr(ExprP b,std::string m):base(std::move(b)),method(std::move(m)){}};
 
+// Guide chain (syntax 2.3): `new T(...) :: Guide :: Guide ...`.
+// The head is a constructor-style call (NewExpr); each guide is the name of a
+// zero-argument method on the head's class, applied in order. The chain
+// evaluates to the head instance (fluent), so a perfect Constructor can seat
+// its Guides inline. See SLEELA.syntax section 17 and lib/philosophers.
+struct GuideChainExpr:Expr{ExprP head;std::vector<std::string> guides;explicit GuideChainExpr(ExprP h):head(std::move(h)){}};
+
 struct Stmt{virtual ~Stmt()=default;};using StmtP=std::unique_ptr<Stmt>;
 struct VarDecl:Stmt{std::string type,name;ExprP init;};
 struct Assign:Stmt{std::string name;ExprP value;};
@@ -126,7 +147,7 @@ struct ReturnStmt:Stmt{ExprP value;};
 struct Block:Stmt{std::vector<StmtP> stmts;};
 struct IfStmt:Stmt{ExprP cond;StmtP thenS,elseS;};
 struct WhileStmt:Stmt{ExprP cond;StmtP body;};
-struct ForStmt:Stmt{StmtP init;ExprP cond;StmtP update,body;};
+struct ForStmt:Stmt{StmtP init;ExprP cond;StmtP update,body;ExprP threadStable,heapHealthy;};
 // --- Java statement forms (surface completeness). --------------------------
 struct DoStmt:Stmt{StmtP body;ExprP cond;};
 struct BreakStmt:Stmt{std::string label;};

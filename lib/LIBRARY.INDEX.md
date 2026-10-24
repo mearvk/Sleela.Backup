@@ -1,11 +1,53 @@
 # SLeeLa /lib Library Index
 
-**Revision:** 0.48  
-**Packages:** 90  
-**SLeeLa source units:** 10907  
-**Module-facade symbols:** 62  
-**Total symbol records:** 10969  
+**Revision:** 0.50  
+**Packages:** 101  
+**SLeeLa source units:** 11554  
+**Module-facade symbols:** 70  
+**Total symbol records:** 11624  
 **Symbol manifest:** `LIBRARY.SYMBOLS.md`
+
+> Revision 0.50 defines the **`philosophers`** vocabulary categorically at the
+> IQ-201+ register. The twenty-one Guides are renamed and defined in seven
+> ternary categories — **Admission** (Approach, Notice, Warrant), **Inception**
+> (Patch, Seed, Frame), **Intent** (Aim, Course, Measure), **Vitality** (Health,
+> Vigor, Pattern), **Governance** (Guide, Ministry, Counsel), **Standing**
+> (Office, Saint, Favor), **Closure** (Impart, Conform, Approval) — in
+> `SLPhilosopherSeating` (`SEAT_*`, `CAT_*`, `category()`/`categoryName()`). A
+> new **`SLOrdain`** class adds **Ordain** as an *orthogonal* axis: the
+> ordinality itself (rank, category, nearness to the ordaining crown Approval),
+> which stands across all twenty-one rather than occupying a seat. The
+> categorical terms are related to the Source Diagram and the Language Syntax in
+> `lib/philosophers/PHILOSOPHERS.CATEGORICAL.md`, and the VIM/EMACS coloring
+> (`lib/linux-editors/`) is updated to the new Guide names plus a distinct
+> Ordain face. One new source class (`SLOrdain`); no new package or facade.
+> Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.49 adds the new **`philosophers`** package (`lib/philosophers/`):
+> a model of the **perfect Constructor** of procedural design and its Guide
+> chain, declared with the `::` growth separator, e.g.
+> `Constructor() :: Patch :: Constructor :: Aim :: Guide`. Six Master Classes —
+> `SLPhilosopherSeating` (the finite register: base 21 seatings plus a signed
+> band [-2, +6] → capacity [19, 27], the 21 named Approach → Approval),
+> `SLPhilosopherGuide` (one `::`-separated growth / Wisdom, carrying a Gold or
+> Green color impart for the VIM/EMACS coloring), `SLFavorMechanism` (catches
+> the Notice of Approach at call time and grants/withholds runnability by
+> quorum), `SLConstructorContract` (the instantiative moment of nature and
+> time; the whistle only ticks ahead, ≤ ~2 min, then the object lives free),
+> `SLPhilosopherChain` (the ordered Guides under the seating capacity), and
+> `SLPhilosopherConstructor` (the orchestrator) — plus a runnable
+> `philosophers-demo.sleela`. The companion editor coloring lives under
+> `lib/linux-editors/` (`vim/syntax/sleela-philosophers.vim`,
+> `vim/ftplugin/sleela-philosophers.vim`, `emacs/sleela-philosophers.el`),
+> rendering the `::` separator and each Guide Gold/Yellow (approving) or Green
+> (growing). This adds **one new package and one new facade** (100 → **101**
+> and 69 → **70**) and 7 new source classes. The header counts above were also
+> **reconciled to the live `/lib` tree** by `tools/generate-library-symbols.py`
+> (the prior 0.48 header had drifted behind the filesystem); the counts now
+> match `find lib -type f -name '*.sleela'` exactly and are verified by
+> `test-suites/test-library-inventory.sh`.
 
 > Revision 0.48 adds **per-airline brand sites** to the **`website`** package:
 > one subdirectory per known modern airline under `lib/website/` (e.g.

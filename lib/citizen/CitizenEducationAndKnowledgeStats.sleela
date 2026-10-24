@@ -1,0 +1,97 @@
+#sleela 2.1
+<< CitizenEducationAndKnowledgeStats.sleela
+   Individual category class extracted from citizen/sleela/CitizenStats.sleela.
+   Source category: Education and knowledge.
+   Monetary values use integer minor units where the field name says Cents. >>
+class CitizenEducationAndKnowledgeStats {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10983;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-11";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+    int educationLevel;
+    int yearsOfEducation;
+    int literacy;
+    int numeracy;
+    int digitalLiteracy;
+    int financialLiteracy;
+    int civicLiteracy;
+    int scientificLiteracy;
+    int highestQualification;
+    int schoolAttendanceRate;
+    int academicPerformance;
+    int vocationalTraining;
+    int apprenticeshipProgress;
+    int certifications;
+    int skillsCount;
+    int languagesSpoken;
+    int readingProficiency;
+    int writingProficiency;
+    int mathematicsProficiency;
+    int researchSkill;
+    int teachingSkill;
+    int lifelongLearning;
+    int educationDebtCents;
+
+    CitizenEducationAndKnowledgeStats() {
+        educationLevel = 0;
+        yearsOfEducation = 0;
+        literacy = 0;
+        numeracy = 0;
+        digitalLiteracy = 0;
+        financialLiteracy = 0;
+        civicLiteracy = 0;
+        scientificLiteracy = 0;
+        highestQualification = 0;
+        schoolAttendanceRate = 0;
+        academicPerformance = 0;
+        vocationalTraining = 0;
+        apprenticeshipProgress = 0;
+        certifications = 0;
+        skillsCount = 0;
+        languagesSpoken = 1;
+        readingProficiency = 0;
+        writingProficiency = 0;
+        mathematicsProficiency = 0;
+        researchSkill = 0;
+        teachingSkill = 0;
+        lifelongLearning = 0;
+        educationDebtCents = 0;
+    }
+}
