@@ -1,32 +1,76 @@
-/*
- * lib/crypto/SLAes.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines the SLeeLa standard-library type SLAes used within the crypto library family.
- */
-#sleela 1.3
-// Unified SLeeLa SDK front-end object.
-// Family: crypto. AES-128/192/256 block cipher (FIPS 197). Native impl crosses the VM/OS bridge to /crypto.
-//
-// SECURITY NOTE: the native /crypto backend is a correct, specification-faithful
-// REFERENCE implementation. It is NOT guaranteed constant-time and is NOT
-// side-channel resistant. For data that must be protected use an audited library
-// (BoringSSL, OpenSSL, libsodium, liboqs). See crypto/README.md.
+<< lib/crypto/SLAes.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines the SLeeLa standard-library type SLAes used within the crypto library family. >>
+#sleela 2.1
+< Unified SLeeLa SDK front-end object. >
+< Family: crypto. AES-128/192/256 block cipher (FIPS 197). Native impl crosses the VM/OS bridge to /crypto. >
+<  >
+< SECURITY NOTE: the native /crypto backend is a correct, specification-faithful >
+< REFERENCE implementation. It is NOT guaranteed constant-time and is NOT >
+< side-channel resistant. For data that must be protected use an audited library >
+< (BoringSSL, OpenSSL, libsodium, liboqs). See crypto/README.md. >
 class SLAes {
-  // Status codes mirror slcrypto_status in crypto/include/slcrypto.h.
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10199;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-06";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Status codes mirror slcrypto_status in crypto/include/slcrypto.h. >
   static final int OK = 0;
   static final int ERR_PARAM = -1;
   static final int ERR_AUTH = -2;
   static final int ERR_UNIMPL = -3;
 
-  // AES block size in bytes (FIPS 197).
+  < AES block size in bytes (FIPS 197). >
   static final int BLOCK_BYTES = 16;
 
   String algorithm;
-  int keyBits;       // 128, 192, or 256
-  int state;         // 1 = enabled, 0 = disabled
-  int configured;    // 1 once a supported algorithm name has been accepted
-  int keySet;        // 1 once a valid key size has been accepted
-  int backend;       // 1 when the native /crypto backend is linked and ready
+  < 128, 192, or 256 >
+  int keyBits;
+  < 1 = enabled, 0 = disabled >
+  int state;
+  < 1 once a supported algorithm name has been accepted >
+  int configured;
+  < 1 once a valid key size has been accepted >
+  int keySet;
+  < 1 when the native /crypto backend is linked and ready >
+  int backend;
 
   int configure(String a) {
     if (a == null) { configured = 0; return ERR_PARAM; }
@@ -35,7 +79,7 @@ class SLAes {
     return ERR_PARAM;
   }
 
-  // key_bits must be 128, 192, or 256 (FIPS 197).
+  < key_bits must be 128, 192, or 256 (FIPS 197). >
   int keySize(int b) {
     if (b == 128 || b == 192 || b == 256) { keyBits = b; keySet = 1; return OK; }
     keySet = 0;
@@ -48,12 +92,12 @@ class SLAes {
   void enable() { state = 1; }
   void disable() { state = 0; }
 
-  // active() requires enable + a valid algorithm + a valid key size + a ready backend.
+  < active() requires enable + a valid algorithm + a valid key size + a ready backend. >
   boolean active() { return state == 1 && configured == 1 && keySet == 1 && backend == 1; }
 
   int blockSize() { return BLOCK_BYTES; }
 
-  // Single-block ECB primitive (FIPS 197). Models slc_aes_encrypt_block()/slc_aes_decrypt_block().
+  < Single-block ECB primitive (FIPS 197). Models slc_aes_encrypt_block()/slc_aes_decrypt_block(). >
   int encryptBlock(String in) {
     if (active() == false) { return ERR_UNIMPL; }
     if (in == null) { return ERR_PARAM; }

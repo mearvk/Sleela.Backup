@@ -1,0 +1,128 @@
+<< lib/gui/version-military/gui-military-demo.sleela
+   A runnable walkthrough of the military (5.0) GUI line: the neutral metal /
+   metal-silver / blue-hue aesthetic with a 3D-lit base frame and careful
+   shadows, strong branding, carefully sized/placed icons on buttons and menu
+   items, the explicit Component vs Container taxonomy, the cryptography
+   selector, the public-key certificate store, and the window key-listeners
+   (resize / minimize / fullscreen / minimize-right fold + double-click restore). >>
+#sleela 2.1
+class GuiMilitaryDemo {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11126;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  void main() {
+    SLPackage pkg = new SLPackage(); pkg.configure("gui");
+    print("gui package " + pkg.version() + " (featureLevel " + pkg.featureLevel() +
+          ", military=" + pkg.isMilitary() + ")");
+
+    < ---- Military metal/blue aesthetic + 3D-lit frame + careful shadows ---- >
+    SLGuiSettings s = new SLGuiSettings(); s.configure();
+    print("aesthetic: " + s.aestheticName() + " honored=" + (s.honored() && s.militaryHonored()));
+    print("  " + s.report());
+    s.setMetalFinish(s.METAL_SILVER); s.setBlueHuePct(22);
+    print("  finish now: " + s.metalFinishName() + " blueHue=" + s.getBlueHuePct() +
+          "% frame3d=" + s.frameLit() + "@" + s.getFrameLightAngle() + "deg");
+
+    < ---- Strong, facile branding ---- >
+    SLGuiBranding b = new SLGuiBranding(); b.configure("brand/insignia.svg");
+    b.setPlacement(b.PLACE_HEADER); b.setScalePct(120); b.setWordmark("SLeeLa Command");
+    b.setColors("#8FB7D9", "#3A4450"); b.setTagline("neutral · hardened · precise");
+    print("branding: " + b.report());
+
+    < ---- Component vs Container taxonomy (now explicit) ---- >
+    SLGuiKind k = new SLGuiKind();
+    print("taxonomy:");
+    < container >
+    print("  " + k.describe("window"));
+    < component, clickable, icon-eligible >
+    print("  " + k.describe("button"));
+    < component, clickable >
+    print("  " + k.describe("cryptoselector"));
+    < component (not clickable) >
+    print("  " + k.describe("label"));
+
+    < ---- Carefully sized + placed icons on a button and a menu item ---- >
+    SLGuiIcon icon = new SLGuiIcon(); icon.configure("icons/shield.svg");
+    icon.setSizeTier(icon.SIZE_MD); icon.setPosition(icon.POS_LEADING); icon.setGapPx(8);
+    icon.setTint("#8FB7D9"); icon.setOpticalNudge(0, -1);
+    print("button icon: " + icon.sizeName() + " " + icon.positionName() +
+          " valid=" + icon.valid() + " -> " + icon.toStyle());
+
+    < ---- Cryptography Selector ---- >
+    SLGuiCryptoSelector cs = new SLGuiCryptoSelector(); cs.configure();
+    < gate out legacy/standard >
+    cs.requireMinStrength(cs.STRENGTH_STRONG);
+    print("crypto suites=" + cs.suiteCount() + " (min strength: " +
+          cs.strengthName(cs.STRENGTH_STRONG) + ")");
+    boolean okLegacy = cs.selectByName("3DES-CBC + RSA-2048 (legacy interop)");
+    boolean okPqc = cs.selectByName("AES-256-GCM + ML-KEM-768 + ML-DSA-65");
+    print("  select legacy (below min) -> " + okLegacy + " [must be false]");
+    print("  select PQC strong         -> " + okPqc + " -> '" + cs.selectedSuite() +
+          "' strength=" + cs.strengthName(cs.selectedStrength()) + " pqc=" + cs.selectedIsPostQuantum());
+
+    < ---- Public Key Certificate Store ---- >
+    SLGuiCertificateStore store = new SLGuiCertificateStore(); store.configure();
+    int root = store.importCert("SLeeLa Root CA", "SLeeLa Root CA", "Ed25519", "ab12..root", true);
+    int leaf = store.importCert("cmd.sleela.mil", "SLeeLa Root CA", "ECDSA-P256", "cd34..leaf", false);
+    print("certstore: imported " + store.certCount() + " (both start " +
+          store.trustName(store.trustAt(leaf)) + ")");
+    store.trustCert(root); store.trustCert(leaf);
+    boolean sel = store.select(leaf);
+    print("  trusted + selected leaf=" + sel + " subject='" + store.selectedSubject() +
+          "' validCount=" + store.validCount());
+    store.markRevoked(leaf);
+    print("  after revoke: leaf valid=" + store.valid(leaf) + " selection cleared=" + (!store.hasSelection()));
+
+    < ---- Window key-listeners: minimize-right fold + double-click restore ---- >
+    SLGuiWindowState w = new SLGuiWindowState(); w.configure(120, 80, 1024, 720);
+    w.setDesktop(1920, 1080);
+    print("window: " + w.modeName() + " " + w.getWidth() + "x" + w.getHeight() + " @(" + w.getX() + "," + w.getY() + ")");
+    w.minimizeRight();
+    print("  minimize-right -> " + w.modeName() + " side=" + w.foldSideName() +
+          " " + w.getWidth() + "x" + w.getHeight() + " @(" + w.getX() + "," + w.getY() + ")");
+    boolean restored = w.onDoubleClick();
+    print("  double-click restore=" + restored + " -> " + w.modeName() +
+          " " + w.getWidth() + "x" + w.getHeight() + " @(" + w.getX() + "," + w.getY() + ")");
+    w.onFullscreen(); print("  fullscreen -> " + w.getWidth() + "x" + w.getHeight());
+    w.onDoubleClick(); print("  restore -> " + w.modeName() + " " + w.getWidth() + "x" + w.getHeight());
+  }
+}
