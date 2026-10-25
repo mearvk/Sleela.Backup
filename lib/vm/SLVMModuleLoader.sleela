@@ -1,22 +1,122 @@
-/*
- * lib/vm/SLVMModuleLoader.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines the SLeeLa standard-library type SLVMModuleLoader used within the vm library family.
- */
-#sleela 1.3
-// Unified SLeeLa standard-library module loader front-end.
-// Native compiler/Nordshrift discovery is filesystem-driven; this object models
-// the loader-facing package lifecycle exposed above the native bridge.
+<< lib/vm/SLVMModuleLoader.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLVMModuleLoader — the loader-facing lifecycle that turns
+     a named package into a resolved SLVMModule in the secondary Sleela VM. It
+     discovers a package root, builds the module's class/method/field metadata,
+     registers each resolved symbol, and tracks link state so the linking manager
+     (SleelaVMLinkingManager*) can bind entry points. Native discovery remains
+     filesystem-driven below the bridge; this object models the package lifecycle
+     above it.
+   
+   The loader can also adopt the program's access manifest (finishModuleWithAccess)
+   so the loaded module honors the stated public/private/protected system roles
+   and the VM realizes the per-role backdrop.
+   
+   Family: vm. Produces/consumes SLVMModule, SLVMClass, SLAccessManifest;
+     composed by SLVM. >>
+#sleela 2.1
 class SLVMModuleLoader {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 932;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-09-28";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   String root; String packageName; int state; int packages; int symbols;
-  void configure(String libraryRoot){root=libraryRoot;}
-  void select(String name){packageName=name;}
-  void discover(String name){packageName=name;state=1;}
-  void registerPackage(){packages=packages+1;} void registerSymbol(){symbols=symbols+1;}
-  void load(){state=1;}
-  void unload(){state=0;}
-  boolean active(){return state==1;}
-  boolean selected(){return packageName!=null;} int packageCount(){return packages;} int symbolCount(){return symbols;} boolean packageAvailable(String p){return p!=null && p!="";}
-  String library(){return root;}
-  String package(){return packageName;}
+  SLVMModule current;
+
+  void configure(String libraryRoot){ root=libraryRoot; state=0; packages=0; symbols=0; }
+  void select(String name){ packageName=name; }
+  void discover(String name){ packageName=name; state=1; }
+
+  < Begin a module: allocate its substrate-backed body so classes can be added. >
+  SLVMModule beginModule(String name, int codeCap, int stackCap, int globalCap) {
+    current = new SLVMModule();
+    current.configure(name, codeCap, stackCap, globalCap);
+    packageName = name;
+    return current;
+  }
+
+  < Register a resolved class into the current module and count its symbols. >
+  void defineClass(SLVMClass k) {
+    if (current == null) { return; }
+    current.addClass(k);
+    registerPackage();
+    int i = 0;
+    while (i < k.methods()) { registerSymbol(); i = i + 1; }
+    i = 0;
+    while (i < k.fields()) { registerSymbol(); i = i + 1; }
+  }
+
+  < Finalise loading: mark the module loaded and set its entry point. >
+  SLVMModule finishModule(int entryClassId, String entryMethod) {
+    if (current == null) { return null; }
+    current.setEntry(entryClassId, entryMethod);
+    current.load();
+    state = 1;
+    return current;
+  }
+
+  < Finalise loading AND adopt the program's access manifest, so the loaded >
+  < module honors the stated public/private/protected system roles (exposed hop >
+  < / local / integrity-guarded) and the VM can realize the backdrop. Returns >
+  < the loaded module; the old finishModule() remains for access-free images. >
+  SLVMModule finishModuleWithAccess(int entryClassId, String entryMethod,
+                                    SLAccessManifest manifest) {
+    SLVMModule m = finishModule(entryClassId, entryMethod);
+    if (m != null && manifest != null) { m.adoptAccess(manifest); }
+    return m;
+  }
+
+  < Did the current module load a competent access backdrop the VM may realize? >
+  boolean accessRealized() {
+    return current != null && current.accessCompetent();
+  }
+
+  void registerPackage(){ packages=packages+1; } void registerSymbol(){ symbols=symbols+1; }
+  void load(){ state=1; }
+  void unload(){ state=0; current=null; }
+  boolean active(){ return state==1; }
+  boolean selected(){ return packageName!=null; }
+  int packageCount(){ return packages; }
+  int symbolCount(){ return symbols; }
+  boolean packageAvailable(String p){ return p!=null && p!=""; }
+  SLVMModule module(){ return current; }
+  String library(){ return root; }
+  String package(){ return packageName; }
 }
