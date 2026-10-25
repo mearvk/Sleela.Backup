@@ -18,6 +18,19 @@
 #include <memory>
 #include <string>
 #include <vector>
+#if defined(_WIN32)
+#  include <windows.h>
+#  include <shellapi.h>
+#elif defined(__APPLE__)
+#  include <spawn.h>
+#  include <sys/wait.h>
+#  include <unistd.h>
+extern char **environ;
+#else
+#  include <spawn.h>
+#  include <unistd.h>
+extern char **environ;
+#endif
 
 /* ---- App ----------------------------------------------------------------- */
 struct SLUIApp {
@@ -42,6 +55,34 @@ static const slui::Widget* as_widget(const SLUIWidget* w) {
 extern "C" {
 
 const char* slui_version_string(void) { return SLUI_VERSION_STRING; }
+
+int slui_wifi_open_settings(void) {
+#if defined(_WIN32)
+    HINSTANCE result = ShellExecuteA(NULL, "open", "ms-settings:network-wifi",
+                                     NULL, NULL, SW_SHOWNORMAL);
+    return reinterpret_cast<intptr_t>(result) > 32 ? SLUI_OK : SLUI_ERR_BACKEND;
+#elif defined(__APPLE__)
+    pid_t pid = 0;
+    char *const argv[] = {const_cast<char *>("open"),
+                          const_cast<char *>("x-apple.systempreferences:com.apple.wifi"),
+                          nullptr};
+    if (posix_spawnp(&pid, "open", nullptr, nullptr, argv, environ) != 0)
+        return SLUI_ERR_BACKEND;
+    return SLUI_OK;
+#else
+    /* Launch only fixed executable/argument pairs; never pass user text to a
+     * shell. Prefer NetworkManager's editor, then GNOME network settings. */
+    pid_t pid = 0;
+    char *const nm_argv[] = {const_cast<char *>("nm-connection-editor"), nullptr};
+    if (posix_spawnp(&pid, "nm-connection-editor", nullptr, nullptr, nm_argv, environ) == 0)
+        return SLUI_OK;
+    char *const cc_argv[] = {const_cast<char *>("gnome-control-center"),
+                             const_cast<char *>("wifi"), nullptr};
+    if (posix_spawnp(&pid, "gnome-control-center", nullptr, nullptr, cc_argv, environ) == 0)
+        return SLUI_OK;
+    return SLUI_ERR_UNSUPPORTED;
+#endif
+}
 
 SLUIBackend slui_backend(void) {
 #if defined(SLUI_BACKEND_WIN32_BUILD)
@@ -115,6 +156,15 @@ void slui_app_quit(SLUIApp* app, int exit_code) {
     if (app && app->backend) app->backend->quit(exit_code);
 }
 
+SLUIStatus slui_screen_size(SLUIApp* app, int* w, int* h) {
+    if (!app || !app->backend) return SLUI_ERR_INVALID;
+    int sw = 0, sh = 0;
+    if (!app->backend->screen_size(&sw, &sh)) return SLUI_ERR_INVALID;
+    if (w) *w = sw;
+    if (h) *h = sh;
+    return SLUI_OK;
+}
+
 /* ---- Window -------------------------------------------------------------- */
 SLUIWindow* slui_window_create(SLUIApp* app, const SLUIWindowConfig* config) {
     if (!app || !config) return nullptr;
@@ -156,6 +206,20 @@ void slui_window_set_theme(SLUIWindow* window, const SLUITheme* theme) {
 }
 void slui_window_request_redraw(SLUIWindow* window) {
     if (window) as_window(window)->request_redraw();
+}
+void slui_window_render(SLUIWindow* window) {
+    if (window) as_window(window)->render();
+}
+void slui_window_set_buffering(SLUIWindow* window, int mode) {
+    if (!window) return;
+    if (mode < SLUI_BUFFERING_SINGLE) mode = SLUI_BUFFERING_SINGLE;
+    if (mode > SLUI_BUFFERING_TRIPLE) mode = SLUI_BUFFERING_TRIPLE;
+    as_window(window)->set_buffering(static_cast<SLUIBufferingMode>(mode));
+}
+int slui_window_buffering(const SLUIWindow* window) {
+    if (!window) return SLUI_BUFFERING_SINGLE;
+    return static_cast<int>(
+        as_window(const_cast<SLUIWindow*>(window))->buffering());
 }
 void slui_window_set_event_handler(SLUIWindow* window, SLUIEventHandler handler,
                                    void* user) {
@@ -240,11 +304,62 @@ SLUIWidget* slui_scroll_bar(SLUIWidget* parent, SLUIOrientation orient,
     return attach(parent,
                   std::make_unique<slui::ScrollBar>(orient, value, page));
 }
+SLUIWidget* slui_scrolled_view(SLUIWidget* parent, int policy_h, int policy_v) {
+    return attach(parent,
+                  std::make_unique<slui::ScrolledView>(policy_h, policy_v));
+}
+void slui_scrolled_view_scroll_to(SLUIWidget* view, int x, int y) {
+    if (!view) return;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return;
+    auto* sv = static_cast<slui::ScrolledView*>(w);
+    sv->set_scroll_x(x);
+    sv->set_scroll_y(y);
+}
+void slui_scrolled_view_scroll_by(SLUIWidget* view, int dx, int dy) {
+    if (!view) return;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return;
+    static_cast<slui::ScrolledView*>(w)->scroll_by(dx, dy);
+}
+int slui_scrolled_view_scroll_x(SLUIWidget* view) {
+    if (!view) return 0;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return 0;
+    return static_cast<slui::ScrolledView*>(w)->scroll_x();
+}
+int slui_scrolled_view_scroll_y(SLUIWidget* view) {
+    if (!view) return 0;
+    auto* w = as_widget(view);
+    if (w->kind() != slui::WidgetKind::ScrolledView) return 0;
+    return static_cast<slui::ScrolledView*>(w)->scroll_y();
+}
 SLUIWidget* slui_frame(SLUIWidget* parent, const char* title) {
     return attach(parent, std::make_unique<slui::Frame>(title ? title : ""));
 }
 SLUIWidget* slui_card(SLUIWidget* parent) {
     return attach(parent, std::make_unique<slui::Card>());
+}
+
+/* Shared popup surface: a normal themed card with explicit open/close state.
+ * It remains owned by the parent widget tree, so dismissal is safe and does
+ * not invalidate a handle retained by the SLeeLa VM. */
+SLUIWidget* slui_popup_create(SLUIWidget* parent) {
+    SLUIWidget* popup = slui_card(parent);
+    if (popup) {
+        slui_widget_set_visible(popup, 0);
+        /* A popup floats forward of the frame: mark it an overlay so the Window
+         * paints it last (above everything) and unclipped, instead of inline in
+         * its parent's layout where later siblings would paint over it. */
+        as_widget(popup)->set_overlay(true);
+    }
+    return popup;
+}
+void slui_popup_set_open(SLUIWidget* popup, int open) {
+    slui_widget_set_visible(popup, open != 0);
+}
+int slui_popup_is_open(const SLUIWidget* popup) {
+    return popup ? as_widget(popup)->visible() : 0;
 }
 SLUIWidget* slui_grid(SLUIWidget* parent, int columns, int spacing) {
     return attach(parent, std::make_unique<slui::Grid>(columns, spacing));
@@ -348,6 +463,14 @@ void slui_widget_set_visible(SLUIWidget* w, int visible) {
 
 void slui_widget_set_text(SLUIWidget* w, const char* text) {
     if (w) as_widget(w)->set_text(text ? text : "");
+}
+void slui_widget_set_icon(SLUIWidget* w, const char* asset_path,
+                          const char* symbol_name) {
+    if (!w) return;
+    auto* button = dynamic_cast<slui::Button*>(as_widget(w));
+    if (button)
+        button->set_icon(asset_path ? asset_path : "",
+                         symbol_name ? symbol_name : "");
 }
 size_t slui_widget_get_text(const SLUIWidget* w, char* out, size_t cap) {
     if (!w) return 0;
