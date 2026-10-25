@@ -1,0 +1,69 @@
+#sleela 2.1
+< Request metadata for the HTTP/1.x carrier endpoint. >
+class Http50Request {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11505;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  String method = "POST";
+  String target = "/__sleela/h5";
+  String carrierProtocol = "HTTP/1.1";
+  String contentType = "application/octet-stream";
+  String sessionId = "";
+  long requestId = 0;
+  long bodyLength = 0;
+  boolean valid = true;
+  boolean contentLengthPresent = false;
+  boolean transferEncodingPresent = false;
+  boolean duplicateContentLength = false;
+  void setTarget(String value) { target = value; }
+  void setSession(String value, long request) { sessionId = value; requestId = request; }
+  void setBody(long length, boolean hasLength) { bodyLength = length; contentLengthPresent = hasLength; }
+  void setTransferEncoding(boolean value) { transferEncodingPresent = value; }
+  void markDuplicateContentLength() { duplicateContentLength = true; }
+  void reject() { valid = false; }
+  boolean isValid() {
+    return valid && method == "POST" && target == "/__sleela/h5" &&
+      sessionId != "" && requestId >= 0 && bodyLength >= 0 &&
+      bodyLength <= 16777248 && contentLengthPresent &&
+      !transferEncodingPresent && !duplicateContentLength;
+  }
+  boolean requiresNativeHttpParser() { return true; }
+}
