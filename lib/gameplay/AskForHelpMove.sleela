@@ -1,24 +1,66 @@
-/*
- * lib/gameplay/AskForHelpMove.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Move (b) — ask for help or new routes. A straight 50/50. Win the
- *   flip and the Inference Engine lets you LOOK at your Expected Future as it is
- *   being modeled, so you can see whether you are on schedule in your own custom
- *   game. Lose the flip and your Boss instead hands you a Detailed Report with
- *   some Game-Engineering moves already decided — and you pay for that
- *   information based on the Quality of your Person/Citizen.
- *
- * A concrete GameMove: override resolve() to flip, then either read the future
- * or buy the report. The future it modeled and the report it bought are stashed
- * on the move so the turn can show them. Family: gameplay.
- */
-#sleela 1.3
+<< lib/gameplay/AskForHelpMove.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Move (b) — ask for help or new routes. A straight 50/50. Win the
+     flip and the Inference Engine lets you LOOK at your Expected Future as it is
+     being modeled, so you can see whether you are on schedule in your own custom
+     game. Lose the flip and your Boss instead hands you a Detailed Report with
+     some Game-Engineering moves already decided — and you pay for that
+     information based on the Quality of your Person/Citizen.
+   
+   A concrete GameMove: override resolve() to flip, then either read the future
+   or buy the report. The future it modeled and the report it bought are stashed
+   on the move so the turn can show them. Family: gameplay. >>
+#sleela 2.1
 class AskForHelpMove extends GameMove {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10293;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
 
-  static final int BASE_REPORT_COST = 2000;  // cents, before quality scaling
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
 
-  ExpectedFuture lastFuture;   // populated on a winning flip
-  DetailedReport lastReport;   // populated on a losing flip
+  < cents, before quality scaling >
+  static final int BASE_REPORT_COST = 2000;
+
+  < populated on a winning flip >
+  ExpectedFuture lastFuture;
+  < populated on a losing flip >
+  DetailedReport lastReport;
 
   void setUp() {
     load();
@@ -37,9 +79,10 @@ class AskForHelpMove extends GameMove {
       return out;
     }
 
-    boolean win = dice.coinFlip();   // the 50/50
+    < the 50/50 >
+    boolean win = dice.coinFlip();
     if (win) {
-      // You get to see your Expected Future being modeled live.
+      < You get to see your Expected Future being modeled live. >
       lastFuture = engine.model(p, turnNumber);
       out.succeed();
       out.addXp(3);
@@ -50,12 +93,13 @@ class AskForHelpMove extends GameMove {
               + " turn(s) — time to re-route.");
       }
     } else {
-      // The boss steps in with a pre-decided brief; you pay by your quality.
+      < The boss steps in with a pre-decided brief; you pay by your quality. >
       lastReport = engine.brief(p, BASE_REPORT_COST);
       if (lastReport.paid()) {
         out.succeed();
         out.addXp(2);
-        out.addFile(1);     // a report is paper; paper is file
+        < a report is paper; paper is file >
+        out.addFile(1);
         out.say("50/50 lost, but bought the Boss's brief ("
               + lastReport.moves() + " moves) for " + lastReport.price() + "c.");
       } else {
