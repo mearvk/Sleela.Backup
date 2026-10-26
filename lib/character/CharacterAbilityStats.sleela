@@ -1,0 +1,71 @@
+#sleela 2.1
+<< CharacterAbilityStats.sleela
+   SLeeLa CharacterStats component: primary and expanded abilities.
+   
+   This focused value class separates one coherent group of CharacterStats
+   fields for reuse by games, simulations, and interactive fiction. Values and
+   scales are defined by the consuming game's ruleset; no universal caps are
+   assumed unless explicitly enforced by a method. >>
+class CharacterAbilityStats {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10969;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-11";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+    int STR;
+    int DEX;
+    int CON;
+    int INT;
+    int WIS;
+    int CHA;
+    int LCK;
+    int PER;
+    int WILL;
+    int SPI;
+    int TEC;
+    int CRAFT;
+
+    int abilityModifier(int score) { return (score - 10) / 2; }
+    int strengthModifier() { return abilityModifier(STR); }
+    int dexterityModifier() { return abilityModifier(DEX); }
+    int constitutionModifier() { return abilityModifier(CON); }
+    int intelligenceModifier() { return abilityModifier(INT); }
+    int wisdomModifier() { return abilityModifier(WIS); }
+    int charismaModifier() { return abilityModifier(CHA); }
+}
