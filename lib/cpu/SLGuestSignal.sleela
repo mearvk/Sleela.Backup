@@ -1,21 +1,60 @@
-/*
- * lib/cpu/SLGuestSignal.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLGuestSignal — asynchronous signal delivery to guest
- *   tasks (the Unix signal model). A task (or the kernel) raises a signal
- *   number against a target task; the target has a pending-signal set and a
- *   per-signal disposition (default, ignore, or a handler entry point). On the
- *   next scheduling point the kernel delivers the highest-priority pending
- *   signal: it either applies the default action (e.g. terminate on KILL/TERM),
- *   ignores it, or vectors the task to its handler.
- *
- * Models up to 16 signal numbers with a pending bitset and dispositions held
- * per target task id (a small fixed table; SLeeLa surface has no arrays).
- *
- * Family: cpu. Composes SLGuestScheduler for delivery/termination effects.
- */
-#sleela 1.3
+<< lib/cpu/SLGuestSignal.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuestSignal — asynchronous signal delivery to guest
+     tasks (the Unix signal model). A task (or the kernel) raises a signal
+     number against a target task; the target has a pending-signal set and a
+     per-signal disposition (default, ignore, or a handler entry point). On the
+     next scheduling point the kernel delivers the highest-priority pending
+     signal: it either applies the default action (e.g. terminate on KILL/TERM),
+     ignores it, or vectors the task to its handler.
+   
+   Models up to 16 signal numbers with a pending bitset and dispositions held
+   per target task id (a small fixed table; SLeeLa surface has no arrays).
+   
+   Family: cpu. Composes SLGuestScheduler for delivery/termination effects. >>
+#sleela 2.1
 class SLGuestSignal {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10239;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-06";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   static final int SIG_LINES = 16;
   static final int SIGKILL = 9;
   static final int SIGTERM = 15;
@@ -27,7 +66,7 @@ class SLGuestSignal {
   static final int DISP_HANDLE  = 2;
 
   SLGuestScheduler scheduler;
-  // Pending bitset + handler entry per task slot (indexed by scheduler slot 0..7).
+  < Pending bitset + handler entry per task slot (indexed by scheduler slot 0..7). >
   int pend0; int pend1; int pend2; int pend3; int pend4; int pend5; int pend6; int pend7;
   int delivered;
 
@@ -52,7 +91,7 @@ class SLGuestSignal {
     if(slot==6){pend6=mask;} if(slot==7){pend7=mask;}
   }
 
-  // Raise a signal against the task in scheduler slot `slot`.
+  < Raise a signal against the task in scheduler slot `slot`. >
   void raise(int slot, int sig) {
     if (sig < 0 || sig >= SIG_LINES) { return; }
     int m = pendOf(slot);
@@ -61,20 +100,21 @@ class SLGuestSignal {
 
   boolean hasPending(int slot) { return pendOf(slot) != 0; }
 
-  // Lowest-numbered pending signal for a slot, or -1.
+  < Lowest-numbered pending signal for a slot, or -1. >
   int nextPending(int slot) {
     int m = pendOf(slot); int sig = 0;
     while (sig < SIG_LINES) { if (bitSet(m, sig)) { return sig; } sig = sig + 1; }
     return -1;
   }
 
-  // Deliver one pending signal to the task in `slot`. Default action for KILL/
-  // TERM finishes the task; otherwise the signal is cleared (handler/ignore are
-  // modeled as consumed). Returns the delivered signal number, or -1.
+  < Deliver one pending signal to the task in `slot`. Default action for KILL/ >
+  < TERM finishes the task; otherwise the signal is cleared (handler/ignore are >
+  < modeled as consumed). Returns the delivered signal number, or -1. >
   int deliver(int slot) {
     int sig = nextPending(slot);
     if (sig < 0) { return -1; }
-    setPend(slot, pendOf(slot) - pow2(sig));  // clear it
+    < clear it >
+    setPend(slot, pendOf(slot) - pow2(sig));
     delivered = delivered + 1;
     if (sig == SIGKILL || sig == SIGTERM) {
       SLGuestTask t = scheduler.at(slot);

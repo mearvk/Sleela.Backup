@@ -1,0 +1,76 @@
+<< lib/gui/version-thual/SLGuiAction.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuiAction — a named, bindable GUI action. Mirrors the
+     SleelaGuiRuntime.action(name, operation) / SleelaGui.onAction(...) binding
+     in gui/: a name the window raises and a SLeeLa operation it maps to. The VM
+     latches each activation so a click (or Enter/Space while focused) is
+     observed exactly once. >>
+#sleela 2.1
+< SLeeLa gui front-end contract — a named action bound to a SLeeLa operation. >
+< Family: gui. Java/native raise activations; SLeeLa decides what they mean. >
+class SLGuiAction {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11154;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < the action's stable name >
+  String name;
+  < the SLeeLa operation it invokes >
+  String operation;
+  < activation latch (set on raise, cleared on take) >
+  int pending;
+  < total activations observed >
+  int fired;
+  void configure(String n, String op) {
+    name = n; operation = op; pending = 0; fired = 0;
+  }
+  String getName() { return name; }
+  String getOperation() { return operation; }
+  boolean bound() { return name != null && operation != null; }
+  < The host raises an activation (a click, or Enter/Space while focused). >
+  void raise() { pending = 1; }
+  < Take-the-latch read: true once per activation, then cleared — the VM >
+  < clears the latch on read, so each click is observed exactly once. >
+  boolean take() {
+    if (pending == 1) { pending = 0; fired = fired + 1; return true; }
+    return false;
+  }
+  int activations() { return fired; }
+}
