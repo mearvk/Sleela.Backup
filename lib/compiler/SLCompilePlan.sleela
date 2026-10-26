@@ -1,30 +1,75 @@
-/*
- * lib/compiler/SLCompilePlan.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLCompilePlan, the fail-closed plan/result the framework
- *   produces for a compile request against a language front end.
- *
- * A plan records which phases the chosen front end covers, which phases the
- * requested target requires, the first missing phase (0 when none), the
- * resolved target, and whether the request can reach a VM-ready artifact. The
- * native planner never guesses: an unresolved or reference-only path is
- * surfaced rather than silently satisfied.
- *
- * Family: compiler. Native VM/OS work crosses an explicit bridge.
- */
-#sleela 1.3
-// Unified SLeeLa SDK front-end object.
+<< lib/compiler/SLCompilePlan.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLCompilePlan, the fail-closed plan/result the framework
+     produces for a compile request against a language front end.
+   
+   A plan records which phases the chosen front end covers, which phases the
+   requested target requires, the first missing phase (0 when none), the
+   resolved target, and whether the request can reach a VM-ready artifact. The
+   native planner never guesses: an unresolved or reference-only path is
+   surfaced rather than silently satisfied.
+   
+   Family: compiler. Native VM/OS work crosses an explicit bridge. >>
+#sleela 2.1
+< Unified SLeeLa SDK front-end object. >
 class SLCompilePlan {
-  int coveredPhaseMask;   // phases the front end provides
-  int requiredPhaseMask;  // phases the request needs for its target
-  int firstMissingPhase;  // 0 when none missing
-  int resolvedTarget;     // SLLanguageCompiler.TARGET_*
-  boolean vmReady;        // true when every required phase is covered
-  int status;             // native status: OK / ABSENT / INVALID / BLOCKED
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10358;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < phases the front end provides >
+  int coveredPhaseMask;
+  < phases the request needs for its target >
+  int requiredPhaseMask;
+  < 0 when none missing >
+  int firstMissingPhase;
+  < SLLanguageCompiler.TARGET_* >
+  int resolvedTarget;
+  < true when every required phase is covered >
+  boolean vmReady;
+  < native status: OK / ABSENT / INVALID / BLOCKED >
+  int status;
   String diagnostic;
 
-  // Build the plan by asking the native framework to walk required vs covered
-  // phases for the request's resolved target.
+  < Build the plan by asking the native framework to walk required vs covered >
+  < phases for the request's resolved target. >
   void buildFor(SLLanguageCompiler frontEnd, SLCompileRequest request) {
     int handle = native sleela_lang_plan_request(
       frontEnd.name(), request.input(), request.target(), request.isStrict());
