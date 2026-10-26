@@ -1,30 +1,69 @@
-/*
- * lib/citizen/FederalReserveID.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines FederalReserveID, the central-bank identity Master Class
- *   — the number by which the Federal Reserve pretends to know a Citizen
- *   personally. It issues and validates a civic clearing ID and maps the money
- *   to one of the twelve Federal Reserve Districts.
- *
- * FederalReserveID is a NATURAL / LOADABLE MODULE sharing the common module
- * contract (load / loaded / moduleName / describe). It is a sidecar owned by
- * Citizen and the single source of truth for Federal Reserve details in this
- * package: the twelve District codes (01 Boston .. 12 San Francisco), the
- * mapping from an ABA routing prefix to a District, and the issuance of a
- * deterministic, obviously-synthetic clearing identifier. No real identifiers
- * are generated — the central bank's holiday card list remains, mercifully,
- * fictional.
- *
- * Family: citizen. Clearing crosses an explicit bridge to the ledger.
- */
-#sleela 1.3
-// Unified SLeeLa SDK front-end object.
+<< lib/citizen/FederalReserveID.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines FederalReserveID, the central-bank identity Master Class
+     — the number by which the Federal Reserve pretends to know a Citizen
+     personally. It issues and validates a civic clearing ID and maps the money
+     to one of the twelve Federal Reserve Districts.
+   
+   FederalReserveID is a NATURAL / LOADABLE MODULE sharing the common module
+   contract (load / loaded / moduleName / describe). It is a sidecar owned by
+   Citizen and the single source of truth for Federal Reserve details in this
+   package: the twelve District codes (01 Boston .. 12 San Francisco), the
+   mapping from an ABA routing prefix to a District, and the issuance of a
+   deterministic, obviously-synthetic clearing identifier. No real identifiers
+   are generated — the central bank's holiday card list remains, mercifully,
+   fictional.
+   
+   Family: citizen. Clearing crosses an explicit bridge to the ledger. >>
+#sleela 2.1
+< Unified SLeeLa SDK front-end object. >
 class FederalReserveID {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10312;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
 
   static final String MODULE = "FederalReserveID";
 
-  // The twelve Federal Reserve Districts. Yes, there are exactly twelve.
-  // No, nobody remembers why Missouri got two.
+  < The twelve Federal Reserve Districts. Yes, there are exactly twelve. >
+  < No, nobody remembers why Missouri got two. >
   static final int DISTRICT_BOSTON        = 1;
   static final int DISTRICT_NEW_YORK      = 2;
   static final int DISTRICT_PHILADELPHIA  = 3;
@@ -41,21 +80,25 @@ class FederalReserveID {
 
   int loadedFlag;
   boolean issued;
-  String idNumber;    // synthetic clearing ID: FRS-<district>-<serial>
-  int district;       // one of DISTRICT_*
-  int serial;         // the citizen's spot in a very long, patient line
+  < synthetic clearing ID: FRS-<district>-<serial> >
+  String idNumber;
+  < one of DISTRICT_* >
+  int district;
+  < the citizen's spot in a very long, patient line >
+  int serial;
 
   void load() {
     loadedFlag = 1;
     issued = false;
     idNumber = null;
-    district = DISTRICT_NEW_YORK;   // when in doubt, blame New York
+    < when in doubt, blame New York >
+    district = DISTRICT_NEW_YORK;
     serial = 0;
   }
   boolean loaded() { return loadedFlag == 1; }
   String moduleName() { return MODULE; }
 
-  // Issue a Fed clearing ID to a named citizen. Deterministic + fake on purpose.
+  < Issue a Fed clearing ID to a named citizen. Deterministic + fake on purpose. >
   void issue(String legalName) {
     serial = nameSerial(legalName);
     district = DISTRICT_NEW_YORK;
@@ -63,7 +106,7 @@ class FederalReserveID {
     idNumber = "FRS-" + district + "-" + serial;
   }
 
-  // Re-home the citizen to a specific District (e.g. they moved to Dallas).
+  < Re-home the citizen to a specific District (e.g. they moved to Dallas). >
   void assignDistrict(int whichDistrict) {
     if (whichDistrict >= DISTRICT_BOSTON && whichDistrict <= DISTRICT_COUNT) {
       district = whichDistrict;
@@ -71,8 +114,8 @@ class FederalReserveID {
     }
   }
 
-  // Map an ABA routing number to its Federal Reserve District. The first two
-  // digits (01..12) ARE the District; anything else is a rounding error.
+  < Map an ABA routing number to its Federal Reserve District. The first two >
+  < digits (01..12) ARE the District; anything else is a rounding error. >
   int districtOfRouting(String routing) {
     if (routing == null) { return 0; }
     int d = routingPrefix(routing);
@@ -80,7 +123,7 @@ class FederalReserveID {
     return 0;
   }
 
-  // A friendly name for the District, for forms and small talk alike.
+  < A friendly name for the District, for forms and small talk alike. >
   String districtName() {
     if (district == DISTRICT_BOSTON)        { return "Boston"; }
     if (district == DISTRICT_NEW_YORK)      { return "New York"; }
@@ -101,11 +144,11 @@ class FederalReserveID {
   String number() { if (idNumber == null) { return "FRS-UNISSUED"; } return idNumber; }
   int currentDistrict() { return district; }
 
-  // --- small deterministic helpers (no randomness; archives must repeat) ---
-  // SLeeLa Strings are Java-style: length() and substring() only — no char
-  // type — so these helpers work purely by slicing and comparing substrings.
+  < --- small deterministic helpers (no randomness; archives must repeat) --- >
+  < SLeeLa Strings are Java-style: length() and substring() only — no char >
+  < type — so these helpers work purely by slicing and comparing substrings. >
 
-  // Turn the first two characters of the routing string into an int 0..99.
+  < Turn the first two characters of the routing string into an int 0..99. >
   int routingPrefix(String routing) {
     if (routing == null || routing.length() < 2) { return 0; }
     int tens = digitValue(routing.substring(0, 1));
@@ -114,21 +157,21 @@ class FederalReserveID {
     return tens * 10 + ones;
   }
 
-  // Fold a name into a stable 6-digit serial. Not secure; delightfully not.
+  < Fold a name into a stable 6-digit serial. Not secure; delightfully not. >
   int nameSerial(String legalName) {
     if (legalName == null) { return 0; }
     int acc = 7;
     int i = 0;
     int n = legalName.length();
     while (i < n) {
-      // charWeight() gives each one-character slice a small stable number.
+      < charWeight() gives each one-character slice a small stable number. >
       acc = (acc * 31 + charWeight(legalName.substring(i, i + 1))) % 1000000;
       i = i + 1;
     }
     return acc;
   }
 
-  // Map a single-character String to its digit value 0..9, or -1 if not a digit.
+  < Map a single-character String to its digit value 0..9, or -1 if not a digit. >
   int digitValue(String c) {
     if (c == "0") { return 0; }
     if (c == "1") { return 1; }
@@ -143,8 +186,8 @@ class FederalReserveID {
     return -1;
   }
 
-  // A stable per-character weight for serial folding. Digits use their value;
-  // everything else gets a constant nudge so names still spread out nicely.
+  < A stable per-character weight for serial folding. Digits use their value; >
+  < everything else gets a constant nudge so names still spread out nicely. >
   int charWeight(String c) {
     int d = digitValue(c);
     if (d >= 0) { return d + 1; }

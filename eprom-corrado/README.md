@@ -1,4 +1,4 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
 # eprom-corrado — EPROM programmer driver family
 
@@ -64,3 +64,9 @@ Reprogramming an engine ECU can make a vehicle unsafe or non-compliant. The
 family's documented posture (from the backend): **back up the stock image first
 and verify every write.** Destructive verbs (`write`, `erase`) must never be
 exposed over an unauthenticated transport.
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>
