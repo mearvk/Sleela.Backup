@@ -1,0 +1,134 @@
+<< lib/cpu/SLTiming.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLTiming — one named, careful timing budget: the atom all
+     the expert bus / CPU / I/O / RAM timings are built from. A budget names a
+     path and states its real electrical constraints in picoseconds (ps):
+     setup, hold, propagation, and jitter, all against a declared period. Rather
+     than assume a part is "fast enough", a budget is CHECKED — slack is period
+     minus the consumed time, and a path is honored only when slack is
+     non-negative with the stated guardband.
+   
+   Everything here is nameful and quality-first: each budget carries the signal
+   name and a human reason, so a timing report reads as prose, not as magic
+   numbers. A compiled .sleela file embeds these budgets so a compiler or VM
+   operates the STATED timings instead of inferring confidences about silicon.
+   
+   Family: cpu. Pure Sleela timing model (picosecond integer arithmetic). >>
+#sleela 2.1
+class SLTiming {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11084;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-13";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < nameful path: "addr->ras", "cas->dq", "req->ack", ... >
+  String signal;
+  < why this budget exists, in words >
+  String reason;
+  < the clock/strobe period this path must fit inside (ps) >
+  int periodPs;
+  < required setup before the capturing edge (ps) >
+  int setupPs;
+  < required hold after the capturing edge (ps) >
+  int holdPs;
+  < combinational / flight time along the path (ps) >
+  int propagationPs;
+  < peak cycle-to-cycle jitter to subtract from the period >
+  int jitterPs;
+  < extra margin demanded on top of a bare pass (ps) >
+  int guardbandPs;
+  < how many times this budget has been evaluated >
+  int checks;
+  < how many of those failed >
+  int violations;
+
+  < Name a path and give it a period and a guardband. >
+  void configure(String name, int period, int guardband) {
+    signal = name; reason = ""; periodPs = period;
+    setupPs = 0; holdPs = 0; propagationPs = 0; jitterPs = 0;
+    guardbandPs = guardband; checks = 0; violations = 0;
+  }
+
+  void describe(String why) { reason = why; }
+
+  < State the path's electrical constraints. >
+  void setSetup(int ps) { if (ps >= 0) { setupPs = ps; } }
+  void setHold(int ps) { if (ps >= 0) { holdPs = ps; } }
+  void setPropagation(int ps) { if (ps >= 0) { propagationPs = ps; } }
+  void setJitter(int ps) { if (ps >= 0) { jitterPs = ps; } }
+  void setPeriod(int ps) { if (ps > 0) { periodPs = ps; } }
+  void setGuardband(int ps) { if (ps >= 0) { guardbandPs = ps; } }
+
+  < Time consumed along the path before data is stable at the capture point. >
+  int consumedPs() { return propagationPs + setupPs; }
+
+  < The usable period after jitter is removed from the raw period. >
+  int effectivePeriodPs() { return periodPs - jitterPs; }
+
+  < Setup slack: usable period minus consumed time minus the demanded >
+  < guardband. Non-negative = the path is honored. >
+  int setupSlackPs() { return effectivePeriodPs() - consumedPs() - guardbandPs; }
+
+  < Hold slack: propagation must out-last the required hold window. >
+  int holdSlackPs() { return propagationPs - holdPs; }
+
+  < Does this budget hold, counting setup, hold, and guardband together? >
+  boolean honored() {
+    checks = checks + 1;
+    boolean ok = setupSlackPs() >= 0 && holdSlackPs() >= 0;
+    if (!ok) { violations = violations + 1; }
+    return ok;
+  }
+
+  < The highest strobe frequency (MHz) this path can be run at and still meet >
+  < setup with its guardband: f = 1e6 / (consumed + guardband + jitter) ps. >
+  int maxFrequencyMHz() {
+    int floorPs = consumedPs() + guardbandPs + jitterPs;
+    if (floorPs <= 0) { return 0; }
+    return 1000000 / floorPs;
+  }
+
+  String signalName() { return signal; }
+  String why() { return reason; }
+  int period() { return periodPs; }
+  int guardband() { return guardbandPs; }
+  int checkCount() { return checks; }
+  int violationCount() { return violations; }
+  boolean clean() { return violations == 0; }
+}

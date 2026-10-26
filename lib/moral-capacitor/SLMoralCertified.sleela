@@ -1,24 +1,63 @@
-/*
- * lib/moral-capacitor/SLMoralCertified.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLMoralCertified — the one-object convention a SLeeLa
- *   product embeds to become morally certified. It bundles the three things a
- *   certified product needs: a live Moral Capacitor(TM) (the operation-boundary
- *   gate), a Certificate of Morals(TM) issued over that capacitor (the product-
- *   boundary warranty), and the Guard that admits the product only when both are
- *   present and valid. A product configures one SLMoralCertified at startup,
- *   gates its operations through capacitor(), and lets ship()/boot() paths call
- *   admit() to prove the moral code is included before running.
- *
- * This is how the project strives to include Morals and Certificates in ALL its
- * SLeeLa software: embedding one SLMoralCertified makes a product both gated and
- * certified, in a single, uniform step.
- *
- * Family: moral-capacitor. Composes SLMoralCapacitor, SLMoralCertificate,
- *   SLMoralCertificateAuthority, SLMoralCodeGuard.
- */
-#sleela 1.5
+<< lib/moral-capacitor/SLMoralCertified.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMoralCertified — the one-object convention a SLeeLa
+     product embeds to become morally certified. It bundles the three things a
+     certified product needs: a live Moral Capacitor(TM) (the operation-boundary
+     gate), a Certificate of Morals(TM) issued over that capacitor (the product-
+     boundary warranty), and the Guard that admits the product only when both are
+     present and valid. A product configures one SLMoralCertified at startup,
+     gates its operations through capacitor(), and lets ship()/boot() paths call
+     admit() to prove the moral code is included before running.
+   
+   This is how the project strives to include Morals and Certificates in ALL its
+   SLeeLa software: embedding one SLMoralCertified makes a product both gated and
+   certified, in a single, uniform step.
+   
+   Family: moral-capacitor. Composes SLMoralCapacitor, SLMoralCertificate,
+     SLMoralCertificateAuthority, SLMoralCodeGuard. >>
+#sleela 2.1
 class SLMoralCertified {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10911;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-10";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   String product;
   SLMoralCapacitor cap;
   SLMoralCertificate cert;
@@ -26,10 +65,10 @@ class SLMoralCertified {
   SLMoralCodeGuard guard;
   int configured;
 
-  // Certify a product: embed a capacitor under the given policy, issue a
-  // Certificate of Morals from the authority over it, and arm the guard.
-  // redlinesArmed is the number of absolute red lines kept armed (use
-  // SLMoralVeto.REDLINE_COUNT for the full set).
+  < Certify a product: embed a capacitor under the given policy, issue a >
+  < Certificate of Morals from the authority over it, and arm the guard. >
+  < redlinesArmed is the number of absolute red lines kept armed (use >
+  < SLMoralVeto.REDLINE_COUNT for the full set). >
   void configure(String productName, SLMoralPolicy policy, int redlinesArmed,
                  String issuer, String sealKey, String issuedAt, String expiresAt) {
     product = productName;
@@ -48,17 +87,17 @@ class SLMoralCertified {
     configured = 1;
   }
 
-  // The operation-boundary gate a product uses to judge operations.
+  < The operation-boundary gate a product uses to judge operations. >
   SLMoralCapacitor capacitor() { return cap; }
-  // The product-boundary warranty the product ships with.
+  < The product-boundary warranty the product ships with. >
   SLMoralCertificate certificate() { return cert; }
 
-  // Prove, at a product boundary (ship / boot / run), that the moral code is
-  // included and certified as of `nowStamp`. Returns true to admit.
+  < Prove, at a product boundary (ship / boot / run), that the moral code is >
+  < included and certified as of `nowStamp`. Returns true to admit. >
   boolean admit(String nowStamp) {
     return guard.permits(product, cap, cert, nowStamp);
   }
-  // The reason behind the last admit() decision (for logs / refusal messages).
+  < The reason behind the last admit() decision (for logs / refusal messages). >
   String admitReason() { return guard.reason(); }
 
   String productName() { return product; }
