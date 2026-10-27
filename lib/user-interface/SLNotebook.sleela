@@ -1,0 +1,183 @@
+<< lib/user-interface/SLNotebook.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLNotebook — a browser-style horizontal tab strip and page
+     stack. It uses themed native buttons, selected accent, quiet inactive tabs,
+     a compact strip, and a clearly separated content region. A dirty marker can
+     be shown per tab (e.g. an unsaved editor). Pointer hover/press visuals are
+     provided by the native Button widget; clicked() is the one-shot release-on-
+     target activation latch. This stays in SLeeLa over SleelaUI primitives.
+   
+   An SLNotebook IS an SLWidget container.
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
+   bridge. >>
+#sleela 2.1
+class SLNotebook extends SLWidget {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11075;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-13";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int MAX_PAGES = 4096;
+
+  < vertical: tab strip over the content area >
+  SLBox column;
+  < horizontal tab strip >
+  SLBox strip;
+  < the content area (one page visible at a time) >
+  SLBox stack;
+
+  < one tab button per page >
+  SLButton[] tabs;
+  < one content container per page >
+  SLBox[] pages;
+  < base tab titles (without the dirty marker) >
+  String[] titles;
+  < per-page dirty flag (adds a '*' to the tab) >
+  boolean[] dirty;
+  int count;
+  < active page index, -1 when empty >
+  int active;
+
+  void createIn(SLWidget parent) {
+    column = new SLBox();
+    column.vertical(parent, 0);
+    column.setExpand(true, true);
+    widget = column.handle();
+
+    strip = new SLBox();
+    strip.horizontal(column, 2);
+    strip.setSizeRequest(0, 36);
+
+    stack = new SLBox();
+    stack.vertical(column, 0);
+    stack.setExpand(true, true);
+
+    tabs = new SLButton[MAX_PAGES];
+    pages = new SLBox[MAX_PAGES];
+    titles = new String[MAX_PAGES];
+    dirty = new boolean[MAX_PAGES];
+    count = 0; active = -1;
+  }
+
+  < Add a page with a tab title; returns the page index. The returned page's >
+  < content() is the container child widgets attach to. >
+  int addPage(String title) {
+    if (count >= MAX_PAGES) { return -1; }
+    SLButton tab = new SLButton();
+    tab.createIn(strip, title);
+    tab.setMargin(2, 6, 0, 6);
+    tab.setSizeRequest(84, 32);
+    tabs[count] = tab;
+
+    SLBox page = new SLBox();
+    page.vertical(stack, 0);
+    page.setExpand(true, true);
+    pages[count] = page;
+
+    titles[count] = title;
+    dirty[count] = false;
+
+    int idx = count;
+    count = count + 1;
+    < newly added page becomes active >
+    select(idx);
+    return idx;
+  }
+
+  < The content container for page `index` (attach children with createIn). >
+  SLWidget pageContent(int index) {
+    if (index < 0 || index >= count) { return null; }
+    return pages[index];
+  }
+
+  < Show page `index`, hide the rest, accent its tab. >
+  void select(int index) {
+    if (index < 0 || index >= count) { return; }
+    active = index;
+    for (int i = 0; i < count; i = i + 1) {
+      pages[i].setVisible(i == index);
+      tabs[i].setSuggested(i == index);
+    }
+  }
+
+  int activeIndex() { return active; }
+
+  < Browser-style convenience: activate the previous or next tab. >
+  void selectPrevious() {
+    if (count < 1) { return; }
+    int next = active - 1;
+    if (next < 0) { next = count - 1; }
+    select(next);
+  }
+  void selectNext() {
+    if (count < 1) { return; }
+    int next = active + 1;
+    if (next >= count) { next = 0; }
+    select(next);
+  }
+
+  < Poll the tab strip: if a tab was clicked since the last check, make it >
+  < active and return its index; otherwise return -1. >
+  int takeClickedTab() {
+    for (int i = 0; i < count; i = i + 1) {
+      if (tabs[i].clicked()) { select(i); return i; }
+    }
+    return -1;
+  }
+
+  < Mark a page dirty/clean; refreshes its tab label with a '*' suffix. >
+  void setDirty(int index, boolean isDirty) {
+    if (index < 0 || index >= count) { return; }
+    dirty[index] = isDirty;
+    tabs[index].setText(isDirty ? (titles[index] + " *") : titles[index]);
+  }
+  boolean isDirty(int index) {
+    return index >= 0 && index < count && dirty[index];
+  }
+
+  < Rename a tab (keeps the current dirty marker). >
+  void setTitle(int index, String title) {
+    if (index < 0 || index >= count) { return; }
+    titles[index] = title;
+    setDirty(index, dirty[index]);
+  }
+
+  int pageCount() { return count; }
+}
