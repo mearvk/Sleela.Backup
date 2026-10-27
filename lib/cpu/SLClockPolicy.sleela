@@ -1,0 +1,127 @@
+<< lib/cpu/SLClockPolicy.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLClockPolicy — how fast a Sleela CPU model runs. It
+     carries the CPU's own spec clock (its rated MHz), a base-clock × multiplier
+     decomposition (as real CPUs expose for overclocking), and a stability
+     ceiling. A model runs at its spec clock by default; a user may overclock it
+     by raising the multiplier or the base clock, up to the rated stability
+     limit — beyond which the policy reports it as unstable.
+   
+   The effective MHz feeds performance accounting (how many model cycles a
+   workload's instruction budget corresponds to) and the PERFECT.CONSEQUENCE
+   speed/feasibility model: overclocking raises effective throughput linearly
+   with the clock until the stability ceiling.
+   
+   Family: cpu. Composed by SLCPURuntime; refines SLClock. >>
+#sleela 2.1
+class SLClockPolicy {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10495;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-09";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < reference/base clock (e.g. FSB/BCLK), MHz >
+  int baseClockMHz;
+  < clock multiplier (effective = base × multiplier) >
+  int multiplier;
+  < the CPU's rated/spec frequency, MHz >
+  int specMHz;
+  < highest frequency the model treats as stable >
+  int maxStableMHz;
+  < 1 once pushed above spec >
+  int overclocked;
+  < 1 when effective exceeds maxStableMHz >
+  int unstable;
+
+  < Configure from a spec frequency. We factor it into a conventional >
+  < base × multiplier (100 MHz base is the common modern reference; small/old >
+  < parts fall back to a base of 1 so the spec is representable exactly). >
+  void configureSpec(int ratedMHz) {
+    specMHz = ratedMHz;
+    if (ratedMHz >= 100 && (ratedMHz % 100) == 0) { baseClockMHz = 100; }
+    else if (ratedMHz >= 100) { baseClockMHz = 100; }
+    else { baseClockMHz = 1; }
+    multiplier = ratedMHz / baseClockMHz;
+    if (multiplier < 1) { multiplier = 1; baseClockMHz = ratedMHz; }
+    < Default stability headroom: ~60% over spec (a generous enthusiast ceiling). >
+    maxStableMHz = specMHz + (specMHz * 6 / 10);
+    overclocked = 0; unstable = 0;
+    reassess();
+  }
+
+  < Set the stability ceiling explicitly (e.g. a model known to be a poor/strong >
+  < overclocker). Must be at least the spec clock. >
+  void setStabilityCeiling(int ceilingMHz) {
+    if (ceilingMHz >= specMHz) { maxStableMHz = ceilingMHz; }
+    reassess();
+  }
+
+  < Overclock by raising the multiplier (classic unlocked-multiplier OC). >
+  void setMultiplier(int m) { if (m >= 1) { multiplier = m; } reassess(); }
+  < Overclock by raising the base clock (BCLK/FSB OC). >
+  void setBaseClock(int mhz) { if (mhz >= 1) { baseClockMHz = mhz; } reassess(); }
+  < Overclock directly to a target effective frequency. >
+  void overclockTo(int targetMHz) {
+    if (targetMHz < 1) { return; }
+    if (baseClockMHz < 1) { baseClockMHz = 1; }
+    multiplier = targetMHz / baseClockMHz;
+    if (multiplier < 1) { multiplier = 1; baseClockMHz = targetMHz; }
+    reassess();
+  }
+  < Return to the rated spec clock. >
+  void resetToSpec() { configureSpec(specMHz); }
+
+  void reassess() {
+    int eff = effectiveMHz();
+    overclocked = (eff > specMHz) ? 1 : 0;
+    unstable = (eff > maxStableMHz) ? 1 : 0;
+  }
+
+  int effectiveMHz() { return baseClockMHz * multiplier; }
+  int rating()       { return specMHz; }
+  int base()         { return baseClockMHz; }
+  int mult()         { return multiplier; }
+  int ceiling()      { return maxStableMHz; }
+  boolean isOverclocked() { return overclocked == 1; }
+  boolean isStable()      { return unstable == 0; }
+
+  < Effective speed as a ratio of spec, ×1000 (integer; 1000 = at spec, 1600 = >
+  < +60%). Lets callers scale throughput without floating point. >
+  int speedRatioMilli() { if (specMHz <= 0) { return 1000; } return (effectiveMHz() * 1000) / specMHz; }
+}

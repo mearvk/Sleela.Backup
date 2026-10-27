@@ -1,17 +1,56 @@
-/*
- * lib/cpu/SLGuestTask.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLGuestTask — a unit of execution the GUEST kernel
- *   schedules (a guest thread / task control block). It is distinct from
- *   SLProcess (which the host OS schedules): this runs inside a guest VM, with
- *   its own guest entry point, saved guest-substrate instruction pointer, and
- *   run state. The guest scheduler (SLGuestScheduler) switches between these on
- *   each timer tick.
- *
- * Family: cpu. Pure Sleela guest OS data structure.
- */
-#sleela 1.3
+<< lib/cpu/SLGuestTask.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuestTask — a unit of execution the GUEST kernel
+     schedules (a guest thread / task control block). It is distinct from
+     SLProcess (which the host OS schedules): this runs inside a guest VM, with
+     its own guest entry point, saved guest-substrate instruction pointer, and
+     run state. The guest scheduler (SLGuestScheduler) switches between these on
+     each timer tick.
+   
+   Family: cpu. Pure Sleela guest OS data structure. >>
+#sleela 2.1
 class SLGuestTask {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10241;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-06";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   static final int READY   = 0;
   static final int RUNNING = 1;
   static final int BLOCKED = 2;
@@ -20,17 +59,23 @@ class SLGuestTask {
   int tid;
   String name;
   int state;
-  int entry;        // guest-code entry (opcode index)
-  int savedIP;      // saved substrate instruction pointer (resume point)
-  int ticks;        // timer quanta consumed
+  < guest-code entry (opcode index) >
+  int entry;
+  < saved substrate instruction pointer (resume point) >
+  int savedIP;
+  < timer quanta consumed >
+  int ticks;
 
-  // Process-relationship bookkeeping (fork/wait): the parent that fork()ed this
-  // task, the exit status it finished with, and whether a parent has already
-  // reaped it. These let the kernel model the Unix process tree, not just a flat
-  // set of threads.
-  int parentTid;    // tid of the task that fork()ed this one (0 = none / init-parented)
-  int exitStatus;   // status passed to exit() / left for the parent to wait() on
-  int reaped;       // 1 once a parent has collected this task via wait()
+  < Process-relationship bookkeeping (fork/wait): the parent that fork()ed this >
+  < task, the exit status it finished with, and whether a parent has already >
+  < reaped it. These let the kernel model the Unix process tree, not just a flat >
+  < set of threads. >
+  < tid of the task that fork()ed this one (0 = none / init-parented) >
+  int parentTid;
+  < status passed to exit() / left for the parent to wait() on >
+  int exitStatus;
+  < 1 once a parent has collected this task via wait() >
+  int reaped;
 
   void configure(int id, String taskName, int entryIndex) {
     tid = id; name = taskName; entry = entryIndex;
@@ -43,21 +88,21 @@ class SLGuestTask {
   void markBlocked() { state = BLOCKED; }
   void finish() { state = DONE; }
 
-  // finish() with an explicit exit status (the exit()/_exit() path): record the
-  // status the parent will see via wait(), then mark the task done (a zombie
-  // until reaped).
+  < finish() with an explicit exit status (the exit()/_exit() path): record the >
+  < status the parent will see via wait(), then mark the task done (a zombie >
+  < until reaped). >
   void exitWith(int status) { exitStatus = status; state = DONE; }
 
   void saveIP(int ip) { savedIP = ip; }
   int resumeIP() { return savedIP; }
   void chargeTick() { ticks = ticks + 1; }
 
-  // Parentage: who fork()ed this task.
+  < Parentage: who fork()ed this task. >
   void setParent(int ptid) { parentTid = ptid; }
   int parent() { return parentTid; }
 
-  // Zombie / reaping protocol: a DONE-but-unreaped task is a zombie its parent
-  // can still wait() on; reap() collects it so wait() returns each child once.
+  < Zombie / reaping protocol: a DONE-but-unreaped task is a zombie its parent >
+  < can still wait() on; reap() collects it so wait() returns each child once. >
   int status() { return exitStatus; }
   boolean zombie() { return state == DONE && reaped == 0; }
   void reap() { reaped = 1; }

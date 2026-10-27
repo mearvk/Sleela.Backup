@@ -129,7 +129,61 @@ typedef enum {
      * (mem, gc, ...) stay free for class/variable names. `ran::mem` reads the
      * current live system memory in bytes as an int. Appended at the end of the
      * enum so existing serialized-artifact opcode numbers are unchanged. */
-    OP_RAN_MEM        /* pushes current live system memory in bytes (int)           */
+    OP_RAN_MEM,       /* pushes current live system memory in bytes (int)           */
+    /* Idea System(TM) realtime canvas (idea/realtime). The native-CPU
+     * rendering + physics module the VM can drive where it lacks it natively.
+     * A canvas is a VM-local handle into a bounded table. Appended at the end
+     * so existing serialized-artifact opcode numbers are unchanged. */
+    OP_IC_CREATE,     /* pops rows,cols; pushes canvas handle (-1 on failure)        */
+    OP_IC_DESTROY,    /* pops handle; releases the canvas; pushes null               */
+    OP_IC_COLS,       /* pops handle; pushes columns int                             */
+    OP_IC_ROWS,       /* pops handle; pushes rows int                                */
+    OP_IC_COUNT,      /* pops handle; pushes vertex count int                        */
+    OP_IC_SETPARAMS,  /* pops coupling,hueBase,flowGain,decay,handle; pushes handle  */
+    OP_IC_EXCITE,     /* pops amount,row,col,handle; pushes status int               */
+    OP_IC_STEP,       /* pops dt,handle; advances one step on native CPU; status int */
+    OP_IC_ADVANCE,    /* pops frameDt,handle; drains fixed steps; pushes step count  */
+    OP_IC_TIMESTEP,   /* pushes the fixed timestep seconds (double)                  */
+    OP_IC_INTENSITY,  /* pops row,col,handle; pushes intensity double                */
+    OP_IC_HASREND,    /* pushes 1 if the GL render layer is present, else 0          */
+    OP_IC_OPENWIN,    /* pops title,height,width,handle; pushes status int           */
+    OP_IC_SHOULDCLOSE,/* pops handle; pushes 1/0                                     */
+    OP_IC_PRESENT,    /* pops handle; presents one frame; pushes status int          */
+    OP_IC_RUN,        /* pops title,height,width,handle; runs loop; pushes status int*/
+    /* Backend selection + auto GPU offload (CPU<->GPU). */
+    OP_IC_SETPOLICY,  /* pops policy,handle; pushes handle (0 auto,1 cpu,2 gpu)      */
+    OP_IC_POLICY,     /* pops handle; pushes current policy int                      */
+    OP_IC_BACKEND,    /* pops handle; pushes active backend int (0 cpu,1 gpu)        */
+    OP_IC_GPUAVAIL,   /* pushes 1 if a GPU backend is available, else 0              */
+    OP_IC_MEASHZ,     /* pops handle; pushes measured sustained steps/sec (double)   */
+    OP_IC_MIGRATE     /* pops target,handle; migrates CPU<->GPU; pushes status int   */
+    ,
+    OP_VM_SELECT      /* pops vmNumber; selects+boots a registered VM version; pushes status */
+    ,
+    OP_MODIUM_SCAN    /* pops vmNumber; scans that VM version's files for resolution; pushes status */
+    ,
+    /* SleelaUI bridge: a = ui* function id (see sleela_ui_ids.h). Pops that
+     * function's arguments (arity from sleela_ui_arity) left-to-right and
+     * pushes its result, routing to the SleelaUI C ABI (real host window). */
+    OP_UI_CALL
+    ,
+    /* Structural-offload send (the ::: operator). Pops a receiver reach handle
+     * and a String source; the VM performs a structured, element-by-element
+     * transfer of the source's data into the receiver (framing/iteration done
+     * here, not by a source for-loop), then pushes the receiver handle so a
+     * ::: chain stays fluent. Models OP_MUN_SEND but frames each element as its
+     * own datum via the Munction transport. */
+    OP_SSEND
+    ,
+    /* Runtime type safety for Any values. Operand a is a nonnegative VM
+     * struct-type index, or -(SLType+1) for a primitive/String/array tag. */
+    OP_CHECKCAST,     /* pops value; checked conversion; pushes the same value */
+    OP_INSTANCEOF     /* pops value; pushes bool for the requested runtime type */
+    ,
+    /* Sentinel: one past the last real opcode. Artifact validation uses this so
+     * every defined opcode is accepted and adding a new opcode above never
+     * requires updating the validator's upper bound again. KEEP LAST. */
+    OP__COUNT
 } SLOp;
 /* GC-hint aggressiveness bands for OP_GC_HINT (operand a). */
 #define SL_GC_HINT_MAX  100   /* clamp ceiling for the 0..100 aggressiveness scale */
@@ -189,6 +243,7 @@ int slvm_declare_global(SLVM* vm, const char* name);
  * used by OP_NEWSTRUCT / OP_STRUCTUNPACK, or -1 on error. Field order defines
  * the offsets used by OP_GETFIELD / OP_SETFIELD. */
 int slvm_declare_struct(SLVM* vm, const char* name, const char* const* field_names, int nfields);
+int slvm_set_struct_parent(SLVM* vm, int type_index, int parent_type_index);
 int slvm_begin_func(SLVM* vm, const char* name, int nargs, int nlocals);
 void slvm_end_func(SLVM* vm);
 int slvm_emit(SLVM* vm, SLOp op, int32_t a);
