@@ -5,10 +5,20 @@
 #include "slui_widget.hpp"
 
 #include "slui_backend.hpp"
+#include "nanojpeg.h"
+#ifdef SLUI_HAVE_LIBPNG
+#include <png.h>
+#endif
+#ifdef SLUI_HAVE_LIBAVIF
+#include <avif/avif.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
+#include <mutex>
 
 namespace slui {
 
@@ -50,6 +60,29 @@ double measure_text(Backend* backend, const std::string& utf8) {
     return w;
 }
 
+/* Coherent Dignity (collision avoidance): clip text cleanly to a pixel width
+ * with a trailing ellipsis when it overflows, rather than letting it spill its
+ * component envelope. UTF-8 aware; returns the original string when it fits. */
+std::string ellipsize(Backend* backend, const std::string& utf8, double max_w) {
+    if (!backend || max_w <= 0.0) return utf8;
+    if (measure_text(backend, utf8) <= max_w) return utf8;
+    const std::string ell = "\xE2\x80\xA6"; /* U+2026 HORIZONTAL ELLIPSIS */
+    double ell_w = measure_text(backend, ell);
+    if (ell_w > max_w) return ""; /* not even the ellipsis fits */
+    /* Accumulate scalars while head + ellipsis stays within max_w. */
+    std::string out;
+    double w = 0.0;
+    for (size_t i = 0; i < utf8.size();) {
+        size_t start = i;
+        uint32_t cp = next_scalar(utf8, i);
+        double adv = backend->glyph_advance(cp);
+        if (w + adv + ell_w > max_w) break;
+        out.append(utf8, start, i - start);
+        w += adv;
+    }
+    return out + ell;
+}
+
 void draw_text(PaintContext& ctx, const std::string& utf8, int x, int baseline,
                const Color& color) {
     if (!ctx.backend || !ctx.canvas) return;
@@ -75,11 +108,9 @@ bool Widget::on_event(const SLUIEvent& ev) {
     for (auto it = children_.rbegin(); it != children_.rend(); ++it) {
         Widget* c = it->get();
         if (!c->visible_) continue;
-        if (positional && !c->bounds_.contains(ev.x, ev.y)) {
-            if (c->hovered_ && ev.type == SLUI_EVENT_POINTER_MOVE) {
-                c->hovered_ = false;
-                c->invalidate();
-            }
+        if (positional && !c->bounds_.contains(ev.x, ev.y) &&
+            !(ev.type == SLUI_EVENT_POINTER_UP && c->has_pressed_descendant())) {
+            if (ev.type == SLUI_EVENT_POINTER_MOVE) c->pointer_moved_outside();
             continue;
         }
         if (c->on_event(ev)) return true;
@@ -123,76 +154,112 @@ void Box::arrange(const PaintContext& ctx, const Rect& area) {
     bounds_ = area;
     Rect box = content();
 
-    /* First pass: natural sizes and count expanders along the main axis. */
+    /* Measure natural sizes, then fit every visible child into the parent's
+     * available main-axis extent. Natural measurements are preferences, not
+     * permission to allocate beyond the parent's frame. */
     std::vector<SLUISize> nat;
     std::vector<Widget*> vis;
-    int natural_main = 0, expanders = 0, count = 0;
+    int natural_main = 0, expanders = 0;
     for (auto& c : children_) {
         if (!c->visible()) continue;
         SLUISize cs = c->measure(ctx);
         nat.push_back(cs);
         vis.push_back(c.get());
-        bool exp = (orient_ == SLUI_ORIENT_HORIZONTAL) ? c->hexpand() : c->vexpand();
-        natural_main += (orient_ == SLUI_ORIENT_HORIZONTAL) ? cs.w : cs.h;
+        const int child_main = orient_ == SLUI_ORIENT_HORIZONTAL ? cs.w : cs.h;
+        natural_main += std::max(0, child_main);
+        const bool exp = orient_ == SLUI_ORIENT_HORIZONTAL ? c->hexpand() : c->vexpand();
         if (exp) ++expanders;
-        ++count;
     }
+    const int count = static_cast<int>(vis.size());
     if (count == 0) return;
 
-    int avail_main = (orient_ == SLUI_ORIENT_HORIZONTAL) ? box.w : box.h;
-    int spacing_total = spacing_ * (count - 1);
-    int extra = avail_main - natural_main - spacing_total;
-    int per_expander = (expanders > 0 && extra > 0) ? extra / expanders : 0;
-    int remainder = (expanders > 0 && extra > 0) ? extra % expanders : 0;
+    const int avail_main = std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? box.w : box.h);
+    /* If the requested gaps themselves cannot fit, reduce them before sizing
+     * children. This keeps every assigned rectangle inside the parent. */
+    const int requested_spacing = std::max(0, spacing_);
+    const int effective_spacing = count > 1
+        ? std::min(requested_spacing, avail_main / (count - 1)) : 0;
+    const int spacing_total = effective_spacing * (count - 1);
+    const int content_main = std::max(0, avail_main - spacing_total);
 
-    int pos = (orient_ == SLUI_ORIENT_HORIZONTAL) ? box.x : box.y;
-    for (size_t i = 0; i < vis.size(); ++i) {
-        Widget* c = vis[i];
-        SLUISize cs = nat[i];
-        bool exp = (orient_ == SLUI_ORIENT_HORIZONTAL) ? c->hexpand() : c->vexpand();
-        int main_size = (orient_ == SLUI_ORIENT_HORIZONTAL) ? cs.w : cs.h;
-        if (exp && extra > 0) {
-            main_size += per_expander;
-            if (remainder > 0) {
-                main_size += 1;
+    std::vector<int> main_sizes(static_cast<size_t>(count), 0);
+    int assigned_main = 0;
+    if (natural_main > content_main && natural_main > 0) {
+        /* Compress proportionally when natural content cannot fit. Distribute
+         * rounding pixels deterministically without exceeding the parent. */
+        for (int i = 0; i < count; ++i) {
+            const int natural = std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? nat[i].w : nat[i].h);
+            main_sizes[static_cast<size_t>(i)] =
+                static_cast<int>((static_cast<long long>(natural) * content_main) / natural_main);
+            assigned_main += main_sizes[static_cast<size_t>(i)];
+        }
+        int remainder = content_main - assigned_main;
+        for (int i = 0; i < count && remainder > 0; ++i) {
+            const int natural = std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? nat[i].w : nat[i].h);
+            if (natural > 0) {
+                ++main_sizes[static_cast<size_t>(i)];
                 --remainder;
             }
         }
-        Rect cell;
-        if (orient_ == SLUI_ORIENT_HORIZONTAL) {
-            cell = Rect{pos, box.y, main_size, box.h};
-        } else {
-            cell = Rect{box.x, pos, box.w, main_size};
+    } else {
+        for (int i = 0; i < count; ++i)
+            main_sizes[static_cast<size_t>(i)] =
+                std::max(0, orient_ == SLUI_ORIENT_HORIZONTAL ? nat[i].w : nat[i].h);
+        int extra = content_main - natural_main;
+        if (expanders > 0 && extra > 0) {
+            const int per_expander = extra / expanders;
+            int remainder = extra % expanders;
+            for (int i = 0; i < count; ++i) {
+                Widget* child = vis[static_cast<size_t>(i)];
+                const bool exp = orient_ == SLUI_ORIENT_HORIZONTAL ? child->hexpand() : child->vexpand();
+                if (!exp) continue;
+                main_sizes[static_cast<size_t>(i)] += per_expander;
+                if (remainder > 0) {
+                    ++main_sizes[static_cast<size_t>(i)];
+                    --remainder;
+                }
+            }
         }
-        /* Cross-axis alignment: shrink the cell to the child's natural cross
-         * size unless the child fills, then offset for start/center/end. */
+    }
+
+    int pos = orient_ == SLUI_ORIENT_HORIZONTAL ? box.x : box.y;
+    for (int i = 0; i < count; ++i) {
+        Widget* child = vis[static_cast<size_t>(i)];
+        const SLUISize cs = nat[static_cast<size_t>(i)];
+        const int main_size = main_sizes[static_cast<size_t>(i)];
+        Rect cell = orient_ == SLUI_ORIENT_HORIZONTAL
+            ? Rect{pos, box.y, main_size, std::max(0, box.h)}
+            : Rect{box.x, pos, std::max(0, box.w), main_size};
+
+        /* Cross-axis alignment can reduce a child, never enlarge it past the
+         * allocated cell. If its natural size is too large, the cell wins. */
         Rect placed = cell;
         if (orient_ == SLUI_ORIENT_HORIZONTAL) {
-            SLUIAlign va = c->valign();
+            const SLUIAlign va = child->valign();
             if (va != SLUI_ALIGN_FILL && cs.h < cell.h) {
-                placed.h = cs.h;
-                if (va == SLUI_ALIGN_CENTER)
-                    placed.y = cell.y + (cell.h - cs.h) / 2;
-                else if (va == SLUI_ALIGN_END)
-                    placed.y = cell.bottom() - cs.h;
+                placed.h = std::max(0, cs.h);
+                if (va == SLUI_ALIGN_CENTER) placed.y = cell.y + (cell.h - placed.h) / 2;
+                else if (va == SLUI_ALIGN_END) placed.y = cell.bottom() - placed.h;
             }
         } else {
-            SLUIAlign ha = c->halign();
+            const SLUIAlign ha = child->halign();
             if (ha != SLUI_ALIGN_FILL && cs.w < cell.w) {
-                placed.w = cs.w;
-                if (ha == SLUI_ALIGN_CENTER)
-                    placed.x = cell.x + (cell.w - cs.w) / 2;
-                else if (ha == SLUI_ALIGN_END)
-                    placed.x = cell.right() - cs.w;
+                placed.w = std::max(0, cs.w);
+                if (ha == SLUI_ALIGN_CENTER) placed.x = cell.x + (cell.w - placed.w) / 2;
+                else if (ha == SLUI_ALIGN_END) placed.x = cell.right() - placed.w;
             }
         }
-        c->arrange(ctx, placed);
-        pos += main_size + spacing_;
+        child->arrange(ctx, placed);
+        pos += main_size + effective_spacing;
     }
 }
 
 void Box::paint(PaintContext& ctx) {
+    // A container is a hard paint boundary: descendants may measure naturally,
+    // but their pixels must never escape the allocated parent rectangle.
+    if (ctx.canvas) ctx.canvas->push_clip(bounds_);
     paint_children(ctx);
+    if (ctx.canvas) ctx.canvas->pop_clip();
 }
 
 void HeaderBar::paint(PaintContext& ctx) {
@@ -201,7 +268,10 @@ void HeaderBar::paint(PaintContext& ctx) {
     ctx.canvas->fill_rect(b, t.chrome);
     /* 1px bottom hairline -- the quiet frame edge. */
     ctx.canvas->hline(b.x, b.right() - 1, b.bottom() - 1, t.border);
+    // Header-bar children obey the same hard boundary as ordinary boxes.
+    ctx.canvas->push_clip(b);
     paint_children(ctx);
+    ctx.canvas->pop_clip();
 }
 
 /* ======================================================================== */
@@ -224,22 +294,185 @@ void Label::paint(PaintContext& ctx) {
     double lh = ctx.backend->font_line_height();
     int baseline = c.y + static_cast<int>((c.h - lh) / 2.0 + asc + 0.5);
     Color col = sensitive_ ? t.fg : t.fg_dim;
-    double tw = measure_text(ctx.backend, text_);
+    /* Collision avoidance: if the label text is wider than its content box,
+     * truncate it cleanly with an ellipsis instead of overrunning the envelope
+     * (the ancestor clip hides the rest, but a clean ellipsis is the dignified
+     * form). Measurement/placement then use the possibly-shortened string. */
+    std::string shown = ellipsize(ctx.backend, text_, static_cast<double>(c.w));
+    double tw = measure_text(ctx.backend, shown);
     int tx = c.x;
     if (halign_ == SLUI_ALIGN_CENTER) tx = c.x + static_cast<int>((c.w - tw) / 2.0);
     else if (halign_ == SLUI_ALIGN_END) tx = c.right() - static_cast<int>(tw);
-    draw_text_styled(ctx, styled_font_, text_, tx, baseline, col);
+    draw_text_styled(ctx, styled_font_, shown, tx, baseline, col);
 }
 
 /* ======================================================================== */
 /* Button                                                                   */
 /* ======================================================================== */
+namespace {
+std::mutex g_nanojpeg_mutex;
+
+/* Decode a baseline JPEG to packed RGB. NanoJPEG has global state, so its
+ * init/decode/copy/cleanup sequence is serialized. */
+bool load_button_jpeg(const std::string& path,
+                      std::vector<unsigned char>& rgb, int& width, int& height) {
+    if (path.empty()) return false;
+    std::ifstream file(path.c_str(), std::ios::binary);
+    if (!file) return false;
+    file.seekg(0, std::ios::end);
+    const std::streamoff length = file.tellg();
+    if (length <= 0 || length > 16 * 1024 * 1024) return false;
+    file.seekg(0, std::ios::beg);
+    std::vector<unsigned char> encoded(static_cast<size_t>(length));
+    file.read(reinterpret_cast<char*>(encoded.data()),
+              static_cast<std::streamsize>(encoded.size()));
+    if (!file) return false;
+
+    std::lock_guard<std::mutex> lock(g_nanojpeg_mutex);
+    njInit();
+    const nj_result_t status = njDecode(encoded.data(),
+                                        static_cast<int>(encoded.size()));
+    bool loaded = false;
+    if (status == NJ_OK) {
+        const int w = njGetWidth();
+        const int h = njGetHeight();
+        const int precision = njGetPrecision();
+        const bool color = njIsColor() != 0;
+        const size_t pixel_count = (w > 0 && h > 0)
+            ? static_cast<size_t>(w) * static_cast<size_t>(h) : 0;
+        const size_t channels = color ? 3u : 1u;
+        const unsigned char* source = njGetImage();
+        const int byte_count = njGetImageSize();
+        if (source && w > 0 && h > 0 && w <= 2048 && h <= 2048 &&
+            pixel_count <= 4u * 1024u * 1024u && precision == 8 &&
+            byte_count >= 0 &&
+            static_cast<size_t>(byte_count) == pixel_count * channels) {
+            rgb.resize(pixel_count * 3u);
+            if (color) {
+                std::copy(source, source + pixel_count * 3u, rgb.begin());
+            } else {
+                for (size_t i = 0; i < pixel_count; ++i) {
+                    rgb[i * 3u] = source[i];
+                    rgb[i * 3u + 1u] = source[i];
+                    rgb[i * 3u + 2u] = source[i];
+                }
+            }
+            width = w;
+            height = h;
+            loaded = true;
+        }
+    }
+    njDone();
+    return loaded;
+}
+
+#ifdef SLUI_HAVE_LIBPNG
+bool load_button_png(const std::string& path, std::vector<unsigned char>& rgb, int& width, int& height) {
+    png_image image{}; image.version = PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_file(&image, path.c_str())) return false;
+    if (!image.width || !image.height || image.width > 2048 || image.height > 2048 ||
+        static_cast<size_t>(image.width) * image.height > 4u * 1024u * 1024u) { png_image_free(&image); return false; }
+    image.format = PNG_FORMAT_RGB; rgb.resize(PNG_IMAGE_SIZE(image));
+    if (!png_image_finish_read(&image, nullptr, rgb.data(), 0, nullptr)) { rgb.clear(); png_image_free(&image); return false; }
+    width = static_cast<int>(image.width); height = static_cast<int>(image.height); png_image_free(&image); return true;
+}
+#endif
+#ifdef SLUI_HAVE_LIBAVIF
+bool load_button_avif(const std::string& path, std::vector<unsigned char>& rgb, int& width, int& height) {
+    avifDecoder* decoder = avifDecoderCreate(); if (!decoder) return false;
+    avifResult result = avifDecoderSetIOFile(decoder, path.c_str());
+    if (result == AVIF_RESULT_OK) result = avifDecoderParse(decoder);
+    if (result == AVIF_RESULT_OK) result = avifDecoderNextImage(decoder);
+    bool loaded = false;
+    if (result == AVIF_RESULT_OK && decoder->image && decoder->image->width && decoder->image->height &&
+        decoder->image->width <= 2048 && decoder->image->height <= 2048 &&
+        static_cast<size_t>(decoder->image->width) * decoder->image->height <= 4u * 1024u * 1024u) {
+        avifRGBImage image; avifRGBImageSetDefaults(&image, decoder->image);
+        image.format = AVIF_RGB_FORMAT_RGB; image.depth = 8; avifRGBImageAllocatePixels(&image);
+        if (image.pixels && avifImageYUVToRGB(decoder->image, &image) == AVIF_RESULT_OK) {
+            const size_t bytes = static_cast<size_t>(image.width) * image.height * 3u;
+            rgb.assign(image.pixels, image.pixels + bytes); width = static_cast<int>(image.width);
+            height = static_cast<int>(image.height); loaded = true;
+        }
+        avifRGBImageFreePixels(&image);
+    }
+    avifDecoderDestroy(decoder); return loaded;
+}
+#endif
+bool load_button_image(const std::string& path, std::vector<unsigned char>& rgb, int& width, int& height) {
+    if (path.empty()) return false;
+    const size_t dot = path.find_last_of('.');
+    std::string ext = dot == std::string::npos ? "" : path.substr(dot + 1);
+    for (char& ch : ext) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+#ifdef SLUI_HAVE_LIBPNG
+    if (ext == "png" && load_button_png(path, rgb, width, height)) return true;
+#endif
+#ifdef SLUI_HAVE_LIBAVIF
+    if ((ext == "avif" || ext == "avifs") && load_button_avif(path, rgb, width, height)) return true;
+#endif
+    if (ext == "jpg" || ext == "jpeg" || ext.empty()) return load_button_jpeg(path, rgb, width, height);
+    return false;
+}
+
+bool has_button_icon(const std::vector<unsigned char>& pixels,
+                     const std::string& symbol) {
+    return !pixels.empty() || !symbol.empty();
+}
+
+/* Portable vector fallback for named symbols when the JPEG is unavailable. */
+void paint_button_symbol(PaintContext& ctx, const Rect& r,
+                         const std::string& symbol, const Color& color) {
+    std::string normalized = symbol;
+    for (char& ch : normalized)
+        if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+
+    if (normalized == "wifi" || normalized == "wi-fi" ||
+        normalized == "wireless" || normalized == "network" ||
+        normalized == "wlan") {
+        const double cx = r.x + r.w / 2.0;
+        const double cy = r.bottom() - 3.0;
+        const double pi = 3.14159265358979323846;
+        ctx.canvas->arc(cx, cy, std::min(7.2, r.w * 0.43), pi, pi, 1.7, color);
+        ctx.canvas->arc(cx, cy, std::min(4.8, r.w * 0.29), pi, pi, 1.7, color);
+        ctx.canvas->arc(cx, cy, std::min(2.4, r.w * 0.15), pi, pi, 1.5, color);
+        ctx.canvas->fill_circle(cx, cy, 1.5, color);
+        return;
+    }
+
+    const std::string glyph = symbol.empty() ? "?" : symbol.substr(0, 1);
+    const double tw = measure_text(ctx.backend, glyph);
+    const double asc = ctx.backend->font_ascent();
+    const double line_height = ctx.backend->font_line_height();
+    const int baseline = r.y +
+        static_cast<int>((r.h - line_height) / 2.0 + asc + 0.5);
+    draw_text(ctx, glyph,
+              r.x + static_cast<int>((r.w - tw) / 2.0 + 0.5),
+              baseline, color);
+}
+} // namespace
+
+void Button::set_icon(const std::string& asset_path,
+                      const std::string& symbol_name) {
+    icon_asset_path_ = asset_path;
+    icon_symbol_ = symbol_name;
+    icon_rgb_.clear();
+    icon_width_ = 0;
+    icon_height_ = 0;
+    if (!icon_asset_path_.empty())
+        load_button_image(icon_asset_path_, icon_rgb_, icon_width_, icon_height_);
+    invalidate();
+}
+
 SLUISize Button::measure(const PaintContext& ctx) {
-    double tw = measure_text(ctx.backend, text_);
+    const double tw = measure_text(ctx.backend, text_);
     const Theme& t = *ctx.theme;
-    int pad_x = t.unit * 4; /* 16px horizontal padding */
-    int w = static_cast<int>(tw + 0.5) + pad_x * 2 + margin_.left + margin_.right;
-    int h = t.control_height + margin_.top + margin_.bottom;
+    const bool icon = has_button_icon(icon_rgb_, icon_symbol_);
+    const int icon_gap = icon && !text_.empty() ? t.unit * 2 : 0;
+    const int icon_width = icon ? 18 + icon_gap : 0;
+    const int pad_x = t.unit * 4;
+    const int w = static_cast<int>(tw + 0.5) + icon_width + pad_x * 2 +
+                  margin_.left + margin_.right;
+    const int h = t.control_height + margin_.top + margin_.bottom;
     return SLUISize{std::max(w, min_w_), std::max(h, min_h_)};
 }
 
@@ -255,8 +488,6 @@ void Button::paint(PaintContext& ctx) {
         text_col = t.fg_dim;
     }
 
-    /* Draw base, then layer the small hover/active tint (restraint over
-     * effects: a single background-opacity step, no glows). */
     ctx.canvas->fill_round_rect(c, t.radius, fill);
     if (vis == Visual::Hover) {
         Color tint = destructive_ ? t.danger.with_alpha(0x24) : t.hover;
@@ -267,19 +498,58 @@ void Button::paint(PaintContext& ctx) {
     if (!suggested_)
         ctx.canvas->stroke_round_rect(c, t.radius, 1.0, t.border);
 
-    /* Focus ring: accent hairline just outside the fill. */
     if (focused_ && vis != Visual::Disabled) {
         Rect ring = c.inset(-1);
         ctx.canvas->stroke_round_rect(ring, t.radius + 1, 1.0, t.accent);
     }
 
-    double asc = ctx.backend->font_ascent();
-    double lh = ctx.backend->font_line_height();
-    double tw = measure_text(ctx.backend, text_);
-    int tx = c.x + static_cast<int>((c.w - tw) / 2.0 + 0.5);
-    int baseline = c.y + static_cast<int>((c.h - lh) / 2.0 + asc + 0.5);
-    if (destructive_ && vis != Visual::Disabled && !suggested_) text_col = t.danger;
-    draw_text(ctx, text_, tx, baseline, text_col);
+    const bool icon = has_button_icon(icon_rgb_, icon_symbol_);
+    const int icon_size = std::min(18, std::max(8, c.h - 8));
+    const double tw = measure_text(ctx.backend, text_);
+    const int gap = icon && !text_.empty() ? t.unit * 2 : 0;
+    const double group_width = tw + (icon ? icon_size + gap : 0);
+    const int group_x = c.x + static_cast<int>((c.w - group_width) / 2.0 + 0.5);
+    int text_x = group_x;
+
+    if (icon) {
+        Rect icon_rect{group_x, c.y + (c.h - icon_size) / 2,
+                       icon_size, icon_size};
+        if (!icon_rgb_.empty() && icon_width_ > 0 && icon_height_ > 0) {
+            const double scale = std::min(
+                static_cast<double>(icon_size) / icon_width_,
+                static_cast<double>(icon_size) / icon_height_);
+            const int dw = std::max(1, static_cast<int>(icon_width_ * scale + 0.5));
+            const int dh = std::max(1, static_cast<int>(icon_height_ * scale + 0.5));
+            const int dx = icon_rect.x + (icon_rect.w - dw) / 2;
+            const int dy = icon_rect.y + (icon_rect.h - dh) / 2;
+            for (int y = 0; y < dh; ++y) {
+                const int sy = std::min(icon_height_ - 1,
+                    static_cast<int>((static_cast<long long>(y) * icon_height_) / dh));
+                for (int x = 0; x < dw; ++x) {
+                    const int sx = std::min(icon_width_ - 1,
+                        static_cast<int>((static_cast<long long>(x) * icon_width_) / dw));
+                    const size_t p = (static_cast<size_t>(sy) * icon_width_ + sx) * 3u;
+                    ctx.canvas->blend(dx + x, dy + y,
+                        Color{icon_rgb_[p], icon_rgb_[p + 1u],
+                              icon_rgb_[p + 2u], 255}, 1.0);
+                }
+            }
+        } else {
+            paint_button_symbol(ctx, icon_rect, icon_symbol_, text_col);
+        }
+        text_x += icon_size + gap;
+    }
+
+    if (!text_.empty()) {
+        const double asc = ctx.backend->font_ascent();
+        const double lh = ctx.backend->font_line_height();
+        const int baseline = c.y + static_cast<int>((c.h - lh) / 2.0 + asc + 0.5);
+        if (!icon)
+            text_x = c.x + static_cast<int>((c.w - tw) / 2.0 + 0.5);
+        if (destructive_ && vis != Visual::Disabled && !suggested_)
+            text_col = t.danger;
+        draw_text(ctx, text_, text_x, baseline, text_col);
+    }
 }
 
 bool Button::on_event(const SLUIEvent& ev) {
@@ -288,17 +558,20 @@ bool Button::on_event(const SLUIEvent& ev) {
     case SLUI_EVENT_POINTER_MOVE:
         if (!hovered_) {
             hovered_ = true;
+            hover_enter_event_ = true;
             invalidate();
         }
         return true;
     case SLUI_EVENT_POINTER_DOWN:
         pressed_ = true;
+        press_event_ = true;
         set_focused(true);
         invalidate();
         return true;
     case SLUI_EVENT_POINTER_UP:
         if (pressed_) {
             pressed_ = false;
+            release_event_ = true;
             invalidate();
             if (bounds_.contains(ev.x, ev.y)) emit_activate();
         }
@@ -901,7 +1174,11 @@ void Frame::paint(PaintContext& ctx) {
         int baseline = c.y + static_cast<int>(ctx.backend->font_ascent()) + t.unit;
         draw_text(ctx, title_, c.x + t.unit * 3, baseline, t.fg_dim);
     }
+    /* A frame is a hard paint boundary: clip children to the framed content box
+     * so interior components never draw past the frame's border/margins. */
+    if (ctx.canvas) ctx.canvas->push_clip(c);
     paint_children(ctx);
+    if (ctx.canvas) ctx.canvas->pop_clip();
 }
 
 /* ======================================================================== */
@@ -940,7 +1217,11 @@ void Card::paint(PaintContext& ctx) {
     Rect c = content();
     ctx.canvas->fill_round_rect(c, t.radius, t.surface);
     ctx.canvas->stroke_round_rect(c, t.radius, 1.0, t.border);
+    /* A card is a hard paint boundary: clip children to the card's content box
+     * so interior components can never spill past the rounded border/margins. */
+    if (ctx.canvas) ctx.canvas->push_clip(c);
     paint_children(ctx);
+    if (ctx.canvas) ctx.canvas->pop_clip();
 }
 
 /* ======================================================================== */
@@ -1246,6 +1527,210 @@ bool ScrollBar::on_event(const SLUIEvent& ev) {
     default:
         return false;
     }
+}
+
+/* ======================================================================== */
+/* ScrolledView                                                             */
+/* ======================================================================== */
+ScrolledView::ScrolledView(int policy_h, int policy_v)
+    : Widget(WidgetKind::ScrolledView),
+      policy_h_(policy_h), policy_v_(policy_v) {
+    /* Own two scroll bars. They live in children_ (so they paint and route
+     * events like any child) but are NOT the scroll content. Each bar drives
+     * the matching content offset through its value_changed handler. */
+    auto v = std::make_unique<ScrollBar>(SLUI_ORIENT_VERTICAL, 0.0, 1.0);
+    vbar_ = v.get();
+    add_child(std::move(v));
+    auto h = std::make_unique<ScrollBar>(SLUI_ORIENT_HORIZONTAL, 0.0, 1.0);
+    hbar_ = h.get();
+    add_child(std::move(h));
+
+    vbar_->on_value_changed(
+        [](SLUIWidget*, double val, void* u) {
+            auto* self = static_cast<ScrolledView*>(u);
+            self->set_scroll_y(
+                static_cast<int>(val * self->max_offset_y() + 0.5));
+        },
+        this);
+    hbar_->on_value_changed(
+        [](SLUIWidget*, double val, void* u) {
+            auto* self = static_cast<ScrolledView*>(u);
+            self->set_scroll_x(
+                static_cast<int>(val * self->max_offset_x() + 0.5));
+        },
+        this);
+}
+
+Widget* ScrolledView::content_child() const {
+    for (auto& c : children_) {
+        if (c.get() == vbar_ || c.get() == hbar_) continue;
+        return c.get();
+    }
+    return nullptr;
+}
+
+bool ScrolledView::bar_visible_x() const {
+    if (policy_h_ == SCROLL_NEVER) return false;
+    if (policy_h_ == SCROLL_ALWAYS) return true;
+    return overflow_x();
+}
+bool ScrolledView::bar_visible_y() const {
+    if (policy_v_ == SCROLL_NEVER) return false;
+    if (policy_v_ == SCROLL_ALWAYS) return true;
+    return overflow_y();
+}
+
+void ScrolledView::set_scroll_x(int px) {
+    int mx = max_offset_x();
+    offset_x_ = std::clamp(px, 0, mx);
+    invalidate();
+}
+void ScrolledView::set_scroll_y(int px) {
+    int my = max_offset_y();
+    offset_y_ = std::clamp(px, 0, my);
+    invalidate();
+}
+
+SLUISize ScrolledView::measure(const PaintContext& ctx) {
+    /* A viewport reports the size it wants to OCCUPY, which is intentionally
+     * decoupled from its content's (possibly larger) size -- reporting the
+     * content size here is exactly what would make the viewport overflow its
+     * own parent, defeating the point. So:
+     *   - a pinned axis (uiWidgetSizeRequest) reports that fixed size;
+     *   - an un-pinned axis reports a MODEST default viewport, capped so it is
+     *     never larger than a sane window region, and never the full content.
+     * Set hexpand/vexpand (uiWidgetExpand) to have the parent grow the viewport
+     * to fill the available space; the content then scrolls inside whatever the
+     * parent allocates. The parent box still decides the final allocation. */
+    SLUISize cs{0, 0};
+    if (Widget* c = content_child()) cs = c->measure(ctx);
+    /* Default viewport extents: large enough to be useful, small enough to fit
+     * inside a typical window so the view does not push its parent wider/taller
+     * than the screen. Content beyond these scrolls. */
+    const int kDefaultViewW = 320;
+    const int kDefaultViewH = 240;
+    int wantW = (min_w_ > 0) ? min_w_ : std::min(cs.w, kDefaultViewW);
+    int wantH = (min_h_ > 0) ? min_h_ : std::min(cs.h, kDefaultViewH);
+    SLUISize s;
+    s.w = wantW + margin_.left + margin_.right;
+    s.h = wantH + margin_.top + margin_.bottom;
+    return s;
+}
+
+void ScrolledView::arrange(const PaintContext& ctx, const Rect& area) {
+    bounds_ = area;
+    Rect box = content();           /* viewport minus this widget's margin */
+    const Theme& t = *ctx.theme;
+    int gutter = t.unit * 3;         /* matches ScrollBar::measure thickness */
+
+    Widget* child = content_child();
+    SLUISize cs{0, 0};
+    if (child) cs = child->measure(ctx);
+    content_w_ = cs.w;
+    content_h_ = cs.h;
+
+    /* Decide bar visibility. Reserving a gutter for one bar reduces the other
+     * axis' viewport, which can itself trigger overflow; resolve in two passes
+     * so a corner case (content just fits until a gutter appears) settles. */
+    bool showV = false, showH = false;
+    for (int pass = 0; pass < 2; ++pass) {
+        int vw = box.w - (showV ? gutter : 0);
+        int vh = box.h - (showH ? gutter : 0);
+        bool ofx = content_w_ > vw;
+        bool ofy = content_h_ > vh;
+        showV = (policy_v_ == SCROLL_ALWAYS) ||
+                (policy_v_ == SCROLL_AUTO && ofy);
+        showH = (policy_h_ == SCROLL_ALWAYS) ||
+                (policy_h_ == SCROLL_AUTO && ofx);
+    }
+
+    view_w_ = box.w - (showV ? gutter : 0);
+    view_h_ = box.h - (showH ? gutter : 0);
+    if (view_w_ < 0) view_w_ = 0;
+    if (view_h_ < 0) view_h_ = 0;
+
+    /* Re-clamp the offsets to the (possibly new) max and place the content at
+     * the negative offset so scrolling reveals material below/right. */
+    offset_x_ = std::clamp(offset_x_, 0, max_offset_x());
+    offset_y_ = std::clamp(offset_y_, 0, max_offset_y());
+
+    if (child) {
+        int cw = std::max(content_w_, view_w_);   /* fill the viewport if smaller */
+        int ch = std::max(content_h_, view_h_);
+        Rect placed{box.x - offset_x_, box.y - offset_y_, cw, ch};
+        child->arrange(ctx, placed);
+    }
+
+    /* Place the bars in their gutters along the inner edges. */
+    vbar_->set_visible(showV);
+    hbar_->set_visible(showH);
+    if (showV) {
+        vbar_->arrange(ctx, Rect{box.right() - gutter, box.y, gutter, view_h_});
+    }
+    if (showH) {
+        hbar_->arrange(ctx, Rect{box.x, box.bottom() - gutter, view_w_, gutter});
+    }
+    sync_bars();
+}
+
+void ScrolledView::sync_bars() {
+    /* page = fraction of content visible (thumb size); value = offset fraction. */
+    if (content_h_ > 0) {
+        double page = std::clamp(view_h_ / static_cast<double>(content_h_), 0.05, 1.0);
+        double val = max_offset_y() > 0
+                         ? offset_y_ / static_cast<double>(max_offset_y())
+                         : 0.0;
+        vbar_->set_page(page);
+        vbar_->set_value_silent(val);
+    }
+    if (content_w_ > 0) {
+        double page = std::clamp(view_w_ / static_cast<double>(content_w_), 0.05, 1.0);
+        double val = max_offset_x() > 0
+                         ? offset_x_ / static_cast<double>(max_offset_x())
+                         : 0.0;
+        hbar_->set_page(page);
+        hbar_->set_value_silent(val);
+    }
+}
+
+void ScrolledView::paint(PaintContext& ctx) {
+    Rect box = content();
+    /* Clip the content to the viewport (minus any reserved gutters) so the
+     * overflow is hidden rather than spilling past the frame. */
+    ctx.canvas->push_clip(Rect{box.x, box.y, view_w_, view_h_});
+    if (Widget* child = content_child()) {
+        if (child->visible()) child->paint(ctx);
+    }
+    ctx.canvas->pop_clip();
+    /* The bars paint unclipped in their gutters. */
+    if (vbar_->visible()) vbar_->paint(ctx);
+    if (hbar_->visible()) hbar_->paint(ctx);
+}
+
+bool ScrolledView::on_event(const SLUIEvent& ev) {
+    /* Give the scroll bars first refusal (they sit in the gutters), then route
+     * positional events into the clipped content with the scroll offset applied
+     * so hit-testing matches what the user sees. */
+    bool positional = ev.type == SLUI_EVENT_POINTER_DOWN ||
+                      ev.type == SLUI_EVENT_POINTER_UP ||
+                      ev.type == SLUI_EVENT_POINTER_MOVE;
+    if (vbar_->visible() && (!positional || vbar_->bounds().contains(ev.x, ev.y))) {
+        if (vbar_->on_event(ev)) return true;
+    }
+    if (hbar_->visible() && (!positional || hbar_->bounds().contains(ev.x, ev.y))) {
+        if (hbar_->on_event(ev)) return true;
+    }
+    Widget* child = content_child();
+    if (child && child->visible()) {
+        if (positional) {
+            Rect box = content();
+            /* Only deliver pointer events that fall inside the visible viewport. */
+            if (!Rect{box.x, box.y, view_w_, view_h_}.contains(ev.x, ev.y))
+                return false;
+        }
+        return child->on_event(ev);
+    }
+    return false;
 }
 
 /* ======================================================================== */

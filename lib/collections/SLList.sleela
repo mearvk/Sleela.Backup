@@ -1,11 +1,96 @@
-/*
- * lib/collections/SLList.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines the SLeeLa standard-library type SLList used within the collections library family.
- */
-#sleela 1.3
-// Unified SLeeLa standard-library front-end object.
-// Family: collections. Native VM/OS work crosses an explicit bridge.
+<< lib/collections/SLList.sleela
+   SLeeLa Standard Library Definition.
+   Definition: A concrete, string-valued list with stable order and bounded
+   index behavior. This first implementation deliberately avoids Generics. >>
+#sleela 2.1
+< Unified SLeeLa standard-library front-end object. >
+< Family: collections. Native VM/OS work crosses an explicit bridge. >
 class SLList {
-  int size; void add(){size=size+1;} void remove(){if(size>0)size=size-1;} int length(){return size;} boolean empty(){return size==0;}
+  < ---- Descriptive metadata ---- >
+  String metaVersion = "1.1.0";
+  int metaId = 532;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-27";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-09-28";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  String metaNationalSchedule = "none";
+
+  < Backing storage uses the VM-managed, growable String array.
+    size is the logical count; values[size..capacity) are unused slots. >
+  String[] values = new String[0];
+  int size = 0;
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < Append one String. Existing capacity is reused after removals. >
+  void add(String value) {
+    if (size < arrayLength(values)) {
+      arraySet(values, size, value);
+    } else {
+      arrayPush(values, value);
+    }
+    size = size + 1;
+  }
+
+  < Return null for an invalid index; valid indices are 0 through length()-1. >
+  String get(int index) {
+    if (index < 0 || index >= size) { return null; }
+    return arrayGet(values, index);
+  }
+
+  < Replace a value; return false when the index is invalid. >
+  boolean set(int index, String value) {
+    if (index < 0 || index >= size) { return false; }
+    arraySet(values, index, value);
+    return true;
+  }
+
+  < Remove at index and preserve the order of remaining values. >
+  boolean removeAt(int index) {
+    if (index < 0 || index >= size) { return false; }
+    int i = index;
+    while (i + 1 < size) {
+      arraySet(values, i, arrayGet(values, i + 1));
+      i = i + 1;
+    }
+    size = size - 1;
+    return true;
+  }
+
+  < Compatibility convenience: remove the final item, if present. >
+  void remove() {
+    if (size > 0) { size = size - 1; }
+  }
+
+  < Clear the logical list; capacity remains available for reuse. >
+  void clear() { size = 0; }
+  int length() { return size; }
+  boolean empty() { return size == 0; }
 }

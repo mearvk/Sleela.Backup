@@ -1,38 +1,79 @@
-/*
- * lib/user-interface/SLUserInterface.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLUserInterface — the capstone facade of the
- *   /lib/user-interface family. It is the single object a developer reaches for
- *   to open a window and build a graphical interface from SLeeLa source using
- *   SleelaUI™, SLeeLa's OWN original cross-platform UI toolkit (not GTK/Qt).
- *   Every method bottoms out in a `ui*` SLVM built-in that calls the GENUINE
- *   SleelaUI C ABI (include/sleela_ui.h) — which in turn drives the real host
- *   window system: X11 on Linux/Unix, Cocoa on macOS, Win32 on Windows 10+.
- *   So the same SLeeLa program raises a real window on whichever platform runs
- *   it, with the signature Slick Black look identical on all three.
- *
- * This is the general entry point: create the application, open a window, hand
- * back its root container, then run the toolkit's event loop. The individual
- * widget classes (SLButton, SLLabel, …) build on the same `ui*` built-ins.
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
- * bridge, the same discipline as /lib/os's `os*` bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLUserInterface.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLUserInterface — the capstone facade of the
+     /lib/user-interface family. It is the single object a developer reaches for
+     to open a window and build a graphical interface from SLeeLa source using
+     SleelaUI™, SLeeLa's OWN original cross-platform UI toolkit (not GTK/Qt).
+     Every method bottoms out in a `ui*` SLVM built-in that calls the GENUINE
+     SleelaUI C ABI (include/sleela_ui.h) — which in turn drives the real host
+     window system: X11 on Linux/Unix, Cocoa on macOS, Win32 on Windows 10+.
+     So the same SLeeLa program raises a real window on whichever platform runs
+     it, with the signature Slick Black look identical on all three.
+   
+   This is the general entry point: create the application, open a window, hand
+   back its root container, then run the toolkit's event loop. The individual
+   widget classes (SLButton, SLLabel, …) build on the same `ui*` built-ins.
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
+   bridge, the same discipline as /lib/os's `os*` bridge. >>
+#sleela 2.1
 class SLUserInterface {
-  // Backend ordinals (mirror SLUIBackend in the toolkit C ABI).
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11335;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-19";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Backend ordinals (mirror SLUIBackend in the toolkit C ABI). >
   static final int BACKEND_UNKNOWN = 0;
   static final int BACKEND_WIN32   = 1;
   static final int BACKEND_COCOA   = 2;
   static final int BACKEND_X11     = 3;
 
-  String appId;      // application identifier, e.g. "com.mearvk.App"
-  int app;           // VM-local application handle (-1 = none)
+  < application identifier, e.g. "com.mearvk.App" >
+  String appId;
+  < VM-local application handle (-1 = none) >
+  int app;
 
   void configure(String id) { appId = id; app = -1; }
 
-  // Create the SleelaUI application connection (opens the host display).
-  // Returns true if the toolkit came up (false if, e.g., no display on X11).
+  < Create the SleelaUI application connection (opens the host display). >
+  < Returns true if the toolkit came up (false if, e.g., no display on X11). >
   boolean open() {
     app = uiAppCreate(appId);
     return app >= 0;
@@ -40,7 +81,7 @@ class SLUserInterface {
 
   boolean active() { return app >= 0; }
 
-  // The window-system backend driving this process: "x11" / "cocoa" / "win32".
+  < The window-system backend driving this process: "x11" / "cocoa" / "win32". >
   String backend() { return uiBackendName(uiBackend()); }
   int backendId()  { return uiBackend(); }
   String version() { return uiVersion(); }
@@ -49,27 +90,36 @@ class SLUserInterface {
   boolean isMac()     { return uiBackend() == BACKEND_COCOA; }
   boolean isWindows() { return uiBackend() == BACKEND_WIN32; }
 
-  // Open a window on this application. title/width/height describe the content
-  // area; theme is an SLTheme handle (pass -1 for the Slick Black default).
-  // Returns an SLWindow bound to the new native window.
+  < The primary screen / display size in pixels, straight from the host window >
+  < system (uiScreenWidth / uiScreenHeight bottom out in slui_screen_size). >
+  < Returns 0 when the toolkit cannot report a size — e.g. a headless host, or >
+  < before open() has connected the display — so callers can fall back to a >
+  < modeled resolution (see SLGuiScreenFit). Needs an open application. >
+  int screenWidth()  { return app >= 0 ? uiScreenWidth(app)  : 0; }
+  int screenHeight() { return app >= 0 ? uiScreenHeight(app) : 0; }
+  boolean screenKnown() { return screenWidth() > 0 && screenHeight() > 0; }
+
+  < Open a window on this application. title/width/height describe the content >
+  < area; theme is an SLTheme handle (pass -1 for the Slick Black default). >
+  < Returns an SLWindow bound to the new native window. >
   SLWindow openWindow(String title, int width, int height, int themeHandle) {
     SLWindow w = new SLWindow();
     w.configureOn(app, title, width, height, themeHandle);
     return w;
   }
 
-  // Run the toolkit's own event loop until every window closes (or quit()).
-  // Returns the process-style exit code.
+  < Run the toolkit's own event loop until every window closes (or quit()). >
+  < Returns the process-style exit code. >
   int run() { return uiAppRun(app); }
 
-  // Process pending host events once; block != 0 waits for at least one.
-  // Returns the number of events dispatched, or a negative error.
+  < Process pending host events once; block != 0 waits for at least one. >
+  < Returns the number of events dispatched, or a negative error. >
   int pump(boolean block) { return uiAppPump(app, block ? 1 : 0); }
 
-  // Ask the event loop to stop; run() returns exitCode.
+  < Ask the event loop to stop; run() returns exitCode. >
   void quit(int exitCode) { uiAppQuit(app, exitCode); }
 
-  // Release the application and all its windows.
+  < Release the application and all its windows. >
   void close() {
     if (app >= 0) { uiAppDestroy(app); app = -1; }
   }
