@@ -1,0 +1,211 @@
+<< lib/gui/version-gual/SLGuiSettings.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuiSettings — the 2.0 (gual) settings surface for the
+     SLeeLa GUI package. Where the 1.0 (mual) line scattered a few tunables
+     across classes, 2.0 gathers the operating knobs into one validated,
+     nameful object: presentation (theme, DPI scale, reduced-motion /
+     accessibility, vsync), window defaults (min/max size, resizable,
+     decorations), and the document-listener timing (poll cadence, debounce
+     window, coalesce-queue cap, backpressure policy).
+   
+     Every setting is CLAMPED to a safe window when applied — a dialed value is
+     never accepted outside its stated range, and honored()/report() say whether
+     the configuration is internally consistent. This mirrors the quality-first,
+     clamp-to-window discipline used by the lib/cpu timing/voltage layer.
+   
+   Family: gui. A plain settings object; read by SLGuiBackend / SLGuiWindow /
+     SLGuiDocumentListener and by SLGuiApp at boot. >>
+#sleela 2.1
+class SLGuiSettings {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11343;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-19";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < --- theme --- >
+  < follow the OS theme >
+  static final int THEME_SYSTEM = 0;
+  static final int THEME_LIGHT  = 1;
+  static final int THEME_DARK   = 2;
+
+  < --- document-listener backpressure policy --- >
+  < merge overflow into the latest (default) >
+  static final int BACKPRESSURE_COALESCE = 0;
+  < drop oldest when the queue is full >
+  static final int BACKPRESSURE_DROP     = 1;
+  < block the producer until drained >
+  static final int BACKPRESSURE_BLOCK    = 2;
+
+  < --- presentation buffering (mirror native SLUIBufferingMode) --- >
+  < blit straight to the window (may tear on resize) >
+  static final int BUFFERING_SINGLE = 0;
+  < one off-screen back buffer; frame lands atomically (default) >
+  static final int BUFFERING_DOUBLE = 1;
+  < a ring of two back buffers; smoother rapid resize/animation >
+  static final int BUFFERING_TRIPLE = 2;
+
+  < --- presentation --- >
+  < THEME_* >
+  int theme;
+  < display scale percentage, 50..400 (100 = 1x) >
+  int dpiScalePct;
+  < 1 = minimize animation (accessibility) >
+  int reducedMotion;
+  < 1 = expose accessibility tree / larger hit targets >
+  int accessible;
+  < 1 = present synchronized to the display refresh >
+  int vsync;
+  < BUFFERING_* — how a painted frame reaches the screen >
+  int bufferingMode;
+
+  < --- window defaults --- >
+  int minWidth; int minHeight;
+  int maxWidth; int maxHeight;
+  < 1 = user may resize >
+  int resizable;
+  < 1 = OS title bar / borders >
+  int decorated;
+
+  < --- document-listener timing --- >
+  < OS wake cadence (ms), 10..60000 >
+  int pollMillis;
+  < settle window after a change before emitting, 0..10000 >
+  int debounceMillis;
+  < max pending change events before backpressure, 1..4096 >
+  int coalesceQueueMax;
+  < BACKPRESSURE_* >
+  int backpressure;
+
+  < Apply the documented, careful defaults. Everything here is already in range. >
+  void configure() {
+    theme = THEME_SYSTEM; dpiScalePct = 100; reducedMotion = 0; accessible = 1; vsync = 1;
+    < flicker-free resize out of the box >
+    bufferingMode = BUFFERING_DOUBLE;
+    < 0 = unbounded >
+    minWidth = 320; minHeight = 240; maxWidth = 0; maxHeight = 0;
+    resizable = 1; decorated = 1;
+    pollMillis = 500; debounceMillis = 50; coalesceQueueMax = 64;
+    backpressure = BACKPRESSURE_COALESCE;
+  }
+
+  < --- clamped setters: a value out of range is pulled to the nearest bound --- >
+  int clamp(int v, int lo, int hi) { if (v < lo) { return lo; } if (v > hi) { return hi; } return v; }
+
+  void setTheme(int t) { if (t >= THEME_SYSTEM && t <= THEME_DARK) { theme = t; } }
+  void setDpiScalePct(int pct) { dpiScalePct = clamp(pct, 50, 400); }
+  void setReducedMotion(boolean on) { reducedMotion = on ? 1 : 0; }
+  void setAccessible(boolean on) { accessible = on ? 1 : 0; }
+  void setVsync(boolean on) { vsync = on ? 1 : 0; }
+  void setBufferingMode(int m) {
+    if (m >= BUFFERING_SINGLE && m <= BUFFERING_TRIPLE) { bufferingMode = m; }
+  }
+
+  void setMinSize(int w, int h) { if (w > 0) { minWidth = w; } if (h > 0) { minHeight = h; } }
+  < Max of 0 means unbounded; a positive max must not fall below the min. >
+  void setMaxSize(int w, int h) {
+    if (w == 0 || w >= minWidth)  { maxWidth = (w < 0) ? 0 : w; }
+    if (h == 0 || h >= minHeight) { maxHeight = (h < 0) ? 0 : h; }
+  }
+  void setResizable(boolean on) { resizable = on ? 1 : 0; }
+  void setDecorated(boolean on) { decorated = on ? 1 : 0; }
+
+  void setPollMillis(int ms) { pollMillis = clamp(ms, 10, 60000); }
+  void setDebounceMillis(int ms) { debounceMillis = clamp(ms, 0, 10000); }
+  void setCoalesceQueueMax(int n) { coalesceQueueMax = clamp(n, 1, 4096); }
+  void setBackpressure(int policy) {
+    if (policy >= BACKPRESSURE_COALESCE && policy <= BACKPRESSURE_BLOCK) { backpressure = policy; }
+  }
+
+  < --- readers --- >
+  int getTheme() { return theme; }
+  int getDpiScalePct() { return dpiScalePct; }
+  boolean reducedMotionOn() { return reducedMotion == 1; }
+  boolean accessibleOn() { return accessible == 1; }
+  boolean vsyncOn() { return vsync == 1; }
+  int getBufferingMode() { return bufferingMode; }
+  int getMinWidth() { return minWidth; }
+  int getMinHeight() { return minHeight; }
+  int getMaxWidth() { return maxWidth; }
+  int getMaxHeight() { return maxHeight; }
+  boolean resizableOn() { return resizable == 1; }
+  boolean decoratedOn() { return decorated == 1; }
+  int getPollMillis() { return pollMillis; }
+  int getDebounceMillis() { return debounceMillis; }
+  int getCoalesceQueueMax() { return coalesceQueueMax; }
+  int getBackpressure() { return backpressure; }
+
+  String themeName() {
+    if (theme == THEME_LIGHT) { return "light"; }
+    if (theme == THEME_DARK)  { return "dark"; }
+    return "system";
+  }
+  String backpressureName() {
+    if (backpressure == BACKPRESSURE_DROP)  { return "drop-oldest"; }
+    if (backpressure == BACKPRESSURE_BLOCK) { return "block"; }
+    return "coalesce";
+  }
+  String bufferingName() {
+    if (bufferingMode == BUFFERING_TRIPLE) { return "triple"; }
+    if (bufferingMode == BUFFERING_SINGLE) { return "single"; }
+    return "double";
+  }
+
+  < Internally consistent when every clamped field sits in range and a bounded >
+  < max is not below its min (0 = unbounded always passes). >
+  boolean honored() {
+    boolean scaleOk = dpiScalePct >= 50 && dpiScalePct <= 400;
+    boolean pollOk = pollMillis >= 10 && pollMillis <= 60000;
+    boolean debounceOk = debounceMillis >= 0 && debounceMillis <= 10000;
+    boolean queueOk = coalesceQueueMax >= 1 && coalesceQueueMax <= 4096;
+    boolean widthOk = maxWidth == 0 || maxWidth >= minWidth;
+    boolean heightOk = maxHeight == 0 || maxHeight >= minHeight;
+    boolean bufOk = bufferingMode >= BUFFERING_SINGLE && bufferingMode <= BUFFERING_TRIPLE;
+    return scaleOk && pollOk && debounceOk && queueOk && widthOk && heightOk && bufOk;
+  }
+
+  String report() {
+    return "theme=" + themeName() + " dpi=" + dpiScalePct + "% vsync=" + vsync +
+           " buffering=" + bufferingName() +
+           " a11y=" + accessible + " motion-" + (reducedMotion == 1 ? "reduced" : "full") +
+           " window[min " + minWidth + "x" + minHeight + " max " + maxWidth + "x" + maxHeight +
+           " resizable=" + resizable + " decorated=" + decorated + "]" +
+           " listener[poll=" + pollMillis + "ms debounce=" + debounceMillis +
+           "ms queue<=" + coalesceQueueMax + " bp=" + backpressureName() + "]";
+  }
+}
