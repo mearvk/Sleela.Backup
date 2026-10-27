@@ -1,0 +1,93 @@
+#sleela 1.7
+# SLeeLa editor theme catalog metadata.
+package linux.editors;
+
+class SLeeLaEditorTheme {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11513;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-22";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-22";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+    let name = "SLeeLa American Professional";
+    let background = "#101820";
+    let foreground = "#F4F7FA";
+    let keyword = "#7FB3FF";
+    let type = "#73DACA";
+    let string = "#F2C078";
+    let number = "#C4A7E7";
+    let comment = "#8A96A3";
+    let function = "#82C91E";
+    let diagnostic = "#FF6B6B";
+}
+
+class SLeeLaEurasiaTheme {
+    let name = "SLeeLa Pan-Eurasian";
+    let background = "#111827";
+    let keyword = "#7AA7E8";
+    let type = "#69C9B3";
+    let string = "#D7B56D";
+    let comment = "#8995A5";
+}
+
+class SLeeLaRussianSlavicTheme {
+    let name = "SLeeLa Russian and Slavic (Medium)";
+    let background = "#202733";
+    let keyword = "#A9C0DD";
+    let type = "#8FC4B2";
+    let string = "#D6BD8B";
+    let comment = "#9AA3AF";
+}
+
+class SLeeLaSilkRoadTheme {
+    let name = "SLeeLa Central Asian / Silk Road";
+    let background = "#1C2529";
+    let keyword = "#7FADE0";
+    let type = "#45C6C2";
+    let string = "#D9B56D";
+    let comment = "#92A3A0";
+}
+
+class SLeeLaEastAsianTheme {
+    let name = "SLeeLa East Asian";
+    let background = "#171A1C";
+    let keyword = "#D97878";
+    let type = "#72C7A5";
+    let string = "#D8B76A";
+    let comment = "#969F9B";
+}

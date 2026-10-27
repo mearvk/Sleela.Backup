@@ -1,0 +1,91 @@
+<< lib/cpu/components/examples/build-your-executor.sleela
+   SLeeLa example: build a custom Sleela executor from catalog parts, overclock
+   the CPU, upgrade the RAM/storage, and run a program on it under the SLVM. >>
+#sleela 2.1
+class BuildYourExecutorExample {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10477;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-09";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 7;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  int result;
+
+  void main() {
+    SLComponentCatalog parts = new SLComponentCatalog();
+
+    < Pick a CPU and run it ABOVE spec (6502 rated at 1 MHz, pushed to 14 MHz). >
+    SL6502CPU cpu = new SL6502CPU();
+    cpu.configure();
+    print("6502 spec clock: " + cpu.specClockMHz() + " MHz");
+
+    < Assemble a build: overclocked CPU + DDR4 + NVMe + Blu-ray on PCIe 4.0. >
+    SLExecutorBuild build = new SLExecutorBuild();
+    build.configure("retro-overclock");
+    build.installCpu(cpu);
+    < 16 GiB DDR4-3200 >
+    build.installMemory(parts.ddr4_3200(16384));
+    < 7 GB/s NVMe >
+    build.installStorage(parts.nvmeGen4());
+    < 16x Blu-ray >
+    build.installOptical(parts.bluRay());
+    < PCIe 4.0 x16 >
+    build.installBus(parts.pcieGen4x16());
+
+    < overclock the 6502 to 14 MHz >
+    boolean stable = build.setClock(14);
+    build.assemble();
+    print("effective clock: " + build.cpuEffectiveMHz() + " MHz, overclocked=" +
+          build.cpuOverclocked() + ", stable=" + stable);
+    print("RAM: " + build.ram().technologyName() + " @ " + build.ram().peakBandwidthMBs() +
+          " MB/s, CL" + build.ram().cl());
+    print("storage: " + build.disk().className() + " " + build.disk().transferRate() + " MB/s");
+    print("effective mem bandwidth (RAM vs bus): " + build.effectiveMemoryBandwidthMBs() + " MB/s");
+
+    < Run a C program on the assembled executor via the Creator -> SLVM stack. >
+    SLCPUResource grant = new SLCPUResource();
+    grant.configure(4096, 100000, grant.PRIORITY_NORMAL);
+    SLWorkload job = new SLWorkload();
+    job.configure("hello", "examples/hello.c", job.LANG_C, grant);
+
+    SleelaVMCreator creator = new SleelaVMCreator();
+    creator.configure();
+    result = creator.run(5, build.processor(), job, 1000000);
+    print("program result on the built executor -> " + result);
+  }
+}
