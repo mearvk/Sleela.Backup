@@ -1,0 +1,109 @@
+<< lib/cpu/SLCPUArchitecture.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLCPUArchitecture — the identity and shape of an
+     instruction-set architecture, independent of any one chip: name, data and
+     address widths, endianness, register count, and which structural features
+     (pipeline, cache, MMU, DMA, interrupts, I/O timing, couplers) the ISA
+     assumes. SLCPUModel references one of these; SLCPURuntime consults it to
+     size its register file and address space.
+   
+   Family: cpu. Describes the ISA an SLCPURuntime realizes. >>
+#sleela 2.1
+class SLCPUArchitecture {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10490;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-09";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int ENDIAN_LITTLE = 0;
+  static final int ENDIAN_BIG     = 1;
+
+  < ISA name, e.g. "MOS 6502", "ARMv7-A" >
+  String identity;
+  < ISA family tag, e.g. "6502", "arm", "riscv" >
+  String isa;
+  < data path width in bits >
+  int wordWidth;
+  < address bus width in bits >
+  int addressWidth;
+  int endian;
+  < architectural register count >
+  int registerFile;
+  < assumed pipeline depth (0 = none) >
+  int pipeline;
+  int executionUnits;
+  < cache level count >
+  int cacheHierarchy;
+  < 1 if a memory controller is modelled >
+  int memoryController;
+  int interconnect;
+  int ioTiming;
+  int dmaController;
+  int mmu;
+  int interruptController;
+  int couplers;
+
+  void configure(String name, String isaTag, int dataBits, int addrBits, int endianness,
+                 int regCount) {
+    identity = name; isa = isaTag;
+    wordWidth = dataBits; addressWidth = addrBits; endian = endianness;
+    registerFile = regCount;
+    pipeline = 0; executionUnits = 1; cacheHierarchy = 0; memoryController = 0;
+    interconnect = 0; ioTiming = 0; dmaController = 0; mmu = 0;
+    interruptController = 0; couplers = 0;
+  }
+
+  < Address space size in words implied by the address width (bounded for the >
+  < bounded SLeeLa surface; large ISAs use a windowed subset). >
+  int addressSpaceWords() {
+    < cap model memory >
+    int bits = addressWidth; if (bits > 24) { bits = 24; }
+    int words = 1; int i = 0; while (i < bits) { words = words * 2; i = i + 1; }
+    return words;
+  }
+
+  String name()        { return identity; }
+  String isaFamily()   { return isa; }
+  int dataWidth()      { return wordWidth; }
+  int addrWidth()      { return addressWidth; }
+  int endianness()     { return endian; }
+  boolean littleEndian(){ return endian == ENDIAN_LITTLE; }
+  int registers()      { return registerFile; }
+  boolean hasMmu()     { return mmu == 1; }
+}
