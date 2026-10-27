@@ -1,40 +1,80 @@
-/*
- * lib/user-interface/SLWidget.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLWidget — the base class for every SleelaUI control and
- *   container reached from SLeeLa source. It holds the VM-local widget handle
- *   and the common configuration the toolkit exposes on all widgets: margins,
- *   alignment, expansion, a minimum size request, sensitivity (grey-out),
- *   visibility, text, and the suggested/destructive accents. Each setter
- *   bottoms out in a `ui*` built-in that calls the SleelaUI C ABI.
- *
- * Subclasses (SLBox, SLHeaderBar, SLLabel, SLButton, SLToggle, SLEntry,
- * SLSlider, SLSeparator, SLSpacer) are constructed against a parent handle and
- * then inherit all of this common configuration surface.
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
- * bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLWidget.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLWidget — the base class for every SleelaUI control and
+     container reached from SLeeLa source. It holds the VM-local widget handle
+     and the common configuration the toolkit exposes on all widgets: margins,
+     alignment, expansion, a minimum size request, sensitivity (grey-out),
+     visibility, text, and the suggested/destructive accents. Each setter
+     bottoms out in a `ui*` built-in that calls the SleelaUI C ABI.
+   
+   Subclasses (SLBox, SLHeaderBar, SLLabel, SLButton, SLToggle, SLEntry,
+   SLSlider, SLSeparator, SLSpacer) are constructed against a parent handle and
+   then inherit all of this common configuration surface.
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
+   bridge. >>
+#sleela 2.1
 class SLWidget {
-  // Alignment ordinals (mirror SLUIAlign in the toolkit C ABI).
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11451;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Alignment ordinals (mirror SLUIAlign in the toolkit C ABI). >
   static final int ALIGN_START  = 0;
   static final int ALIGN_CENTER = 1;
   static final int ALIGN_END    = 2;
   static final int ALIGN_FILL   = 3;
 
-  // Orientation ordinals (mirror SLUIOrientation).
+  < Orientation ordinals (mirror SLUIOrientation). >
   static final int ORIENT_VERTICAL   = 0;
   static final int ORIENT_HORIZONTAL = 1;
 
-  int widget;   // VM-local widget handle (-1 = none)
+  < VM-local widget handle (-1 = none) >
+  int widget;
 
-  // Adopt an existing handle (used for the window's root container).
+  < Adopt an existing handle (used for the window's root container). >
   void adopt(int handle) { widget = handle; }
   int handle() { return widget; }
   boolean valid() { return widget >= 0; }
 
-  // ---- Box model: margin, alignment, expansion, minimum size -------------
+  < ---- Box model: margin, alignment, expansion, minimum size ------------- >
   void setMargin(int top, int right, int bottom, int left) {
     if (widget >= 0) { uiWidgetMargin(widget, top, right, bottom, left); }
   }
@@ -52,7 +92,7 @@ class SLWidget {
     if (widget >= 0) { uiWidgetSizeRequest(widget, minWidth, minHeight); }
   }
 
-  // ---- State -------------------------------------------------------------
+  < ---- State ------------------------------------------------------------- >
   void setSensitive(boolean sensitive) {
     if (widget >= 0) { uiWidgetSensitive(widget, sensitive ? 1 : 0); }
   }
@@ -60,7 +100,7 @@ class SLWidget {
     if (widget >= 0) { uiWidgetVisible(widget, visible ? 1 : 0); }
   }
 
-  // ---- Text (label / button / entry) -------------------------------------
+  < ---- Text (label / button / entry) ------------------------------------- >
   void setText(String text) {
     if (widget >= 0) { uiWidgetSetText(widget, text); }
   }
@@ -69,19 +109,49 @@ class SLWidget {
     return uiWidgetGetText(widget);
   }
 
-  // ---- Accents -----------------------------------------------------------
-  // Mark this as the SINGLE suggested (accent) action in its group.
+  < ---- Accents ----------------------------------------------------------- >
+  < Create a reusable hidden popup panel within a parent layout. The caller >
+  < should place it in a stack/overlay-capable container and manage visibility. >
+  int createPopupPanel() {
+    if (widget < 0) return -1;
+    return uiPopupCreate(widget);
+  }
+  void setPopupOpen(int popupHandle, boolean open) {
+    if (popupHandle >= 0) uiPopupSetOpen(popupHandle, open ? 1 : 0);
+  }
+  boolean isPopupOpen(int popupHandle) {
+    return popupHandle >= 0 && uiPopupIsOpen(popupHandle) != 0;
+  }
+
+  < ---- Native Wi-Fi provider (shared wifi-common C/C++ core) ------------- >
+  < Scan returns WIFI_STATUS_OK on success; query the bounded result cache >
+  < with wifiNetworkCount/SSID/BSSID/signal/security. Indexes are zero-based. >
+  int wifiScan() { return uiWifiScan(); }
+  int wifiNetworkCount() { return uiWifiNetworkCount(); }
+  String wifiNetworkSsid(int index) { return uiWifiNetworkSsid(index); }
+  String wifiNetworkBssid(int index) { return uiWifiNetworkBssid(index); }
+  int wifiNetworkSignal(int index) { return uiWifiNetworkSignal(index); }
+  String wifiNetworkSecurity(int index) { return uiWifiNetworkSecurity(index); }
+  < Connect through OS-managed authentication or a trusted saved profile. The bridge never accepts >
+  < raw passwords from Sleela source or places credentials on command lines. >
+  int wifiConnect(int index, String profileName) {
+    return uiWifiConnect(index, profileName);
+  }
+  int wifiDisconnect() { return uiWifiDisconnect(); }
+  String wifiStatusName(int status) { return uiWifiStatusName(status); }
+
+  < Mark this as the SINGLE suggested (accent) action in its group. >
   void setSuggested(boolean suggested) {
     if (widget >= 0) { uiWidgetSuggested(widget, suggested ? 1 : 0); }
   }
-  // Mark this as destructive (uses the danger colour on hover).
+  < Mark this as destructive (uses the danger colour on hover). >
   void setDestructive(boolean destructive) {
     if (widget >= 0) { uiWidgetDestructive(widget, destructive ? 1 : 0); }
   }
 
-  // Give this text widget a styled SLFont so its label renders with the font's
-  // effects (shadows, glow, outline, relief, gradient). The widget borrows the
-  // font. Pass null to revert to plain theme text.
+  < Give this text widget a styled SLFont so its label renders with the font's >
+  < effects (shadows, glow, outline, relief, gradient). The widget borrows the >
+  < font. Pass null to revert to plain theme text. >
   void setFont(SLFont font) {
     if (widget >= 0 && font != null) { uiWidgetSetFont(widget, font.handle()); }
   }

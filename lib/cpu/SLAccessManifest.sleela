@@ -1,0 +1,174 @@
+<< lib/cpu/SLAccessManifest.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLAccessManifest — the compact, serializable record of a
+     program's ACCESS SEMANTICS that a compiled .sleela image carries, the exact
+     counterpart of SLTimingManifest. Where the timing manifest states the
+     operating point so the VM need not guess hardware quality, the access
+     manifest states what the program's public / private / protected members
+     MEAN as system roles (SLAccessSemantics), so the VM need not guess a
+     file-network topology — it reads the stated roles and stands up a clean
+     System backdrop:
+   
+       public    -> exposed hop  (REST endpoint / hop controller, ordered chain)
+       private   -> local system (admin / safety / security / backup concerns)
+       protected -> integrity-guarded (double-input / virus-scan / integrity / ...)
+   
+     The manifest summarizes, for the whole image: how many members fall in each
+     role, the length of the ordered public hop chain (doc 1 -> 2 -> 3 ...), and
+     the default guard / exposure / local-concern bundles the VM should realize.
+     It is MAGIC-guarded and versioned so a consumer can tell "this image states
+     its access semantics" from "this image expects me to assume them".
+   
+   Family: cpu. Serialization layer over SLAccessSemantics; embedded in
+     SLProgram; read back by the VM / SLExtensibleNetwork. >>
+#sleela 2.1
+class SLAccessManifest {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11146;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < --- magic / identity --- >
+  < "SL-ACCESS" marker word (SL-TIMING is 5213) >
+  static final int MAGIC = 5214;
+  int version;
+
+  < --- per-role member counts (how the image's surface divides up) --- >
+  < public  members: network-exposed hops >
+  int exposedCount;
+  < private members: local/admin/safety/security/backup >
+  int localCount;
+  < protected members: integrity-guarded connections >
+  int guardedCount;
+
+  < --- ordered public hop chain (doc 1 -> doc 2 -> doc 3 ...) --- >
+  < number of ordered hops the public surface forms >
+  int hopChainLength;
+  < 1 = the public members communicate in a defined order >
+  int orderedFlag;
+
+  < --- default backdrop bundles (ids from SLAccessSemantics) --- >
+  < default EXPOSE_* the public surface is stood up with >
+  int exposeComponents;
+  < default LOCAL_*  the private surface declares >
+  int localConcerns;
+  < default GUARD_*  the protected surface enforces >
+  int guardControls;
+
+  < --- sealed summary --- >
+  < 1 = the stated backdrop is complete enough to realize >
+  int competentFlag;
+  < exposed + local + guarded (the classified member total) >
+  int surfaceTotal;
+
+  void configure() {
+    version = 1;
+    exposedCount = 0; localCount = 0; guardedCount = 0;
+    hopChainLength = 0; orderedFlag = 0;
+    exposeComponents = 0; localConcerns = 0; guardControls = 0;
+    competentFlag = 0; surfaceTotal = 0;
+  }
+
+  void setCounts(int exposed, int local, int guarded) {
+    exposedCount = exposed; localCount = local; guardedCount = guarded;
+  }
+  void setHopChain(int length, boolean ordered) {
+    hopChainLength = length; orderedFlag = ordered ? 1 : 0;
+  }
+  void setBackdrop(int expose, int concerns, int guards) {
+    exposeComponents = expose; localConcerns = concerns; guardControls = guards;
+  }
+  void seal(boolean competent) {
+    competentFlag = competent ? 1 : 0;
+    surfaceTotal = exposedCount + localCount + guardedCount;
+  }
+
+  boolean valid() { return version > 0 && competentFlag == 1; }
+  boolean competent() { return competentFlag == 1; }
+
+  int exposed() { return exposedCount; }
+  int local()   { return localCount; }
+  int guarded() { return guardedCount; }
+  int hops()    { return hopChainLength; }
+  boolean ordered() { return orderedFlag == 1; }
+  int exposeBundle() { return exposeComponents; }
+  int concernBundle() { return localConcerns; }
+  int guardBundle()  { return guardControls; }
+  int classifiedTotal() { return surfaceTotal; }
+
+  < Serialize into a caller-provided SLRAM header region at `at`; returns the >
+  < next free word. Stored ahead of the instruction stream, exactly as >
+  < SLTimingManifest.writeHeader is. >
+  int writeHeader(SLRAM mem, int at) {
+    int i = at;
+    mem.writeWord(i, MAGIC);            i = i + 1;
+    mem.writeWord(i, version);          i = i + 1;
+    mem.writeWord(i, exposedCount);     i = i + 1;
+    mem.writeWord(i, localCount);       i = i + 1;
+    mem.writeWord(i, guardedCount);     i = i + 1;
+    mem.writeWord(i, hopChainLength);   i = i + 1;
+    mem.writeWord(i, orderedFlag);      i = i + 1;
+    mem.writeWord(i, exposeComponents); i = i + 1;
+    mem.writeWord(i, localConcerns);    i = i + 1;
+    mem.writeWord(i, guardControls);    i = i + 1;
+    mem.writeWord(i, competentFlag);    i = i + 1;
+    mem.writeWord(i, surfaceTotal);     i = i + 1;
+    return i;
+  }
+
+  int headerWords() { return 12; }
+
+  boolean readHeader(SLRAM mem, int at) {
+    int i = at;
+    if (mem.readWord(i) != MAGIC) { return false; }
+    i = i + 1;
+    version = mem.readWord(i);          i = i + 1;
+    exposedCount = mem.readWord(i);      i = i + 1;
+    localCount = mem.readWord(i);        i = i + 1;
+    guardedCount = mem.readWord(i);      i = i + 1;
+    hopChainLength = mem.readWord(i);    i = i + 1;
+    orderedFlag = mem.readWord(i);       i = i + 1;
+    exposeComponents = mem.readWord(i);  i = i + 1;
+    localConcerns = mem.readWord(i);     i = i + 1;
+    guardControls = mem.readWord(i);     i = i + 1;
+    competentFlag = mem.readWord(i);     i = i + 1;
+    surfaceTotal = mem.readWord(i);      i = i + 1;
+    return true;
+  }
+}

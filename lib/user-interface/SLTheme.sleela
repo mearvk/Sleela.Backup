@@ -1,65 +1,110 @@
-/*
- * lib/user-interface/SLTheme.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLTheme — a SleelaUI palette handle. A theme is the
- *   single source of truth for a window's look: a flat set of named role
- *   colours plus a corner radius, spacing unit, control height, and font. This
- *   class wraps the toolkit's theme built-ins: uiThemePreset (fill from a
- *   built-in preset), the role setters (uiThemeSet*), metric/font setters, and
- *   the base-colour hooks. Each bottoms out in the SleelaUI C ABI
- *   (slui_theme_preset + the SLUITheme fields).
- *
- * The DEFAULT is "Sleela Base": the whole warm palette DERIVED from Sleela's
- * base colour #2B1608 (a deep toasted umber). The base is configurable at code
- * time (setBaseColor) or configuration time (loadConfig reads base_color from a
- * key=value file), and the surfaces/border/accent re-tune around it.
- *
- * A theme is a VM-local handle (-1 = none). Pass handle() to
- * SLUserInterface.openWindow() or SLWindow.setTheme(); pass -1 anywhere a theme
- * is expected to get the default.
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
- * bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLTheme.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLTheme — a SleelaUI palette handle. A theme is the
+     single source of truth for a window's look: a flat set of named role
+     colours plus a corner radius, spacing unit, control height, and font. This
+     class wraps the toolkit's theme built-ins: uiThemePreset (fill from a
+     built-in preset), the role setters (uiThemeSet*), metric/font setters, and
+     the base-colour hooks. Each bottoms out in the SleelaUI C ABI
+     (slui_theme_preset + the SLUITheme fields).
+   
+   The DEFAULT is a cool graphite/charcoal palette with a steel-blue accent.
+   White, blue, black and gray are selectable named presets. Apps may choose a
+   preset directly in source or explicitly load a named theme from a key=value
+   configuration file. Configuration is never silently auto-loaded.
+   
+   A theme is a VM-local handle (-1 = none). Pass handle() to
+   SLUserInterface.openWindow() or SLWindow.setTheme(); pass -1 anywhere a theme
+   is expected to get the default.
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
+   bridge. >>
+#sleela 2.1
 class SLTheme {
-  // Preset ordinals (mirror SLUIThemeId in the toolkit C ABI).
-  static final int SLICK_BLACK = 0;   // the original matte-black theme
-  static final int GRAPHITE    = 1;   // a lighter neutral alternative
-  static final int CUSTOM      = 2;   // fully host-defined via the setters
-  static final int SLEELA_BASE = 3;   // THE DEFAULT: base colour #2B1608
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10415;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
 
-  // Sleela's base colour, #2B1608 opaque, as a 0xRRGGBBAA word.
-  static final int BASE_COLOR_DEFAULT = 0x2B1608FF;
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Preset ordinals mirror SLUIThemeId in the toolkit C ABI. >
+  static final int SLICK_BLACK = 0;
+  static final int GRAPHITE = 1;
+  static final int CUSTOM = 2;
+  < DEFAULT is the coordinated graphite/charcoal + steel-blue palette. >
+  static final int SLEELA_BASE = 3;
+  static final int DEFAULT = 3;
+  static final int WHITE = 4;
+  static final int BLACK = 5;
+  static final int BLUE = 6;
+  static final int GRAY = 7;
+  static final int BASE_COLOR_DEFAULT = 0x1D2025FF;
 
-  int theme;   // VM-local theme handle (-1 = none)
+  < VM-local theme handle (-1 = none) >
+  int theme;
 
-  // Build a theme pre-filled from a built-in preset. Start from SLEELA_BASE for
-  // the warm default, SLICK_BLACK for the matte-black look, or GRAPHITE.
+  < Select one preset directly in source: DEFAULT, WHITE, BLUE, BLACK, or GRAY. >
   void preset(int presetId) {
     theme = uiThemePreset(presetId);
   }
-  // Shorthand for the signature default (the #2B1608 warm family).
   void sleelaBase() { preset(SLEELA_BASE); }
-  // Shorthand for the original matte-black theme.
+  void defaultTheme() { preset(DEFAULT); }
+  void white() { preset(WHITE); }
+  void blue() { preset(BLUE); }
+  void black() { preset(BLACK); }
+  void gray() { preset(GRAY); }
   void slickBlack() { preset(SLICK_BLACK); }
 
   int handle() { return theme; }
   boolean valid() { return theme >= 0; }
 
-  // Re-derive the whole warm palette from a new base colour (0xRRGGBBAA; the
-  // alpha is ignored). The configuration/code-time base-colour hook.
+  < Re-derive a neutral/cool palette from a custom base colour (0xRRGGBBAA). >
   void setBaseColor(int baseColor) {
     if (theme >= 0) { uiThemeSetBaseColor(theme, baseColor); }
   }
-  // Load base_color (and optional accent/font/radius) from a key=value config
-  // file into this theme. Returns true on success.
+  < Load theme=default|white|blue|black|gray plus optional overrides from a >
+  < key=value config file. Returns true on success. Config is never auto-loaded. >
   boolean loadConfig(String path) {
     if (theme < 0) { return false; }
     return uiThemeLoadConfig(theme, path) == 0;
   }
 
-  // ---- Role colours (each takes an SLColor word, 0xRRGGBBAA) -------------
+  < ---- Role colours (each takes an SLColor word, 0xRRGGBBAA) ------------- >
   void setBackground(int color) { if (theme >= 0) { uiThemeSetBg(theme, color); } }
   void setSurface(int color)    { if (theme >= 0) { uiThemeSetSurface(theme, color); } }
   void setSurfaceHi(int color)  { if (theme >= 0) { uiThemeSetSurfaceHi(theme, color); } }
@@ -71,14 +116,14 @@ class SLTheme {
   void setAccentForeground(int color) { if (theme >= 0) { uiThemeSetAccentFg(theme, color); } }
   void setDanger(int color)     { if (theme >= 0) { uiThemeSetDanger(theme, color); } }
 
-  // ---- Metrics and typography --------------------------------------------
+  < ---- Metrics and typography -------------------------------------------- >
   void setRadius(int px)        { if (theme >= 0) { uiThemeSetRadius(theme, px); } }
   void setControlHeight(int px) { if (theme >= 0) { uiThemeSetControlHeight(theme, px); } }
   void setFont(String family, int sizePt) {
     if (theme >= 0) { uiThemeSetFont(theme, family, sizePt); }
   }
 
-  // Convenience: set a role colour from an SLColor object.
+  < Convenience: set a role colour from an SLColor object. >
   void setAccentColor(SLColor c) { setAccent(c.value()); }
 
   void close() { if (theme >= 0) { uiThemeDestroy(theme); theme = -1; } }
