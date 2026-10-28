@@ -4,6 +4,7 @@
 #include "compiler.h"
 #include "semantic.h"
 #include "java_compat.h"
+#include "unsigned_integer.h"
 
 #include <map>
 #include <stdexcept>
@@ -12,6 +13,8 @@
 #include <set>
 #include <functional>
 #include "library_index.h"
+#include "../core/sleela_ui_ids.h"
+#include "../core/sleela_ui_vm.h"
 
 namespace sleela {
 
@@ -142,6 +145,14 @@ public:
             if(layout.typeIndex<0) throw std::runtime_error("Semantic error: could not register class layout '"+cls.name+"'");
             structLayout_[cls.name]=layout;
         }
+        if(inheritance) {
+            for(const auto& cls:prog_.classes) {
+                const std::string& parent=cls.java.superclass;
+                if(parent.empty() || !structLayout_.count(parent) || !structLayout_.count(cls.name)) continue;
+                const int rc=slvm_set_struct_parent(vm_,structLayout_.at(cls.name).typeIndex,structLayout_.at(parent).typeIndex);
+                if(rc!=0) throw std::runtime_error("Semantic error: could not register runtime parent class for '"+cls.name+"'");
+            }
+        }
         for(const auto& cls:prog_.classes) for(const auto& f:cls.fields) if(f.isStatic){
             const std::string key=cls.name+"::"+f.name;
             fieldGlobal_[key]=slvm_declare_global(vm_,key.c_str()); fieldProtected_[key]=f.isProtected; fieldOwner_[key]=cls.name; fields_.push_back(&f);
@@ -209,8 +220,39 @@ private:
     // can resolve `x.field` to the right struct layout. Names not present are
     // untyped (dynamic); member access then defers field resolution to runtime.
     std::map<std::string,std::string> varType_;
+    std::string currentRetType_;
     int fieldSlot(const std::string& name) const { auto it=fieldGlobal_.find(currentClass_+"::"+name); if(it!=fieldGlobal_.end())return it->second;it=fieldGlobal_.find(name);return it==fieldGlobal_.end()?-1:it->second; }
     int instanceFieldOffset(const std::string& name) const { auto it=structLayout_.find(currentClass_);if(it==structLayout_.end())return -1;auto f=it->second.fieldOffset.find(name);return f==it->second.fieldOffset.end()?-1:f->second; }
+    int runtimeTypeOperand(const std::string& name) const {
+        auto st=structLayout_.find(name);
+        if(st!=structLayout_.end()) return st->second.typeIndex;
+        if(name=="int128") return -(SL_INT128+1);
+        if(name=="int" || name=="long" || name=="int64" || UnsignedInteger::isValidTypeName(name)) return -(SL_INT+1);
+        if(name=="double") return -(SL_DOUBLE+1);
+        if(name=="bool" || name=="boolean") return -(SL_BOOL+1);
+        if(name=="String" || name=="string") return -(SL_STR+1);
+        if(name.size()>=2 && name.compare(name.size()-2,2,"[]")==0) return -(SL_ARRAY+1);
+        throw std::runtime_error("Semantic error: no runtime type descriptor for '"+name+"'");
+    }
+    // Emit a widening coercion for the value on top of the stack when it is
+    // being stored into / passed as a declared `double` or `int128` target, so
+    // `double d = 3;` holds 3.0 (Java int->double widening) and `int128 c = 5;`
+    // holds a real 128-bit value. The runtime OP_CHECKCAST coerces ints and
+    // passes non-ints through, so this is safe to emit unconditionally at a
+    // double/int128-typed store. Other target types need no coercion (int, long,
+    // int64 share the 64-bit representation; class/array/String stores are
+    // exact).
+    void coerceToDeclared(const std::string& declType){
+        if(declType=="double"||declType=="int128") emit(OP_CHECKCAST,runtimeTypeOperand(declType));
+    }
+    // Emit call arguments, widening each integer argument to a declared double
+    // or int128 parameter (so half(9) passes 9.0, not 9).
+    void emitArgsCoerced(const std::vector<ExprP>& args, const Method* target){
+        for(size_t i=0;i<args.size();++i){
+            emitExpr(args[i].get());
+            if(target && i<target->params.size()) coerceToDeclared(target->params[i].type);
+        }
+    }
     void emitThis(){if(!ctx_||ctx_->slotOf("this")<0)throw std::runtime_error("Semantic error: instance member requires an instance context");emit(OP_LOADL,ctx_->slotOf("this"));}
     int countLocals(const Method& m){int n=(int)m.params.size();countInBlock(*m.body,n);return n;}
     void countInBlock(const Block& b,int& n){for(const auto& s:b.stmts)countInStmt(s.get(),n);}
@@ -230,8 +272,9 @@ private:
         const Method& m=*mi.method; const std::string key=methodKeyByPtr_.at(&m); currentClass_=methodOwner_.at(key);
         MethodCtx ctx; if(!m.isStatic)ctx.declare("this"); for(const auto& p:m.params)ctx.declare(p.name);
         std::map<std::string,std::string> savedTypes=varType_;
-        for(const auto& p:m.params) if(structLayout_.count(p.type)) varType_[p.name]=p.type;
+        for(const auto& p:m.params) varType_[p.name]=p.type;
         if(!m.isStatic)varType_["this"]=currentClass_;
+        const std::string savedRet=currentRetType_; currentRetType_=m.retType;
         slvm_begin_func(vm_,key.c_str(),(int)m.params.size()+(m.isStatic?0:1),mi.nlocals); ctx_=&ctx;
         // Initialise static fields before main runs. These compile to VM
         // globals; their initialisers must execute regardless of which class
@@ -251,7 +294,7 @@ private:
             currentClass_=savedClass;
         }
         emitBlock(*m.body);ctx_=nullptr;emit(OP_CONST,addNullConst());emit(OP_RET);slvm_end_func(vm_);
-        varType_=savedTypes;
+        varType_=savedTypes; currentRetType_=savedRet;
     }
     int addNullConst(){if(nullConst_<0){SLExchangeArg a{};a.value=slval_null();slcore_exchange(vm_,SLX_ADD_CONST,&a);nullConst_=a.out;}return nullConst_;}
     int nullConst_=-1;
@@ -276,8 +319,11 @@ private:
     void emitBlock(const Block& b){for(const auto& s:b.stmts)emitStmt(s.get());}
     void emitVarDecl(const VarDecl& d){
         int slot=ctx_->declare(d.name);
-        if(structLayout_.count(d.type)) varType_[d.name]=d.type;
-        else if(d.type=="let" && d.init){
+        // Record the declared type so later assignments can apply the same
+        // widening coercion (double / int128). Previously only struct/class
+        // types were tracked; primitives are needed for double/int128 locals.
+        if(d.type!="let") varType_[d.name]=d.type;
+        if(d.type=="let" && d.init){
             if(auto created=dynamic_cast<const NewExpr*>(d.init.get())){
                 if(structLayout_.count(created->typeName)) varType_[d.name]=created->typeName;
             } else if(auto existing=dynamic_cast<const VarExpr*>(d.init.get())){
@@ -285,10 +331,20 @@ private:
                 if(known!=varType_.end()) varType_[d.name]=known->second;
             }
         }
-        if(d.init)emitExpr(d.init.get());else emit(OP_CONST,addNullConst());
+        if(d.init){
+            emitExpr(d.init.get());
+            coerceToDeclared(d.type);
+        } else emit(OP_CONST,addNullConst());
         emit(OP_STOREL,slot);
     }
-    void emitAssign(const Assign& a){int slot=ctx_->slotOf(a.name);if(slot>=0){emitExpr(a.value.get());emit(OP_STOREL,slot);return;}int off=instanceFieldOffset(a.name);if(off>=0){emitThis();emitExpr(a.value.get());emit(OP_SETFIELD,off);emit(OP_POP);return;}int g=fieldSlot(a.name);if(g>=0){emitExpr(a.value.get());emit(OP_STOREG,g);return;}throw std::runtime_error("Semantic error: assignment to undeclared variable '"+a.name+"'");}
+    // Declared type of an instance field of the current class ("" if unknown).
+    std::string instanceFieldType(const std::string& name) const {
+        auto it=structLayout_.find(currentClass_); if(it==structLayout_.end()) return "";
+        auto f=it->second.fieldOffset.find(name); if(f==it->second.fieldOffset.end()) return "";
+        if(f->second>=0 && f->second<(int)it->second.fieldType.size()) return it->second.fieldType[(size_t)f->second];
+        return "";
+    }
+    void emitAssign(const Assign& a){int slot=ctx_->slotOf(a.name);if(slot>=0){emitExpr(a.value.get());{auto t=varType_.find(a.name);if(t!=varType_.end())coerceToDeclared(t->second);}emit(OP_STOREL,slot);return;}int off=instanceFieldOffset(a.name);if(off>=0){emitThis();emitExpr(a.value.get());coerceToDeclared(instanceFieldType(a.name));emit(OP_SETFIELD,off);emit(OP_POP);return;}int g=fieldSlot(a.name);if(g>=0){emitExpr(a.value.get());emit(OP_STOREG,g);return;}throw std::runtime_error("Semantic error: assignment to undeclared variable '"+a.name+"'");}
     // GC hint (syntax 1.9): `x = gc N;` / `x = mem N;`. The target must name an
     // in-scope value the developer is finished using (a local, instance field,
     // or static field), which keeps the hint honest: it marks a real binding as
@@ -310,8 +366,8 @@ private:
         if(r.word=="mem"){emit(OP_RAN_MEM);return;}
         throw std::runtime_error("Semantic error: unknown system reference 'ran::"+r.word+"'");
     }
-    void emitReturn(const ReturnStmt& r){if(r.value)emitExpr(r.value.get());else emit(OP_CONST,addNullConst());emit(OP_RET);}
-    void emitFieldAssign(const FieldAssign& fa){int off=-1;memberLayout(fa.base.get(),fa.field,off);emitExpr(fa.base.get());emitExpr(fa.value.get());emit(OP_SETFIELD,off);emit(OP_POP);}
+    void emitReturn(const ReturnStmt& r){if(r.value){emitExpr(r.value.get());coerceToDeclared(currentRetType_);}else emit(OP_CONST,addNullConst());emit(OP_RET);}
+    void emitFieldAssign(const FieldAssign& fa){int off=-1;const StructLayout& ml=memberLayout(fa.base.get(),fa.field,off);std::string ft=(off>=0&&off<(int)ml.fieldType.size())?ml.fieldType[(size_t)off]:"";emitExpr(fa.base.get());emitExpr(fa.value.get());coerceToDeclared(ft);emit(OP_SETFIELD,off);emit(OP_POP);}
     void emitIf(const IfStmt& s){emitExpr(s.cond.get());int jf=emit(OP_JMPF,0);emitStmt(s.thenS.get());if(s.elseS){int jend=emit(OP_JMP,0);patch(jf,here());emitStmt(s.elseS.get());patch(jend,here());}else patch(jf,here());}
     // Loop context for break/continue: each enclosing loop records the jump
     // sites that must be patched to the loop exit (break) and to the loop's
@@ -322,7 +378,7 @@ private:
     void emitContinue(){if(loops_.empty())throw std::runtime_error("Semantic error: 'continue' used outside a loop");loops_.back().continues.push_back(emit(OP_JMP,0));}
     void emitWhile(const WhileStmt& s){loops_.push_back({});int top=here();emitExpr(s.cond.get());int jf=emit(OP_JMPF,0);emitStmt(s.body.get());for(int c:loops_.back().continues)patch(c,top);emit(OP_JMP,top);patch(jf,here());for(int b:loops_.back().breaks)patch(b,here());loops_.pop_back();}
     void emitDo(const DoStmt& s){loops_.push_back({});int top=here();emitStmt(s.body.get());int contTarget=here();for(int c:loops_.back().continues)patch(c,contTarget);emitExpr(s.cond.get());int jf=emit(OP_JMPF,0);emit(OP_JMP,top);patch(jf,here());for(int b:loops_.back().breaks)patch(b,here());loops_.pop_back();}
-    void emitFor(const ForStmt& s){loops_.push_back({});if(s.init)emitStmt(s.init.get());int top=here();int jf=-1;if(s.cond){emitExpr(s.cond.get());jf=emit(OP_JMPF,0);}emitStmt(s.body.get());int contTarget=here();for(int c:loops_.back().continues)patch(c,contTarget);if(s.update)emitStmt(s.update.get());emit(OP_JMP,top);if(jf>=0)patch(jf,here());for(int b:loops_.back().breaks)patch(b,here());loops_.pop_back();}
+    void emitFor(const ForStmt& s){loops_.push_back({});if(s.init)emitStmt(s.init.get());int top=here();std::vector<int> exits;if(s.cond){emitExpr(s.cond.get());exits.push_back(emit(OP_JMPF,0));}if(s.threadStable){emitExpr(s.threadStable.get());exits.push_back(emit(OP_JMPF,0));}if(s.heapHealthy){emitExpr(s.heapHealthy.get());exits.push_back(emit(OP_JMPF,0));}emitStmt(s.body.get());int contTarget=here();for(int c:loops_.back().continues)patch(c,contTarget);if(s.update)emitStmt(s.update.get());emit(OP_JMP,top);int end=here();for(int j:exits)patch(j,end);for(int b:loops_.back().breaks)patch(b,end);loops_.pop_back();}
     void emitSynchronized(const SynchronizedStmt& s){emitExpr(s.monitor.get());emit(OP_POP);emitBlock(*s.body);}
     void emitTry(const TryStmt& s){emitBlock(*s.body);if(s.finallyBlock)emitBlock(*s.finallyBlock);}
     void emitSwitch(const SwitchStmt& s){
@@ -359,17 +415,33 @@ private:
         if(auto x=dynamic_cast<const BoolLit*>(e)){emit(OP_CONST,slvm_add_const_bool(vm_,x->value?1:0));return;} if(auto x=dynamic_cast<const StrLit*>(e)){emit(OP_CONST,slvm_add_const_str(vm_,x->value.c_str()));return;}
         if(dynamic_cast<const NullLit*>(e)){emit(OP_CONST,addNullConst());return;} if(auto x=dynamic_cast<const VarExpr*>(e)){emitVar(*x);return;} if(auto x=dynamic_cast<const Unary*>(e)){emitUnary(*x);return;}
         if(auto x=dynamic_cast<const RanRefExpr*>(e)){emitRanRef(*x);return;}
-        if(auto x=dynamic_cast<const Binary*>(e)){emitBinary(*x);return;} if(auto x=dynamic_cast<const Call*>(e)){emitCall(*x);return;}
+        if(auto x=dynamic_cast<const Binary*>(e)){
+            // ::: structural-offload send: lower source then receiver, then the
+            // OP_SSEND transport opcode (the VM frames the source element-by-
+            // element into the receiver). The receiver expression evaluates to a
+            // reach handle; OP_SSEND pushes it back so a ::: chain stays fluent.
+            if(x->op==":::"){emitExpr(x->lhs.get());emitExpr(x->rhs.get());emit(OP_SSEND);return;}
+            emitBinary(*x);return;
+        } if(auto x=dynamic_cast<const Call*>(e)){emitCall(*x);return;}
         if(auto x=dynamic_cast<const NewExpr*>(e)){emitNew(*x);return;} if(auto x=dynamic_cast<const MemberAccess*>(e)){emitMember(*x);return;}
         if(auto x=dynamic_cast<const MethodCall*>(e)){emitMethodCall(*x);return;}
         if(auto x=dynamic_cast<const AssignmentExpr*>(e)){emitAssignmentExpr(*x);return;}
         if(auto x=dynamic_cast<const ConditionalExpr*>(e)){emitConditional(*x);return;}
-        if(auto x=dynamic_cast<const CastExpr*>(e)){emitExpr(x->operand.get());return;}
-        if(auto x=dynamic_cast<const InstanceOfExpr*>(e)){emitExpr(x->value.get());emit(OP_POP);emit(OP_CONST,slvm_add_const_bool(vm_,0));return;}
+        if(auto x=dynamic_cast<const CastExpr*>(e)){
+             emitExpr(x->operand.get());
+             if(x->typeName!="Any") emit(OP_CHECKCAST,runtimeTypeOperand(x->typeName));
+             return;
+         }
+        if(auto x=dynamic_cast<const InstanceOfExpr*>(e)){
+             emitExpr(x->value.get());
+             emit(OP_INSTANCEOF,runtimeTypeOperand(x->typeName));
+             return;
+         }
         if(dynamic_cast<const SuperExpr*>(e)){emit(OP_CONST,addNullConst());return;}
         if(dynamic_cast<const ThisExpr*>(e)){emitThis();return;}
         if(auto x=dynamic_cast<const ArrayAccess*>(e)){emitExpr(x->base.get());emitExpr(x->index.get());emit(OP_ARRGET);return;}
         if(auto x=dynamic_cast<const MethodReferenceExpr*>(e)){emitExpr(x->base.get());return;}
+        if(auto x=dynamic_cast<const GuideChainExpr*>(e)){emitGuideChain(*x);return;}
         throw std::runtime_error("Semantic error: unknown expression kind");
     }
     // Lower a (possibly compound) assignment expression. The result value is
@@ -384,6 +456,7 @@ private:
             if(slot>=0){
                 if(!bin.empty()){emit(OP_LOADL,slot);emitExpr(a.value.get());emitBinOp(bin);}
                 else emitExpr(a.value.get());
+                {auto t=varType_.find(v->name);if(t!=varType_.end())coerceToDeclared(t->second);}
                 emit(OP_STOREL,slot);emit(OP_LOADL,slot);return;
             }
             int off=instanceFieldOffset(v->name);
@@ -391,6 +464,7 @@ private:
                 emitThis();                         // [this]
                 if(!bin.empty()){emit(OP_DUP);emit(OP_GETFIELD,off);emitExpr(a.value.get());emitBinOp(bin);}
                 else emitExpr(a.value.get());
+                coerceToDeclared(instanceFieldType(v->name));
                 emit(OP_SETFIELD,off);              // leaves assigned value
                 return;
             }
@@ -405,11 +479,13 @@ private:
             throw std::runtime_error("Semantic error: assignment to undeclared variable '"+v->name+"'");
         }
         if(auto m=dynamic_cast<const MemberAccess*>(a.target.get())){
-            int off=-1;memberLayout(m->base.get(),m->field,off);
+            int off=-1;const StructLayout& ml=memberLayout(m->base.get(),m->field,off);
+            std::string ft=(off>=0&&off<(int)ml.fieldType.size())?ml.fieldType[(size_t)off]:"";
             // SETFIELD expects [struct, newval] and leaves newval on the stack.
             emitExpr(m->base.get());                 // [struct]
             if(!bin.empty()){emit(OP_DUP);emit(OP_GETFIELD,off);emitExpr(a.value.get());emitBinOp(bin);} // [struct, newval]
             else emitExpr(a.value.get());            // [struct, newval]
+            coerceToDeclared(ft);
             emit(OP_SETFIELD,off);                   // [newval]
             return;
         }
@@ -466,7 +542,12 @@ private:
         }
         if(dynamic_cast<const ThisExpr*>(e))return currentClass_;
         if(auto m=dynamic_cast<const MemberAccess*>(e)){std::string bt=exprStructType(m->base.get());if(bt.empty())return "";auto lit=structLayout_.find(bt);if(lit==structLayout_.end())return "";int idx=-1;auto oit=lit->second.fieldOffset.find(m->field);if(oit!=lit->second.fieldOffset.end())idx=oit->second;if(idx<0)return "";return lit->second.fieldType[idx];}
+        if(auto ca=dynamic_cast<const CastExpr*>(e))return ca->typeName;
         if(auto n=dynamic_cast<const NewExpr*>(e))return n->typeName;
+        // A Guide chain evaluates to its constructed head instance, so its
+        // struct type is the head's type -- this lets `(new T() :: g).m()`
+        // resolve the trailing method on T.
+        if(auto g=dynamic_cast<const GuideChainExpr*>(e))return exprStructType(g->head.get());
         // A method-call receiver carries the called method's declared return
         // type, so a chained call -- obj.getX().method() -- resolves: find the
         // receiver's type, look up receiverType::method, and return that
@@ -548,6 +629,24 @@ private:
             emit(OP_POP);
         }
     }
+    // Guide chain `new T(...) :: G1 :: G2 ...` (syntax 2.3). Lower the head to
+    // its instance (emitNew leaves the initialized instance on the stack), then
+    // apply each Guide as a zero-arg method call on that instance, in order:
+    // DUP the instance as `this`, CALL T::Gi, POP the (discarded) return. The
+    // instance itself remains on the stack, so the chain is fluent and the
+    // whole expression evaluates to the constructed object.
+    void emitGuideChain(const GuideChainExpr& g){
+        if(syntax_<SyntaxVersion{2,3}) throw std::runtime_error("Semantic error: Guide chains require #sleela 2.3");
+        emitExpr(g.head.get());
+        std::string owner=exprStructType(g.head.get());
+        for(const std::string& gn:g.guides){
+            auto target=funcIndex_.find(owner+"::"+gn);
+            if(target==funcIndex_.end()) throw std::runtime_error("Semantic error: Guide '"+gn+"' is not a method of class '"+owner+"'");
+            emit(OP_DUP);                 // [instance, instance]  -- instance as `this`
+            emit(OP_CALL,target->second); // [instance, ret]
+            emit(OP_POP);                 // [instance]            -- discard the Guide's return
+        }
+    }
     void emitMember(const MemberAccess& m){
         // Back-propagate the terminal degree requirement to the origin.
         // next.next is the Degree-2 proposal. When that proposal is itself
@@ -611,7 +710,7 @@ private:
         if(method->isStatic)throw std::runtime_error("Semantic error: static method '"+receiverType+"::"+m+"' must be called through its class");
         if((int)mc.args.size()!=(int)method->params.size())throw std::runtime_error("Semantic error: method '"+receiverType+"::"+m+"' expects "+std::to_string(method->params.size())+" argument(s), got "+std::to_string(mc.args.size()));
         if(method->isProtected&&receiverType!=currentClass_)throw std::runtime_error("protected method access denied");
-        emitExpr(mc.receiver.get());for(const auto&a:mc.args)emitExpr(a.get());emit(OP_CALL,target->second);
+        emitExpr(mc.receiver.get());emitArgsCoerced(mc.args,method);emit(OP_CALL,target->second);
     }
     void emitVar(const VarExpr& v){
         if(v.name=="next"){emit(OP_CONST,slvm_add_const_int(vm_,kNextSystemDegree));return;}
@@ -652,8 +751,98 @@ private:
         emitExpr(b.lhs.get());emitExpr(b.rhs.get());
         if(o=="+")emit(OP_ADD);else if(o=="-")emit(OP_SUB);else if(o=="*")emit(OP_MUL);else if(o=="/")emit(OP_DIV);else if(o=="%")emit(OP_MOD);else if(o=="==")emit(OP_EQ);else if(o=="!=")emit(OP_NE);else if(o=="<")emit(OP_LT);else if(o=="<=")emit(OP_LE);else if(o==">")emit(OP_GT);else if(o==">=")emit(OP_GE);else throw std::runtime_error("Semantic error: unknown binary operator '"+o+"'");}
 
+    // SleelaUI (ui*) built-ins: map the SLeeLa-facing name to its bridge id,
+    // arity-check, emit the args, then OP_UI_CALL<id>. Returns true if handled.
+    bool tryEmitUiBuiltin(const Call& c){
+        const std::string& n=c.callee;
+        static const std::map<std::string,int> uiIds = {
+            {"uiAppCreate",SLUI_FN_APP_CREATE},{"uiAppRun",SLUI_FN_APP_RUN},{"uiAppPump",SLUI_FN_APP_PUMP},
+            {"uiAppQuit",SLUI_FN_APP_QUIT},{"uiAppDestroy",SLUI_FN_APP_DESTROY},{"uiBackend",SLUI_FN_BACKEND},
+            {"uiBackendName",SLUI_FN_BACKEND_NAME},{"uiVersion",SLUI_FN_VERSION},
+            {"uiWindowCreate",SLUI_FN_WINDOW_CREATE},{"uiWindowShow",SLUI_FN_WINDOW_SHOW},{"uiWindowHide",SLUI_FN_WINDOW_HIDE},
+            {"uiWindowRoot",SLUI_FN_WINDOW_ROOT},{"uiWindowSetTitle",SLUI_FN_WINDOW_SET_TITLE},
+            {"uiWindowSetTheme",SLUI_FN_WINDOW_SET_THEME},{"uiWindowRedraw",SLUI_FN_WINDOW_REDRAW},
+            {"uiWindowSetBuffering",SLUI_FN_WINDOW_SET_BUFFERING},{"uiWindowBuffering",SLUI_FN_WINDOW_BUFFERING},
+            {"uiWindowSetMinSize",SLUI_FN_WINDOW_SET_MIN_SIZE},{"uiWindowSetMaxSize",SLUI_FN_WINDOW_SET_MAX_SIZE},
+            {"uiWindowSetSizeLimits",SLUI_FN_WINDOW_SET_SIZE_LIMITS},
+            {"uiWindowMinWidth",SLUI_FN_WINDOW_MIN_WIDTH},{"uiWindowMinHeight",SLUI_FN_WINDOW_MIN_HEIGHT},
+            {"uiWindowMaxWidth",SLUI_FN_WINDOW_MAX_WIDTH},{"uiWindowMaxHeight",SLUI_FN_WINDOW_MAX_HEIGHT},
+            {"uiBox",SLUI_FN_BOX},{"uiGrid",SLUI_FN_GRID},{"uiFrame",SLUI_FN_FRAME},{"uiCard",SLUI_FN_CARD},
+            {"uiHeaderBar",SLUI_FN_HEADER_BAR},{"uiStatusBar",SLUI_FN_STATUS_BAR},{"uiSeparator",SLUI_FN_SEPARATOR},
+            {"uiScrolledView",SLUI_FN_SCROLLED_VIEW},{"uiScrolledScrollTo",SLUI_FN_SCROLLED_SCROLL_TO},
+            {"uiScrolledScrollBy",SLUI_FN_SCROLLED_SCROLL_BY},{"uiScrolledScrollX",SLUI_FN_SCROLLED_SCROLL_X},
+            {"uiScrolledScrollY",SLUI_FN_SCROLLED_SCROLL_Y},
+            {"uiSpacer",SLUI_FN_SPACER},{"uiButton",SLUI_FN_BUTTON},{"uiLinkButton",SLUI_FN_LINK_BUTTON},
+            {"uiToggle",SLUI_FN_TOGGLE},{"uiCheckBox",SLUI_FN_CHECK_BOX},{"uiRadioButton",SLUI_FN_RADIO_BUTTON},
+            {"uiComboBox",SLUI_FN_COMBO_BOX},{"uiComboBoxAdd",SLUI_FN_COMBO_BOX_ADD},{"uiSpinButton",SLUI_FN_SPIN_BUTTON},
+            {"uiEntry",SLUI_FN_ENTRY},{"uiSearchEntry",SLUI_FN_SEARCH_ENTRY},{"uiPasswordEntry",SLUI_FN_PASSWORD_ENTRY},
+            {"uiSlider",SLUI_FN_SLIDER},{"uiScrollBar",SLUI_FN_SCROLL_BAR},{"uiProgressBar",SLUI_FN_PROGRESS_BAR},
+            {"uiLevelBar",SLUI_FN_LEVEL_BAR},{"uiSpinner",SLUI_FN_SPINNER},{"uiLabel",SLUI_FN_LABEL},
+            {"uiHeading",SLUI_FN_HEADING},{"uiImage",SLUI_FN_IMAGE},{"uiAvatar",SLUI_FN_AVATAR},
+            {"uiBadge",SLUI_FN_BADGE},{"uiChip",SLUI_FN_CHIP},{"uiInfoBar",SLUI_FN_INFO_BAR},{"uiTooltip",SLUI_FN_TOOLTIP},
+            {"uiThrobber",SLUI_FN_THROBBER},{"uiThrobberSetWidth",SLUI_FN_THROBBER_SET_WIDTH},
+            {"uiThrobberSetIntensity",SLUI_FN_THROBBER_SET_INTENSITY},{"uiThrobberSetHue",SLUI_FN_THROBBER_SET_HUE},
+            {"uiWidgetMargin",SLUI_FN_WIDGET_SET_MARGIN},{"uiWidgetAlign",SLUI_FN_WIDGET_SET_ALIGN},
+            {"uiWidgetExpand",SLUI_FN_WIDGET_SET_EXPAND},{"uiWidgetSizeRequest",SLUI_FN_WIDGET_SET_SIZE_REQ},
+            {"uiWidgetSensitive",SLUI_FN_WIDGET_SET_SENSITIVE},{"uiWidgetVisible",SLUI_FN_WIDGET_SET_VISIBLE},
+            {"uiWidgetSuggested",SLUI_FN_WIDGET_SET_SUGGESTED},{"uiWidgetDestructive",SLUI_FN_WIDGET_SET_DESTRUCT},
+            {"uiWidgetSetText",SLUI_FN_WIDGET_SET_TEXT},{"uiWidgetSetIcon",SLUI_FN_WIDGET_SET_ICON},
+            {"uiPopupCreate",SLUI_FN_POPUP_CREATE},{"uiPopupSetOpen",SLUI_FN_POPUP_SET_OPEN},{"uiPopupIsOpen",SLUI_FN_POPUP_IS_OPEN},
+            {"uiWifiOpenSettings",SLUI_FN_WIFI_OPEN_SETTINGS},
+            {"uiWifiScan",SLUI_FN_WIFI_SCAN},{"uiWifiNetworkCount",SLUI_FN_WIFI_NETWORK_COUNT},
+            {"uiWifiNetworkSsid",SLUI_FN_WIFI_NETWORK_SSID},{"uiWifiNetworkBssid",SLUI_FN_WIFI_NETWORK_BSSID},
+            {"uiWifiNetworkSignal",SLUI_FN_WIFI_NETWORK_SIGNAL},{"uiWifiNetworkSecurity",SLUI_FN_WIFI_NETWORK_SECURITY},
+            {"uiWifiConnect",SLUI_FN_WIFI_CONNECT},{"uiWifiDisconnect",SLUI_FN_WIFI_DISCONNECT},
+            {"uiWifiStatusName",SLUI_FN_WIFI_STATUS_NAME},
+            {"uiBallumSupported",SLUI_FN_BALLUM_SUPPORTED},{"uiBallumBackendName",SLUI_FN_BALLUM_BACKEND_NAME},
+            {"uiBallumEnumerate",SLUI_FN_BALLUM_ENUMERATE},{"uiBallumDisplayCount",SLUI_FN_BALLUM_DISPLAY_COUNT},
+            {"uiBallumDisplayId",SLUI_FN_BALLUM_DISPLAY_ID},{"uiBallumDisplayName",SLUI_FN_BALLUM_DISPLAY_NAME},
+            {"uiBallumDisplayWidth",SLUI_FN_BALLUM_DISPLAY_WIDTH},{"uiBallumDisplayHeight",SLUI_FN_BALLUM_DISPLAY_HEIGHT},
+            {"uiBallumDisplayPrimary",SLUI_FN_BALLUM_DISPLAY_PRIMARY},{"uiBallumDisplayCaps",SLUI_FN_BALLUM_DISPLAY_CAPS},
+            {"uiBallumSetPixel",SLUI_FN_BALLUM_SET_PIXEL},{"uiBallumGetPixel",SLUI_FN_BALLUM_GET_PIXEL},
+            {"uiBallumSetBrightness",SLUI_FN_BALLUM_SET_BRIGHTNESS},{"uiBallumSetWarmth",SLUI_FN_BALLUM_SET_WARMTH},
+            {"uiBallumSetGamma",SLUI_FN_BALLUM_SET_GAMMA},{"uiBallumStatusName",SLUI_FN_BALLUM_STATUS_NAME},
+            {"uiBallumHasInput",SLUI_FN_BALLUM_HAS_INPUT},{"uiBallumPoll",SLUI_FN_BALLUM_POLL},
+            {"uiBallumEventX",SLUI_FN_BALLUM_EVENT_X},{"uiBallumEventY",SLUI_FN_BALLUM_EVENT_Y},
+            {"uiBallumEventButton",SLUI_FN_BALLUM_EVENT_BUTTON},{"uiBallumEventSource",SLUI_FN_BALLUM_EVENT_SOURCE},
+            {"uiBallumEventContact",SLUI_FN_BALLUM_EVENT_CONTACT},{"uiBallumEventModifiers",SLUI_FN_BALLUM_EVENT_MODIFIERS},
+            {"uiBallumEventTypeName",SLUI_FN_BALLUM_EVENT_TYPE_NAME},
+            {"uiBallumHasKeyboard",SLUI_FN_BALLUM_HAS_KEYBOARD},{"uiBallumPollKey",SLUI_FN_BALLUM_POLL_KEY},
+            {"uiBallumLogoReady",SLUI_FN_BALLUM_LOGO_READY},{"uiBallumLogoBlend",SLUI_FN_BALLUM_LOGO_BLEND},
+            {"uiBallumLogoLoad",SLUI_FN_BALLUM_LOGO_LOAD},{"uiBallumLogoSetEffect",SLUI_FN_BALLUM_LOGO_SET_EFFECT},
+            {"uiBallumFxCount",SLUI_FN_BALLUM_FX_COUNT},{"uiBallumFxName",SLUI_FN_BALLUM_FX_NAME},
+            {"uiBallumFxByName",SLUI_FN_BALLUM_FX_BY_NAME},
+            {"uiWidgetSetToggle",SLUI_FN_WIDGET_SET_TOGGLE},
+            {"uiWidgetSetValue",SLUI_FN_WIDGET_SET_VALUE},{"uiWidgetGetText",SLUI_FN_WIDGET_GET_TEXT},
+            {"uiWidgetGetToggle",SLUI_FN_WIDGET_GET_TOGGLE},{"uiWidgetGetValue",SLUI_FN_WIDGET_GET_VALUE},
+            {"uiWidgetTakeActivated",SLUI_FN_WIDGET_TAKE_ACTIVATED},{"uiWidgetIsHovered",SLUI_FN_WIDGET_IS_HOVERED},
+            {"uiWidgetTakePressed",SLUI_FN_WIDGET_TAKE_PRESSED},{"uiWidgetTakeReleased",SLUI_FN_WIDGET_TAKE_RELEASED},
+            {"uiWidgetTakeHoverEntered",SLUI_FN_WIDGET_TAKE_HOVER_ENTERED},{"uiWidgetTakeHoverLeft",SLUI_FN_WIDGET_TAKE_HOVER_LEFT},
+            {"uiThemePreset",SLUI_FN_THEME_PRESET},
+            {"uiThemeDestroy",SLUI_FN_THEME_DESTROY},{"uiThemeLoadConfig",SLUI_FN_THEME_LOAD_CONFIG},
+            {"uiThemeSetBaseColor",SLUI_FN_THEME_SET_BASE},{"uiThemeSetBg",SLUI_FN_THEME_SET_BG},
+            {"uiThemeSetSurface",SLUI_FN_THEME_SET_SURFACE},{"uiThemeSetSurfaceHi",SLUI_FN_THEME_SET_SURFACE_HI},
+            {"uiThemeSetChrome",SLUI_FN_THEME_SET_CHROME},{"uiThemeSetBorder",SLUI_FN_THEME_SET_BORDER},
+            {"uiThemeSetFg",SLUI_FN_THEME_SET_FG},{"uiThemeSetFgDim",SLUI_FN_THEME_SET_FG_DIM},
+            {"uiThemeSetAccent",SLUI_FN_THEME_SET_ACCENT},{"uiThemeSetAccentFg",SLUI_FN_THEME_SET_ACCENT_FG},
+            {"uiThemeSetDanger",SLUI_FN_THEME_SET_DANGER},{"uiThemeSetRadius",SLUI_FN_THEME_SET_RADIUS},
+            {"uiThemeSetControlHeight",SLUI_FN_THEME_SET_CONTROL_H},{"uiThemeSetFont",SLUI_FN_THEME_SET_FONT},
+            {"uiScreenWidth",SLUI_FN_SCREEN_WIDTH},{"uiScreenHeight",SLUI_FN_SCREEN_HEIGHT},
+        };
+        auto it=uiIds.find(n);
+        if(it==uiIds.end())return false;
+        int id=it->second;
+        int want=sleela_ui_arity(id);
+        if((int)c.args.size()!=want)
+            throw std::runtime_error("Semantic error: "+n+"() expects "+std::to_string(want)+" argument(s), got "+std::to_string(c.args.size()));
+        for(const auto& a:c.args) emitExpr(a.get());
+        emit(OP_UI_CALL,id);
+        return true;
+    }
+
     bool tryEmitBuiltin(const Call& c){
         const std::string& n=c.callee;
+        if(n.size()>2 && n[0]=='u' && n[1]=='i' && n[2]>='A' && n[2]<='Z'){ if(tryEmitUiBuiltin(c)) return true; }
         auto litInt=[&](const Expr*e,const char*what)->int{auto il=dynamic_cast<const IntLit*>(e);if(!il)throw std::runtime_error("Semantic error: "+std::string(what)+" must be an integer literal");return(int)il->value;};
         if(n=="spawn"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: spawn(method) takes exactly one argument");auto var=dynamic_cast<const VarExpr*>(c.args[0].get());if(!var)throw std::runtime_error("Semantic error: spawn(method) argument must be a method name");auto it=funcIndex_.find(var->name);if(it==funcIndex_.end())it=funcIndex_.find(currentClass_+"::"+var->name);if(it==funcIndex_.end())throw std::runtime_error("Semantic error: spawn of unknown method '"+var->name+"'");if(!methods_[it->second].method->isStatic)throw std::runtime_error("Semantic error: spawn target '"+var->name+"' must be static because a thread has no instance receiver");if(!methods_[it->second].method->params.empty())throw std::runtime_error("Semantic error: spawn target '"+var->name+"' must take no parameters");emit(OP_SPAWN,it->second);return true;}
         if(n=="join"){if(!c.args.empty())throw std::runtime_error("Semantic error: join() takes no arguments");emit(OP_JOINALL);emit(OP_CONST,addNullConst());return true;}
@@ -769,6 +958,31 @@ private:
             if(syntax_<SyntaxVersion{1,3})throw std::runtime_error("Semantic error: best-of built-ins require #sleela 1.3");
         }
         auto emitArgs=[&](const Call& call){ for(const auto& a:call.args) emitExpr(a.get()); };
+
+        // ---- Idea System(TM) realtime canvas (native-CPU render + physics) ----
+        if(n=="ideaCanvasCreate"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasCreate(cols, rows) takes two arguments");emitArgs(c);emit(OP_IC_CREATE);return true;}
+        if(n=="ideaCanvasDestroy"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasDestroy(handle) takes one argument");emitArgs(c);emit(OP_IC_DESTROY);return true;}
+        if(n=="ideaCanvasCols"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasCols(handle) takes one argument");emitArgs(c);emit(OP_IC_COLS);return true;}
+        if(n=="ideaCanvasRows"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasRows(handle) takes one argument");emitArgs(c);emit(OP_IC_ROWS);return true;}
+        if(n=="ideaCanvasCount"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasCount(handle) takes one argument");emitArgs(c);emit(OP_IC_COUNT);return true;}
+        if(n=="ideaCanvasSetParams"){if(c.args.size()!=5)throw std::runtime_error("Semantic error: ideaCanvasSetParams(handle, decay, flowGain, hueBase, coupling) takes five arguments");emitArgs(c);emit(OP_IC_SETPARAMS);return true;}
+        if(n=="ideaCanvasExcite"){if(c.args.size()!=4)throw std::runtime_error("Semantic error: ideaCanvasExcite(handle, col, row, amount) takes four arguments");emitArgs(c);emit(OP_IC_EXCITE);return true;}
+        if(n=="ideaCanvasStep"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasStep(handle, dt) takes two arguments");emitArgs(c);emit(OP_IC_STEP);return true;}
+        if(n=="ideaCanvasAdvance"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasAdvance(handle, frameDt) takes two arguments");emitArgs(c);emit(OP_IC_ADVANCE);return true;}
+        if(n=="ideaCanvasTimestep"){if(!c.args.empty())throw std::runtime_error("Semantic error: ideaCanvasTimestep() takes no arguments");emit(OP_IC_TIMESTEP);return true;}
+        if(n=="ideaCanvasIntensityAt"){if(c.args.size()!=3)throw std::runtime_error("Semantic error: ideaCanvasIntensityAt(handle, col, row) takes three arguments");emitArgs(c);emit(OP_IC_INTENSITY);return true;}
+        if(n=="ideaCanvasHasRenderer"){if(!c.args.empty())throw std::runtime_error("Semantic error: ideaCanvasHasRenderer() takes no arguments");emit(OP_IC_HASREND);return true;}
+        if(n=="ideaCanvasOpenWindow"){if(c.args.size()!=4)throw std::runtime_error("Semantic error: ideaCanvasOpenWindow(handle, width, height, title) takes four arguments");emitArgs(c);emit(OP_IC_OPENWIN);return true;}
+        if(n=="ideaCanvasShouldClose"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasShouldClose(handle) takes one argument");emitArgs(c);emit(OP_IC_SHOULDCLOSE);return true;}
+        if(n=="ideaCanvasPresent"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasPresent(handle) takes one argument");emitArgs(c);emit(OP_IC_PRESENT);return true;}
+        if(n=="ideaCanvasRun"){if(c.args.size()!=4)throw std::runtime_error("Semantic error: ideaCanvasRun(handle, width, height, title) takes four arguments");emitArgs(c);emit(OP_IC_RUN);return true;}
+        if(n=="ideaCanvasSetBackendPolicy"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasSetBackendPolicy(handle, policy) takes two arguments");emitArgs(c);emit(OP_IC_SETPOLICY);return true;}
+        if(n=="ideaCanvasPolicy"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasPolicy(handle) takes one argument");emitArgs(c);emit(OP_IC_POLICY);return true;}
+        if(n=="ideaCanvasActiveBackend"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasActiveBackend(handle) takes one argument");emitArgs(c);emit(OP_IC_BACKEND);return true;}
+        if(n=="ideaCanvasGpuAvailable"){if(!c.args.empty())throw std::runtime_error("Semantic error: ideaCanvasGpuAvailable() takes no arguments");emit(OP_IC_GPUAVAIL);return true;}
+        if(n=="ideaCanvasMeasuredHz"){if(c.args.size()!=1)throw std::runtime_error("Semantic error: ideaCanvasMeasuredHz(handle) takes one argument");emitArgs(c);emit(OP_IC_MEASHZ);return true;}
+        if(n=="ideaCanvasMigrate"){if(c.args.size()!=2)throw std::runtime_error("Semantic error: ideaCanvasMigrate(handle, target) takes two arguments");emitArgs(c);emit(OP_IC_MIGRATE);return true;}
+
         if(n=="audioNew"){
             if(c.args.size()!=2)throw std::runtime_error("Semantic error: audioNew(sampleRate, outputPath) takes two arguments");
             emitExpr(c.args[0].get());emitExpr(c.args[1].get());emit(OP_AUDIO_NEW);return true;
@@ -867,7 +1081,7 @@ private:
             if((int)c.args.size()!=(int)target->params.size())throw std::runtime_error("Semantic error: method '"+currentClass_+"::"+c.callee+"' expects "+std::to_string(target->params.size())+" argument(s), got "+std::to_string(c.args.size()));
             if(target->isProtected&&methodOwner_[currentClass_+"::"+c.callee]!=currentClass_)throw std::runtime_error("protected method access denied");
             if(!target->isStatic)emitThis();
-            for(const auto&a:c.args)emitExpr(a.get());emit(OP_CALL,it->second);return;
+            emitArgsCoerced(c.args,target);emit(OP_CALL,it->second);return;
         }
         // Native subject helpers are synthesized as qualified class methods.
         // Resolve all __Native* helper names consistently with semantic analysis.
@@ -884,7 +1098,7 @@ private:
         if(it==funcIndex_.end())throw std::runtime_error("Semantic error: call to unknown method '"+c.callee+"'");
         const Method* target=methods_[it->second].method;
         if((int)c.args.size()!=(int)target->params.size())throw std::runtime_error("Semantic error: method '"+c.callee+"' expects "+std::to_string(target->params.size())+" argument(s), got "+std::to_string(c.args.size()));
-        for(const auto&a:c.args)emitExpr(a.get());emit(OP_CALL,it->second);
+        emitArgsCoerced(c.args,target);emit(OP_CALL,it->second);
     }
 };
 
