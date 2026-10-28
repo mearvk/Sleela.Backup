@@ -1,75 +1,131 @@
-/**
- * SLeeLa ARM Cortex-R family CPU model.
- * Profile-driven foundation for real-time embedded processors.
- * This class is not a cycle-accurate model of any particular silicon.
- */
-class SLCortexRCPU extends SLCPU {
-    String coreVariant = "";
-    String instructionProfile = "";
-    Boolean strictProfile = true;
+<< lib/cpu/cortex-r/SLCortexRCPU.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLCortexRCPU — a runnable model of the ARM Cortex-R. It extends
+     SLCPURuntime, so it inherits register storage, a word-addressable memory
+     interface, an SLALU, the fetch-decode-execute loop, and — crucially — the
+     resource-aware workload path (admit()/runWorkload()) that runs C, C++ or
+     Sleela programs on this CPU within an SLCPUResource grant, mapped onto the
+     canonical SLeeLa opcode substrate.
+   
+   This file supplies the ARM Cortex-R register set and a decode() over a compact
+   instruction encoding (load/move/arithmetic/compare/branch/halt). It is a
+   functional model sufficient to run the CPU as a CPU and as a target for
+   further .sleela inputs, not a cycle-accurate emulator; per-arch bus/timing
+   detail remains in this folder's markdown docs.
+   
+   Family: cpu. Extends SLCPURuntime. >>
+#sleela 2.5
+material;
+class SLCortexRCPU extends SLCPURuntime {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10429;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-08";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
 
-    Boolean hasFPU = false;
-    Boolean hasDSP = false;
-    Boolean hasMPU = false;
-    Boolean hasMMU = false;
-    Boolean hasICache = false;
-    Boolean hasDCache = false;
-    Boolean hasTCM = false;
-    Boolean hasVirtualization = false;
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int R_ZERO = 0;
+  static final int R_SP = 15;
+  static final int R_LINK = 14;
 
-    Map<String, Integer> registers = new Map<String, Integer>();
-    Map<String, Boolean> capabilities = new Map<String, Boolean>();
+  int gpr(int i)            { return readReg(i); }
+  void setGpr(int i, int v) { writeReg(i, v); }
 
-    function configure(String selectedVariant, String selectedInstructionProfile,
-                       Map<String, Boolean> selectedCapabilities) {
-        coreVariant = selectedVariant;
-        instructionProfile = selectedInstructionProfile;
-        capabilities = selectedCapabilities;
+  void configure() {
+    < the model's rated clock (MHz); overclockable >
+    setSpecClock(600);
+    bringUp("ARM Cortex-R", 32, 32, 16, 262144);
+  }
 
-        hasFPU = capabilities.getOrDefault("fpu", false);
-        hasDSP = capabilities.getOrDefault("dsp", false);
-        hasMPU = capabilities.getOrDefault("mpu", false);
-        hasMMU = capabilities.getOrDefault("mmu", false);
-        hasICache = capabilities.getOrDefault("icache", false);
-        hasDCache = capabilities.getOrDefault("dcache", false);
-        hasTCM = capabilities.getOrDefault("tcm", false);
-        hasVirtualization = capabilities.getOrDefault("virtualization", false);
+  < dst <- imm >
+  static final int I_LOADI = 1;
+  < dst <- src >
+  static final int I_MOVE  = 2;
+  < dst <- mem[imm] >
+  static final int I_LOAD  = 3;
+  < mem[imm] <- dst >
+  static final int I_STORE = 4;
+  < dst <- dst + src >
+  static final int I_ADD   = 5;
+  < dst <- dst - src >
+  static final int I_SUB   = 6;
+  < dst <- dst * src >
+  static final int I_MUL   = 7;
+  < dst <- dst & src >
+  static final int I_AND   = 8;
+  < dst <- dst | src >
+  static final int I_OR    = 9;
+  < flags <- dst - src >
+  static final int I_CMP   = 10;
+  < pc <- imm >
+  static final int I_JMP   = 11;
+  < if Z: pc <- imm >
+  static final int I_JZ    = 12;
+  static final int I_HALT  = 13;
 
-        validateConfiguration();
-        resetArchitecturalState();
-    }
+  int opOf(int w)  { return (w / 65536) % 256; }
+  int dstOf(int w) { return (w / 256) % 256; }
+  int srcOf(int w) { return w % 256; }
 
-    function validateConfiguration() {
-        if (coreVariant.trim().isEmpty() || instructionProfile.trim().isEmpty()) {
-            throw new IllegalArgumentException("Cortex-R core variant and instruction profile are required");
-        }
-        if (hasMPU && hasMMU && capabilities.getOrDefault("exclusive_protection_modes", false)) {
-            throw new IllegalArgumentException("Selected platform configuration marks MPU/MMU modes exclusive");
-        }
-    }
+  void decode(int word) {
+    int opc = opOf(word);
+    int dst = dstOf(word);
+    int src = srcOf(word);
 
-    function resetArchitecturalState() {
-        registers.clear();
-        // Register inventory and reset state must be supplied by the selected profile.
-        // Do not assume identical banked registers across Cortex-R generations.
-    }
+    if (opc == I_LOADI) { setGpr(dst, src); setZN(gpr(dst)); return; }
+    if (opc == I_MOVE)  { setGpr(dst, gpr(src)); setZN(gpr(dst)); return; }
+    if (opc == I_LOAD)  { setGpr(dst, readMem(src)); setZN(gpr(dst)); return; }
+    if (opc == I_STORE) { writeMem(src, gpr(dst)); return; }
+    if (opc == I_ADD)   { setGpr(dst, aluOp(gpr(dst), gpr(src), alu.OP_ADD)); return; }
+    if (opc == I_SUB)   { setGpr(dst, aluOp(gpr(dst), gpr(src), alu.OP_SUB)); return; }
+    if (opc == I_MUL)   { setGpr(dst, aluOp(gpr(dst), gpr(src), alu.OP_MUL)); return; }
+    if (opc == I_AND)   { setGpr(dst, aluOp(gpr(dst), gpr(src), alu.OP_AND)); return; }
+    if (opc == I_OR)    { setGpr(dst, aluOp(gpr(dst), gpr(src), alu.OP_OR)); return; }
+    if (opc == I_CMP)   { aluOp(gpr(dst), gpr(src), alu.OP_SUB); return; }
+    if (opc == I_JMP)   { setEntryPoint(src); return; }
+    if (opc == I_JZ)    { if (zero() == 1) { setEntryPoint(src); } return; }
+    if (opc == I_HALT)  { halted = 1; return; }
+  }
 
-    function supportsFeature(String feature) {
-        return capabilities.getOrDefault(feature, false);
-    }
+  void setZN(int v) { flagZ = (v == 0) ? 1 : 0; flagN = (v < 0) ? 1 : 0; }
+  int encode(int opcode, int dst, int src) {
+    return (opcode % 256) * 65536 + (dst % 256) * 256 + (src % 256);
+  }
 
-    function onUnsupportedInstruction(String opcode) {
-        log.warn("Unsupported Cortex-R instruction for " + coreVariant + " (" + instructionProfile + "): " + opcode);
-        if (strictProfile) {
-            throw new IllegalStateException("Unsupported instruction for selected Cortex-R profile: " + opcode);
-        }
-    }
-
-    function getCoreVariant() {
-        return coreVariant;
-    }
-
-    function getInstructionProfile() {
-        return instructionProfile;
-    }
+  int reg(int i) { return gpr(i); }
+  int registers() { return registerCount(); }
 }

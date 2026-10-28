@@ -1,0 +1,88 @@
+<< lib/ui/layout-demo.sleela
+   SLeeLa runnable demo for the standard UI Layout family. Shows the kit's
+   one-call column/row/grid/dock/absolute and reads back real pixel rects. >>
+#sleela 2.5
+material;
+class LayoutDemo {
+  String metaVersion = "1.0.0";
+  int metaId = 0;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-25";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-25";
+  int metaScienceRating = 8;
+  String metaNationalSchedule = "none";
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+
+  void main() {
+    print("=== standard UI layout family ===");
+    SLLayoutKit kit = new SLLayoutKit(); kit.create();
+    print("families: " + kit.families());
+
+    SLDockLayout d = kit.dock();
+    d.top(32); d.bottom(24); d.left(180); d.fill();
+    d.arrange(0, 0, 800, 600);
+    SLLayoutBox tb = d.boxOf(0);
+    SLLayoutBox sb = d.boxOf(1);
+    SLLayoutBox side = d.boxOf(2);
+    SLLayoutBox content = d.boxOf(3);
+    print("dock toolbar:  " + tb.describe());
+    print("dock status:   " + sb.describe());
+    print("dock sidebar:  " + side.describe());
+    print("dock content:  " + content.describe());
+
+    SLGridLayout g = kit.grid(3, 10, 10);
+    g.add(); g.add(); g.add(); g.add(); g.add();
+    g.arrange(0, 0, 600, 400);
+    print("grid rows=" + g.rows() + " cell0: " + g.boxOf(0).describe() + " cell4: " + g.boxOf(4).describe());
+
+    << The Frame is the organizing root: it owns a layout and holds named
+       components, each placed in excellent reference to the Frame. >>
+    SLLayoutFrame frame = new SLLayoutFrame(); frame.create();
+    frame.title("Settings");
+    frame.useColumn(8, 12);
+    frame.add("header", 40);
+    frame.add("body", 0);
+    frame.add("footer", 32);
+    frame.place(0, 0, 320, 600);
+    print("frame '" + frame.getTitle() + "' organizes " + frame.size() + " components:");
+    print("  header: " + frame.boxOf("header").describe());
+    print("  body:   " + frame.boxOf("body").describe());
+    print("  footer: " + frame.boxOf("footer").describe());
+
+    << Assumed size: the Frame reports the minimum starting size its own
+       components require (header 40 + body flex-floor + footer 32 + gaps + pad),
+       so a caller never has to hand-pick a width/height that is too small. >>
+    print("assumed size = " + frame.assumedWidth() + "x" + frame.assumedHeight());
+    SLLayoutFrame auto = new SLLayoutFrame(); auto.create();
+    auto.title("Auto");
+    auto.useColumn(8, 12);
+    auto.add("toolbar", 40);
+    auto.add("content", 0);
+    auto.add("status", 24);
+    < open at the assumed size, not a hand-picked guess >
+    auto.placeAssumed(0, 0);
+    print("auto placed assumed: " + auto.getWidth() + "x" + auto.getHeight()
+        + " fullscreen=" + auto.isFullscreen());
+
+    << Full-screen: the same Frame filling a supplied screen rectangle. >>
+    auto.placeFullscreen(0, 0, 1920, 1080);
+    print("auto fullscreen: " + auto.getWidth() + "x" + auto.getHeight()
+        + " fullscreen=" + auto.isFullscreen());
+
+    << Full-screen at the REAL primary-display size is available via
+       SLLayoutFrame.placeFullscreenFromScreen(x, y), which asks the Ballum
+       display subsystem (XRANDR / EnumDisplayMonitors / Core Graphics) for the
+       primary monitor's real pixels. It is exercised in the Ballum-linked
+       screen example rather than here, so this layout demo stays within the
+       pure-SLeeLa lib/ui package. >>
+
+    print("done");
+  }
+}

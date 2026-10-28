@@ -1,24 +1,64 @@
-/*
- * lib/user-interface/SLMood.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLMood — a named, adjustable SleelaUI mood: an Excellent
- *   Wash + a natural tanor + a Calculus-8, together. The mood's colour is the
- *   wash sampled at the calculus's mood scalar, freshened over time by the
- *   tanor's refresh and its gentle "a little left" bias. A tanor is a soft,
- *   portrait-quality ambient glow for "lightless bulbs" (light-of-effect with no
- *   hard source). Applying a mood to a light sets its colour and folds in the
- *   tanor's portrait softness/depth — so inputs flow into direct moods in one
- *   call. Each method bottoms out in a `mood*`/`light*` SLVM built-in calling the
- *   C ABI (sleela_ui_mood.h).
- *
- * A mood is a VM-local handle (-1 = none).
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `mood*` SLVM
- * bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLMood.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMood — a named, adjustable SleelaUI mood: an Excellent
+     Wash + a natural tanor + a Calculus-8, together. The mood's colour is the
+     wash sampled at the calculus's mood scalar, freshened over time by the
+     tanor's refresh and its gentle "a little left" bias. A tanor is a soft,
+     portrait-quality ambient glow for "lightless bulbs" (light-of-effect with no
+     hard source). Applying a mood to a light sets its colour and folds in the
+     tanor's portrait softness/depth — so inputs flow into direct moods in one
+     call. Each method bottoms out in a `mood*`/`light*` SLVM built-in calling the
+     C ABI (sleela_ui_mood.h).
+   
+   A mood is a VM-local handle (-1 = none).
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `mood*` SLVM
+   bridge. >>
+#sleela 2.5
+material;
 class SLMood {
-  // Mood-kind ordinals (mirror SLUIMoodKind).
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10383;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Mood-kind ordinals (mirror SLUIMoodKind). >
   static final int CALM    = 0;
   static final int WARM    = 1;
   static final int COOL    = 2;
@@ -27,22 +67,23 @@ class SLMood {
   static final int TENDER  = 5;
   static final int RADIANT = 6;
   static final int CUSTOM  = 7;
-  // Role/polarity ordinals (mirror the Lighting C ABI) for placeLight.
+  < Role/polarity ordinals (mirror the Lighting C ABI) for placeLight. >
   static final int SOURCE  = 0;
   static final int EMITTER = 1;
   static final int LIGHT   = 0;
   static final int SHADOW  = 1;
 
-  int mood;   // VM-local handle (-1 = none)
+  < VM-local handle (-1 = none) >
+  int mood;
 
-  // Create a mood from a built-in kind (pre-filled tasteful wash + tanor) or
-  // CUSTOM to set your own.
+  < Create a mood from a built-in kind (pre-filled tasteful wash + tanor) or >
+  < CUSTOM to set your own. >
   void create(int kind) { mood = moodCreate(kind); }
   int handle() { return mood; }
   boolean valid() { return mood >= 0; }
   void destroy() { if (mood >= 0) { moodDestroy(mood); mood = -1; } }
 
-  // Give the mood an Excellent Wash and a Calculus-8 (borrowed).
+  < Give the mood an Excellent Wash and a Calculus-8 (borrowed). >
   void setWash(SLWash wash) {
     if (mood >= 0 && wash != null) { moodSetWash(mood, wash.handle()); }
   }
@@ -50,9 +91,9 @@ class SLMood {
     if (mood >= 0 && calc != null) { moodSetCalculus(mood, calc.handle()); }
   }
 
-  // Configure the natural tanor (lightless-bulb glow): warmth 0 cool..1 warm,
-  // diffusion 0..1 portrait softness, refreshHz pattern refresh, leftBias
-  // "a little left", depth 0..1, tone 0xRRGGBBAA.
+  < Configure the natural tanor (lightless-bulb glow): warmth 0 cool..1 warm, >
+  < diffusion 0..1 portrait softness, refreshHz pattern refresh, leftBias >
+  < "a little left", depth 0..1, tone 0xRRGGBBAA. >
   void setTanor(double warmth, double diffusion, double refreshHz,
                 double leftBias, double depth, int tone) {
     if (mood >= 0) {
@@ -60,14 +101,14 @@ class SLMood {
     }
   }
 
-  // The mood's current colour, freshened at time_s seconds (0xRRGGBBAA).
+  < The mood's current colour, freshened at time_s seconds (0xRRGGBBAA). >
   int color(double timeS) { if (mood < 0) { return 0; } return moodColor(mood, timeS); }
 
-  // Build a mm-placed, mood-coloured light for text painted at
-  // (fontX, fontBaseline). mm places it (height it shines down from, plus
-  // left/right/up/down); dpi resolves mm to pixels; role/polarity choose
-  // source vs emitter and light vs shadow. Adds it to `scene` and returns the
-  // light index (or a negative error).
+  < Build a mm-placed, mood-coloured light for text painted at >
+  < (fontX, fontBaseline). mm places it (height it shines down from, plus >
+  < left/right/up/down); dpi resolves mm to pixels; role/polarity choose >
+  < source vs emitter and light vs shadow. Adds it to `scene` and returns the >
+  < light index (or a negative error). >
   int placeLight(SLLightScene scene, double fontX, double fontBaseline,
                  SLMm mm, double dpi, double timeS, int role, int polarity,
                  double reachPx, double intensity) {
