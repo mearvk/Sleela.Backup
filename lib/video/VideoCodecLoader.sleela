@@ -1,24 +1,64 @@
-/*
- * lib/video/VideoCodecLoader.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines the SLeeLa standard-library type VideoCodecLoader used within the video library family.
- */
-#sleela 1.3
-// Family: video. The SLeeLa-facing handle to the native video codec registry
-// (video/codecs/include/sleela_video_codecs.h). Like the audio SLCodecLoader,
-// a program never calls an individual video codec directly: it loads a codec
-// by id, uses it, then unloads. The Loader keeps a per-codec loaded flag.
-//
-// Video codec ids mirror sleela_video_codec_id (0-based, registry order):
-//   0 RAW  1 H264  2 HEVC  3 AV1  4 VP8  5 VP9  6 MPEG2  7 THEORA
-//   8 MJPEG  9 FFV1  10 PRORES  11 DNX
-//
-// Video handler states: 0 native, 1 backend, 2 qualified-backend, 3 recognized.
+<< lib/video/VideoCodecLoader.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines the SLeeLa standard-library type VideoCodecLoader used within the video library family. >>
+#sleela 2.5
+material;
+< Family: video. The SLeeLa-facing handle to the native video codec registry >
+< (video/codecs/include/sleela_video_codecs.h). Like the audio SLCodecLoader, >
+< a program never calls an individual video codec directly: it loads a codec >
+< by id, uses it, then unloads. The Loader keeps a per-codec loaded flag. >
+<  >
+< Video codec ids mirror sleela_video_codec_id (0-based, registry order): >
+< 0 RAW  1 H264  2 HEVC  3 AV1  4 VP8  5 VP9  6 MPEG2  7 THEORA >
+< 8 MJPEG  9 FFV1  10 PRORES  11 DNX >
+<  >
+< Video handler states: 0 native, 1 backend, 2 qualified-backend, 3 recognized. >
 class VideoCodecLoader {
-  // Per-codec loaded flag (1 loaded, 0 not), indexed by codec id. Call init().
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10964;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-10";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Per-codec loaded flag (1 loaded, 0 not), indexed by codec id. Call init(). >
   int[] loaded;
 
-  // Number of video codecs the native registry knows (SLEELA_VIDEO_CODEC_COUNT).
+  < Number of video codecs the native registry knows (SLEELA_VIDEO_CODEC_COUNT). >
   int codecCount(){ return 12; }
 
   void init(){ loaded = new int[12]; }
@@ -32,7 +72,7 @@ class VideoCodecLoader {
     while(i < 12){ loaded[i] = 0; i = i + 1; }
   }
 
-  // Human-readable codec name by id, matching the native registry.
+  < Human-readable codec name by id, matching the native registry. >
   string nameOf(int id){
     if(id == 0){ return "Raw Video"; }
     if(id == 1){ return "H.264/AVC"; }
@@ -48,10 +88,10 @@ class VideoCodecLoader {
     return "DNxHD/DNxHR";
   }
 
-  // Only Raw Video (0) encodes/decodes natively; every other video codec is a
-  // backend (ProRes/DNx are qualified backends). Mirrors the registry state.
+  < Only Raw Video (0) encodes/decodes natively; every other video codec is a >
+  < backend (ProRes/DNx are qualified backends). Mirrors the registry state. >
   boolean isNative(int id){ return id == 0; }
 
-  // ProRes (10) and DNx (11) need a specially qualified backend adapter.
+  < ProRes (10) and DNx (11) need a specially qualified backend adapter. >
   boolean isQualifiedBackend(int id){ return id == 10 || id == 11; }
 }
