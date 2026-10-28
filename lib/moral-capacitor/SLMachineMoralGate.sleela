@@ -1,23 +1,65 @@
-/*
- * lib/moral-capacitor/SLMachineMoralGate.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLMachineMoralGate — the Moral Capacitor(TM) adapter for
- *   the Machine surface (SLMachineModel / SLMachineBuilder and the lib/cpu
- *   SLMachine it composes). It wraps an SLMoralCapacitor with machine-power
- *   policies and exposes intention-named checks consulted before a machine does
- *   something consequential: powering on, booting a guest OS, and executing a
- *   program on the composed machine. Booting a guest and running code are gated
- *   so a machine built from named parts cannot be turned to a prohibited use
- *   without an auditable moral discharge.
- *
- * Family: moral-capacitor. Machine adapter over SLMoralCapacitor.
- */
-#sleela 1.5
+<< lib/moral-capacitor/SLMachineMoralGate.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMachineMoralGate — the Moral Capacitor(TM) adapter for
+     the Machine surface (SLMachineModel / SLMachineBuilder and the lib/cpu
+     SLMachine it composes). It wraps an SLMoralCapacitor with machine-power
+     policies and exposes intention-named checks consulted before a machine does
+     something consequential: powering on, booting a guest OS, and executing a
+     program on the composed machine. Booting a guest and running code are gated
+     so a machine built from named parts cannot be turned to a prohibited use
+     without an auditable moral discharge.
+   
+   Family: moral-capacitor. Machine adapter over SLMoralCapacitor. >>
+#sleela 2.5
+material;
 class SLMachineMoralGate {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10907;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-10";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   SLMoralCapacitor cap;
   SLMoralLedger ledger;
-  SLMoralCertificate certificate;   // the Machine product's Certificate of Morals
-  SLMoralCodeGuard codeGuard;       // admits the Machine only when certified
+  < the Machine product's Certificate of Morals >
+  SLMoralCertificate certificate;
+  < admits the Machine only when certified >
+  SLMoralCodeGuard codeGuard;
   int configured;
 
   void configure() {
@@ -27,37 +69,37 @@ class SLMachineMoralGate {
     configured = 1;
   }
 
-  // Certify this Machine: issue a Certificate of Morals over the gate's
-  // capacitor and arm a code guard against it, so the Machine is a morally
-  // certified product.
+  < Certify this Machine: issue a Certificate of Morals over the gate's >
+  < capacitor and arm a code guard against it, so the Machine is a morally >
+  < certified product. >
   void certify(SLMoralCertificateAuthority authority, int redlinesArmed,
                String issuedAt, String expiresAt) {
     certificate = authority.issue("sleela-machine", cap, redlinesArmed, issuedAt, expiresAt);
     codeGuard = new SLMoralCodeGuard(); codeGuard.configure(authority);
   }
 
-  // Prove at the Machine product boundary (power-on/boot) that the moral code is
-  // present and certified as of nowStamp.
+  < Prove at the Machine product boundary (power-on/boot) that the moral code is >
+  < present and certified as of nowStamp. >
   boolean admit(String nowStamp) {
     if (codeGuard == null || certificate == null) { return false; }
     return codeGuard.permits("sleela-machine", cap, certificate, nowStamp);
   }
   SLMoralCertificate moralCertificate() { return certificate; }
 
-  // Powering on the composed machine.
+  < Powering on the composed machine. >
   SLMoralVerdict permitPowerOn(String machineName) {
     SLMoralPolicy p = new SLMoralPolicy(); p.machinePower();
     return decide(op("machine", "power-on", machineName, "host", true, true), p);
   }
 
-  // Booting a guest OS on the machine.
+  < Booting a guest OS on the machine. >
   SLMoralVerdict permitBootGuest(String guest, boolean consented) {
     SLMoralPolicy p = new SLMoralPolicy(); p.machinePower();
     return decide(op("machine", "boot", guest, "host", true, consented), p);
   }
 
-  // Executing a program on the machine. Purpose is the stated use; it is
-  // screened for red-line verbs (surveil/impersonate/weaponize/...).
+  < Executing a program on the machine. Purpose is the stated use; it is >
+  < screened for red-line verbs (surveil/impersonate/weaponize/...). >
   SLMoralVerdict permitExecute(String purpose, boolean consented) {
     SLMoralPolicy p = new SLMoralPolicy(); p.machinePower(); p.setThreshold(3);
     return decide(op("machine", purpose, "program", "process", true, consented), p);

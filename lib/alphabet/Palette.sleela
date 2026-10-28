@@ -1,19 +1,59 @@
-/*
- * lib/alphabet/Palette.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines Palette, an ordered collection of Colors — the box of
- *   crayons every Theme reaches into. A Palette gives colors names and an
- *   order, so a user of Sleela can say "the third one" and mean it.
- *
- * Palette is a NATURAL / LOADABLE MODULE sharing the common module contract
- * (load / loaded / moduleName / describe). It owns an array of Colors and the
- * labels that go with them; a Theme borrows from it to assign roles.
- *
- * Family: alphabet.
- */
-#sleela 1.3
-// Unified SLeeLa SDK front-end object.
+<< lib/alphabet/Palette.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines Palette, an ordered collection of Colors — the box of
+     crayons every Theme reaches into. A Palette gives colors names and an
+     order, so a user of Sleela can say "the third one" and mean it.
+   
+   Palette is a NATURAL / LOADABLE MODULE sharing the common module contract
+   (load / loaded / moduleName / describe). It owns an array of Colors and the
+   labels that go with them; a Theme borrows from it to assign roles.
+   
+   Family: alphabet. >>
+#sleela 2.5
+material;
+< Unified SLeeLa SDK front-end object. >
 class Palette {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10340;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
 
   static final String MODULE = "Palette";
   static final int MAX = 64;
@@ -24,7 +64,7 @@ class Palette {
   String[] labels;
   int count;
 
-  // --- loadable-module contract ------------------------------------------
+  < --- loadable-module contract ------------------------------------------ >
   void load() {
     loadedFlag = 1;
     paletteName = "Untitled";
@@ -37,8 +77,8 @@ class Palette {
 
   void name(String n) { if (n != null) { paletteName = n; } }
 
-  // Add a labeled color by its channels. Returns the color's index, or -1 if
-  // the palette is full.
+  < Add a labeled color by its channels. Returns the color's index, or -1 if >
+  < the palette is full. >
   int add(String label, int r, int g, int b) {
     if (count >= MAX) { return -1; }
     Color c = new Color();
@@ -62,7 +102,7 @@ class Palette {
     return labels[i];
   }
 
-  // Find a color by its label, or null if the palette never heard of it.
+  < Find a color by its label, or null if the palette never heard of it. >
   Color byLabel(String label) {
     if (label == null) { return null; }
     int i = 0;
