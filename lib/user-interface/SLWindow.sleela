@@ -1,46 +1,90 @@
-/*
- * lib/user-interface/SLWindow.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLWindow — a top-level SleelaUI window opened from SLeeLa
- *   source. It wraps the toolkit's window built-ins: uiWindowCreate (bound to
- *   an application + theme), uiWindowShow/Hide, uiWindowSetTitle,
- *   uiWindowRoot (the root container to add widgets to), uiWindowSetTheme, and
- *   uiWindowRedraw. Underneath, the VM calls the SleelaUI C ABI, which creates
- *   a real native window (X11/Cocoa/Win32) and paints it with the toolkit's own
- *   software rasterizer, so the window looks identical on every platform.
- *
- * Lifecycle: configureOn(app, title, w, h, theme) is called by SLUserInterface;
- * then show(), set the title, add widgets to root(), and the application's run
- * loop drives it. A window is a VM-local handle (-1 = none).
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
- * bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLWindow.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLWindow — a top-level SleelaUI window opened from SLeeLa
+     source. It wraps the toolkit's window built-ins: uiWindowCreate (bound to
+     an application + theme), uiWindowShow/Hide, uiWindowSetTitle,
+     uiWindowRoot (the root container to add widgets to), uiWindowSetTheme, and
+     uiWindowRedraw. Underneath, the VM calls the SleelaUI C ABI, which creates
+     a real native window (X11/Cocoa/Win32) and paints it with the toolkit's own
+     software rasterizer, so the window looks identical on every platform.
+   
+   Lifecycle: configureOn(app, title, w, h, theme) is called by SLUserInterface;
+   then show(), set the title, add widgets to root(), and the application's run
+   loop drives it. A window is a VM-local handle (-1 = none).
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `ui*` SLVM
+   bridge. >>
+#sleela 2.5
+material;
 class SLWindow {
-  int window;   // VM-local window handle (-1 = none)
-  int root;     // VM-local handle of the window's root container widget
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11413;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-20";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < VM-local window handle (-1 = none) >
+  int window;
+  < VM-local handle of the window's root container widget >
+  int root;
   String title;
 
-  // Called by SLUserInterface.openWindow(). themeHandle -1 selects the
-  // built-in Slick Black default theme.
+  < Called by SLUserInterface.openWindow(). themeHandle -1 selects the >
+  < built-in Slick Black default theme. >
   void configureOn(int app, String windowTitle, int width, int height,
                    int themeHandle) {
     title = windowTitle;
     window = uiWindowCreate(app, windowTitle, width, height, themeHandle);
     root = (window >= 0) ? uiWindowRoot(window) : -1;
+    < Sleela GUI setup defaults to triple buffering for smoother redraws. >
+    if (window >= 0) { uiWindowSetBuffering(window, 2); }
   }
 
   boolean valid() { return window >= 0; }
 
-  // The root container widget. Add boxes/controls to this to build the UI.
+  < The root container widget. Add boxes/controls to this to build the UI. >
   SLWidget rootWidget() {
     SLBox box = new SLBox();
     box.adopt(root);
     return box;
   }
 
-  // Raw root handle, for widget constructors that attach to a parent handle.
+  < Raw root handle, for widget constructors that attach to a parent handle. >
   int rootHandle() { return root; }
 
   void show() { if (window >= 0) { uiWindowShow(window); } }
@@ -52,13 +96,97 @@ class SLWindow {
   }
   String windowTitle() { return title; }
 
-  // Swap the whole palette live (pass an SLTheme handle).
+  < Swap the whole palette live (pass an SLTheme handle). >
   void setTheme(int themeHandle) {
     if (window >= 0) { uiWindowSetTheme(window, themeHandle); }
   }
 
-  // Ask the toolkit to repaint this window on the next turn.
+  < Ask the toolkit to repaint this window on the next turn. >
   void requestRedraw() { if (window >= 0) { uiWindowRedraw(window); } }
+
+  < Presentation buffering: how a painted frame reaches the screen. >
+  < 0 = single (direct blit; may tear on resize) >
+  < 1 = double (one off-screen back buffer; frame lands atomically) >
+  < 2 = triple (two back buffers; default for SLeeLa GUI setup) >
+  < Programs can override this with setBuffering(mode). >
+  void setBuffering(int mode) { if (window >= 0) { uiWindowSetBuffering(window, mode); } }
+  int buffering() { return (window >= 0) ? uiWindowBuffering(window) : 0; }
+
+  < Window size constraints are in pixels. The native toolkit validates limits
+    atomically against the measured minimum size. A maximum dimension of 0 is
+    unbounded. Setter methods return SLUI status (0 = success, negative = error). >
+  int setMinSize(int width, int height) {
+    return (window >= 0) ? uiWindowSetMinSize(window, width, height) : -3;
+  }
+  int setMaxSize(int width, int height) {
+    return (window >= 0) ? uiWindowSetMaxSize(window, width, height) : -3;
+  }
+  int setSizeLimits(int minWidth, int minHeight, int maxWidth, int maxHeight) {
+    return (window >= 0) ? uiWindowSetSizeLimits(window, minWidth, minHeight, maxWidth, maxHeight) : -3;
+  }
+  int minWidth() { return (window >= 0) ? uiWindowMinWidth(window) : -1; }
+  int minHeight() { return (window >= 0) ? uiWindowMinHeight(window) : -1; }
+  < Maximum getters return 0 for unbounded and -1 when the window is invalid. >
+  int maxWidth() { return (window >= 0) ? uiWindowMaxWidth(window) : -1; }
+  int maxHeight() { return (window >= 0) ? uiWindowMaxHeight(window) : -1; }
+
+  < ---- assumed starting size + full-screen intent ------------------------- >
+  < Absolute assumed floor for a usable native window, mirroring the pure-SLeeLa >
+  < lib/ui/SLLayoutFrame floor so both UI systems agree on "at least so large". >
+  static final int MIN_WINDOW_W = 160;
+  static final int MIN_WINDOW_H = 120;
+  < A very large extent treated as "fill the screen" when a real screen size is >
+  < not known. A native host that knows its monitor passes the true pixels to >
+  < configureFullscreen() instead of relying on this sentinel. >
+  static final int FULLSCREEN = 100000;
+
+  << Adopt an ASSUMED minimum size for an already-open window: clamp the two
+     supplied dimensions up to the window floor and pin them as the window's
+     minimum size, so the window can never be shrunk below the size its content
+     requires. Returns the SLUI status from the native size-limit call. Pass the
+     assumedWidth()/assumedHeight() computed by a lib/ui SLLayoutFrame. >>
+  int assumeSize(int assumedW, int assumedH) {
+    int w = (assumedW < MIN_WINDOW_W) ? MIN_WINDOW_W : assumedW;
+    int h = (assumedH < MIN_WINDOW_H) ? MIN_WINDOW_H : assumedH;
+    return setMinSize(w, h);
+  }
+
+  << Open a window at its ASSUMED starting size on `app`: the window is created
+     at least `assumedW` x `assumedH` (clamped up to the floor), and that size is
+     also pinned as the minimum so content is never clipped. This is the native
+     counterpart to SLLayoutFrame.placeAssumed(): size driven by content, made
+     explicit at construction. >>
+  void configureAssumed(int app, String windowTitle, int assumedW, int assumedH,
+                        int themeHandle) {
+    int w = (assumedW < MIN_WINDOW_W) ? MIN_WINDOW_W : assumedW;
+    int h = (assumedH < MIN_WINDOW_H) ? MIN_WINDOW_H : assumedH;
+    configureOn(app, windowTitle, w, h, themeHandle);
+    if (window >= 0) { setMinSize(w, h); }
+  }
+
+  << Open a window intended to be FULL SCREEN at `screenW` x `screenH`. Pass the
+     host's real monitor pixels; pass FULLSCREEN for both when the size is not
+     known and you want the largest window the toolkit will grant.
+
+     Honest limitation: the SleelaUI VM bridge is pack/size based and exposes no
+     true window-manager full-screen built-in (there is no uiWindowFullscreen),
+     so this opens a window sized to the screen rectangle rather than taking an
+     exclusive full-screen mode. A genuine full-screen state would require a new
+     ui* bridge built-in; that is a documented follow-up, not done here. >>
+  void configureFullscreen(int app, String windowTitle, int screenW, int screenH,
+                           int themeHandle) {
+    int w = (screenW < MIN_WINDOW_W) ? MIN_WINDOW_W : screenW;
+    int h = (screenH < MIN_WINDOW_H) ? MIN_WINDOW_H : screenH;
+    configureOn(app, windowTitle, w, h, themeHandle);
+  }
+
+  << To open a full-screen-sized window at the host's REAL primary-display size,
+     discovered per-OS by the Ballum display subsystem (XRANDR /
+     EnumDisplayMonitors / Core Graphics), call
+     SLBallumScreenFit.fitWindow(window, app, title, theme) in lib/ballum. The
+     screen-size bridge lives on the Ballum side so this package does not depend
+     on it; pass the real pixels to configureFullscreen(...) directly if you
+     already know them. >>
 
   int handle() { return window; }
 }
