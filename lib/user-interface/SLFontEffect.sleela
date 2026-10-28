@@ -1,20 +1,60 @@
-/*
- * lib/user-interface/SLFontEffect.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLFontEffect — one entry in an SLFont's effect stack. An
- *   effect is a drop/inner shadow, a soft glow, a directional light sheen, an
- *   EMITTER (the text radiates light into a scene — reserving nothing as an
- *   emitter, or binding as a source on an anchor), an outline, a relief
- *   emboss/engrave, or a gradient fill. It is a pure value object the host fills
- *   with the builder methods and adds to an SLFont; the font applies the stack
- *   back-to-front when drawing. Mirrors SLUIFontEffect in the SleelaUI Font C
- *   ABI (sleela_ui_font.h).
- *
- * Family: user-interface.
- */
-#sleela 1.5
+<< lib/user-interface/SLFontEffect.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLFontEffect — one entry in an SLFont's effect stack. An
+     effect is a drop/inner shadow, a soft glow, a directional light sheen, an
+     EMITTER (the text radiates light into a scene — reserving nothing as an
+     emitter, or binding as a source on an anchor), an outline, a relief
+     emboss/engrave, or a gradient fill. It is a pure value object the host fills
+     with the builder methods and adds to an SLFont; the font applies the stack
+     back-to-front when drawing. Mirrors SLUIFontEffect in the SleelaUI Font C
+     ABI (sleela_ui_font.h).
+   
+   Family: user-interface. >>
+#sleela 2.5
+material;
 class SLFontEffect {
-  // Effect-type ordinals (mirror SLUIFontEffectType).
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10364;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Effect-type ordinals (mirror SLUIFontEffectType). >
   static final int DROP_SHADOW  = 0;
   static final int INNER_SHADOW = 1;
   static final int GLOW         = 2;
@@ -23,20 +63,29 @@ class SLFontEffect {
   static final int OUTLINE      = 5;
   static final int RELIEF       = 6;
   static final int GRADIENT_FILL= 7;
-  // Relief direction (mirror SLUIFontRelief).
+  < Relief direction (mirror SLUIFontRelief). >
   static final int EMBOSSED = 0;
   static final int ENGRAVED = 1;
 
   int type;
-  int color;         // shadow/glow/light/outline/emitter colour (0xRRGGBBAA)
-  int color2;        // gradient bottom colour
-  double dx; double dy;  // shadow offset / light + emitter direction
-  double blur;       // shadow/glow softness radius (px)
-  double size;       // outline width / relief depth / emitter radius (px)
-  double intensity;  // 0..N strength (glow/light/emitter/relief)
-  double opacity;    // 0..1 effect opacity
-  int relief;        // EMBOSSED / ENGRAVED for a RELIEF effect
-  int reservedAnchor;// EMITTER: -1 reserve nothing; >=0 bind as a source
+  < shadow/glow/light/outline/emitter colour (0xRRGGBBAA) >
+  int color;
+  < gradient bottom colour >
+  int color2;
+  < shadow offset / light + emitter direction >
+  double dx; double dy;
+  < shadow/glow softness radius (px) >
+  double blur;
+  < outline width / relief depth / emitter radius (px) >
+  double size;
+  < 0..N strength (glow/light/emitter/relief) >
+  double intensity;
+  < 0..1 effect opacity >
+  double opacity;
+  < EMBOSSED / ENGRAVED for a RELIEF effect >
+  int relief;
+  < EMITTER: -1 reserve nothing; >=0 bind as a source >
+  int reservedAnchor;
 
   void base(int t) {
     type = t; color = 0x000000FF; color2 = 0x000000FF;
@@ -44,36 +93,36 @@ class SLFontEffect {
     relief = EMBOSSED; reservedAnchor = -1;
   }
 
-  // An offset, blurred, dark copy behind the glyph.
+  < An offset, blurred, dark copy behind the glyph. >
   void dropShadow(double ox, double oy, double softness, int c) {
     base(DROP_SHADOW); dx = ox; dy = oy; blur = softness; color = c; opacity = 0.6;
   }
-  // Shadow inside the glyph (a pressed-in look).
+  < Shadow inside the glyph (a pressed-in look). >
   void innerShadow(double ox, double oy, double softness, int c) {
     base(INNER_SHADOW); dx = ox; dy = oy; blur = softness; color = c; opacity = 0.7;
   }
-  // A soft coloured halo around the glyph.
+  < A soft coloured halo around the glyph. >
   void glow(double radius, double i, int c) {
     base(GLOW); blur = radius; intensity = i; color = c;
   }
-  // A directional sheen lighting the glyph face.
+  < A directional sheen lighting the glyph face. >
   void light(double ux, double uy, double i, int c) {
     base(LIGHT); dx = ux; dy = uy; intensity = i; color = c;
   }
-  // The text radiates light into a scene. anchor < 0 => a pure emitter
-  // (reserves nothing); anchor >= 0 => bind as a light SOURCE on that anchor.
+  < The text radiates light into a scene. anchor < 0 => a pure emitter >
+  < (reserves nothing); anchor >= 0 => bind as a light SOURCE on that anchor. >
   void emitter(double radius, double i, int c, int anchor) {
     base(EMITTER); size = radius; intensity = i; color = c; reservedAnchor = anchor;
   }
-  // A stroked edge of a chosen width + colour.
+  < A stroked edge of a chosen width + colour. >
   void outline(double width, int c) {
     base(OUTLINE); size = width; color = c;
   }
-  // Emboss/engrave the glyph using lighting normals.
+  < Emboss/engrave the glyph using lighting normals. >
   void reliefEffect(int direction, double depth, double i) {
     base(RELIEF); relief = direction; size = depth; intensity = i;
   }
-  // Fill the glyph with a vertical gradient.
+  < Fill the glyph with a vertical gradient. >
   void gradientFill(int top, int bottom) {
     base(GRADIENT_FILL); color = top; color2 = bottom;
   }

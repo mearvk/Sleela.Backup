@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -15,7 +15,7 @@ SLeeLa is treated as a Turing-complete language whose front end should be expres
 
 The library uses one SLeeLa source file per front-end object. This makes the object inventory measurable and gives the project a path toward a roughly 2,000-object standard library without hiding declarations inside aggregate files.
 
-Families: `core/`, `collections/`, `text/`, `io/`, `vm/`, `os/`, `net/`, `security/`, `opcodes/`, `sldocument/`, `coorenagraph/`, `moral-capacitor/`.
+Families: `core/`, `collections/`, `text/`, `io/`, `vm/`, `os/`, `net/`, `wifi/`, `security/`, `opcodes/`, `sldocument/`, `coorenagraph/`, `moral-capacitor/`.
 
 ### Moral Capacitor™ — the ethical gate for every family
 
@@ -88,6 +88,10 @@ The `sldocument` family defines the `.sldocument` format: an ordered, top-down S
 
 `.sldocument` is a selectable **compile choice** from the SLeeLa compiler: `lib/compiler/SLSourceForm` and `lib/compiler/SLCompileChoice` let the compiler be told (explicitly or by extension) to compile a `.sleela` program or a `.sldocument`. Because a `.sldocument` may leave steps anonymous while a `.sleela` names every method, `sldocument/SLDocumentNaming`, `sldocument/SLSourceNameComparison`, and `sldocument/SLDocumentConverter` provide a deterministic naming convention (keep explicit names, derive from `@function` roles, else synthesize `step003`-style names) so an engineer can convert a `.sldocument` to a fully named `.sleela` for safekeeping without losing its established order.
 
+## Wi-Fi OOD and native connectivity
+
+The `wifi/` package contains the SLeeLa source object model for access-point records, credential modes, security policy, manager state, OOD state, and generation-specific Wi-Fi 4/5/6 facades. Its native counterpart in `wifi-common/` provides the C11 and C++17 operating-system providers for live scanning and connection operations. The SLVM bridge contract is documented in `wifi/WIFI.VM.BRIDGE.md`; a live SLeeLa OOD must bind that native API explicitly and must not report success while the bridge is unavailable. See `wifi/README.md`.
+
 The compiler and Nordshrift share recursive `/lib` discovery; new package directories and source units require no compiler allow-list update.
 
 The `opcodes` family expresses the canonical SLeeLa VM instruction set as one SLeeLa class per opcode: 103 `SLOp*` classes (codes 0–102; the base 98 are `OP_NOP`..`OP_AUDIO_PLATFORM`), plus `SLOpcodeBase` and `SLOpcodeStream`. Each class carries a single opcode and honours the fetch-then-execute-one contract — carefully call the VM to the next instruction, then execute exactly that one opcode — modeling `impl/core`'s dispatch loop at the SLeeLa layer. The fetch/dispatch primitives sit below the explicit VM/OS bridge in `native/src/sleela_opcode.cpp`. See `opcodes/OPCODES.md`, including the rationale for why 98 opcodes is complete for a modern program and developer.
@@ -133,3 +137,9 @@ The path is:
 `.sst source -> Nordshrift -> /lib discovery -> .sleela source -> SLeeLa Compiler -> SLeeLa IR -> SLVM/SLJVM`
 
 SST remains declarative input. Nordshrift resolves and emits SLeeLa source. The compiler consumes that output through the normal library index; there is no second package allow-list.
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>
