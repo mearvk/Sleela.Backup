@@ -1,0 +1,329 @@
+#sleela 2.5
+material;
+< text-string-demo.sleela -- the self-contained, runnable reference for the >
+< SLeeLa text/String surface, parallel to the codec/compression *-pipeline >
+< demos. The compiler's `run` compiles one file as a single unit, so this >
+< aggregate inlines a compact SLString plus a `main` that drives it the way an >
+< application would, in three honest layers: >
+<   1. IN-LANGUAGE ops (real results from +, ==, loops, String[]): concat, >
+<      equals, repeat, join, quote, copy, and the richer helpers repeatWithSep, >
+<      joinNonEmpty, equalsAnyOf. >
+<   2. CHAR-CELL VIEW (also real): when text is supplied as a String[] of >
+<      single-glyph cells, charAt/substring/indexOf/reverse/column-align become >
+<      genuinely in-language -- no bridge, no faking. >
+<   3. BRIDGED ops: char-level work on an opaque String returns honest >
+<      "text.bridge:<op>:..." descriptors rather than faked results. >
+<  >
+< The authoritative split classes live alongside this file: >
+< SLString, SLStringBuilder, SLStringBuffer, SLFormatter, SLRegex, >
+< SLCharset, SLTextReader, SLTextWriter. >
+
+class SLString {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11548;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-23";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-23";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  String value = "";
+  void set(String v) { value = v; }
+  String get() { return value; }
+  SLString with(String v) { value = v; return this; }
+  SLString copy() { SLString c = new SLString(); c.set(value); return c; }
+  void dispose() { value = ""; }
+
+  String concat(String other) { return value + other; }
+  boolean equals(String other) { return value == other; }
+  boolean isEmpty() { return value == ""; }
+  SLString append(String tail) { value = value + tail; return this; }
+  SLString prepend(String head) { value = head + value; return this; }
+  String repeat(int n) { String out = ""; int i = 0; while (i < n) { out = out + value; i = i + 1; } return out; }
+  String join(String[] parts, String sep) {
+    String out = ""; int i = 0; int n = arrayLength(parts);
+    while (i < n) { if (i > 0) { out = out + sep; } out = out + parts[i]; i = i + 1; }
+    return out;
+  }
+  String quote() { return "\"" + value + "\""; }
+
+  < Richer in-language helpers (real; mirror lib/text/SLString). >
+  String repeatWithSep(int n, String sep) {
+    String out = ""; int i = 0;
+    while (i < n) { if (i > 0) { out = out + sep; } out = out + value; i = i + 1; }
+    return out;
+  }
+  String joinNonEmpty(String[] parts, String sep) {
+    String out = ""; boolean first = true; int i = 0; int n = arrayLength(parts);
+    while (i < n) {
+      String p = parts[i];
+      if (p != null && p != "") { if (!first) { out = out + sep; } out = out + p; first = false; }
+      i = i + 1;
+    }
+    return out;
+  }
+  boolean equalsAnyOf(String[] options) {
+    int i = 0; int n = arrayLength(options);
+    while (i < n) { if (value == options[i]) { return true; } i = i + 1; }
+    return false;
+  }
+
+  < Char-cell view: REAL char-level ops over an explicit String[] of glyphs. >
+  String fromCells(String[] cells) {
+    String out = ""; int i = 0; int n = arrayLength(cells);
+    while (i < n) { out = out + cells[i]; i = i + 1; }
+    return out;
+  }
+  int lengthCells(String[] cells) { return arrayLength(cells); }
+  String charAtCells(String[] cells, int i) {
+    if (i < 0 || i >= arrayLength(cells)) { return ""; }
+    return cells[i];
+  }
+  String substringCells(String[] cells, int from, int to) {
+    String out = ""; int n = arrayLength(cells); int i = from;
+    if (i < 0) { i = 0; }
+    int end = to; if (end > n) { end = n; }
+    while (i < end) { out = out + cells[i]; i = i + 1; }
+    return out;
+  }
+  int indexOfCell(String[] cells, String needle) {
+    int i = 0; int n = arrayLength(cells);
+    while (i < n) { if (cells[i] == needle) { return i; } i = i + 1; }
+    return -1;
+  }
+  String reverseCells(String[] cells) {
+    String out = ""; int i = arrayLength(cells) - 1;
+    while (i >= 0) { out = out + cells[i]; i = i - 1; }
+    return out;
+  }
+  String columnRight(String[] cells, int width, String padChar) {
+    String body = fromCells(cells); int n = arrayLength(cells);
+    String pad = ""; int i = n;
+    while (i < width) { pad = pad + padChar; i = i + 1; }
+    return pad + body;
+  }
+
+  < New real char-cell helpers (mirror lib/text/SLString v1.1). >
+  String padCenterCells(String[] cells, int width, String padCell) {
+    int n = arrayLength(cells); if (n >= width) { return fromCells(cells); }
+    int total = width - n; int left = total / 2; int right = total - left;
+    String lpad = ""; int i = 0;
+    while (i < left) { lpad = lpad + padCell; i = i + 1; }
+    String rpad = ""; i = 0;
+    while (i < right) { rpad = rpad + padCell; i = i + 1; }
+    return lpad + fromCells(cells) + rpad;
+  }
+  String truncateCells(String[] cells, int width, String ellipsisCell) {
+    int n = arrayLength(cells); if (width <= 0) { return ""; }
+    if (n <= width) { return fromCells(cells); }
+    String out = ""; int keep = width - 1; int i = 0;
+    while (i < keep) { out = out + cells[i]; i = i + 1; }
+    return out + ellipsisCell;
+  }
+  boolean matchesAt(String[] cells, int at, String[] needle) {
+    int nn = arrayLength(needle); int cn = arrayLength(cells);
+    if (at < 0 || at + nn > cn) { return false; }
+    int i = 0;
+    while (i < nn) { if (cells[at + i] != needle[i]) { return false; } i = i + 1; }
+    return true;
+  }
+  int indexOfSeqCells(String[] cells, String[] needle) {
+    int nn = arrayLength(needle); int cn = arrayLength(cells);
+    if (nn == 0) { return 0; }
+    int start = 0;
+    while (start + nn <= cn) { if (matchesAt(cells, start, needle)) { return start; } start = start + 1; }
+    return -1;
+  }
+  int countSeqCells(String[] cells, String[] needle) {
+    int nn = arrayLength(needle); int cn = arrayLength(cells);
+    if (nn == 0) { return 0; }
+    int c = 0; int start = 0;
+    while (start + nn <= cn) {
+      if (matchesAt(cells, start, needle)) { c = c + 1; start = start + nn; }
+      else { start = start + 1; }
+    }
+    return c;
+  }
+  String replaceSeqCells(String[] cells, String[] from, String[] to) {
+    int fn = arrayLength(from); int cn = arrayLength(cells);
+    if (fn == 0) { return fromCells(cells); }
+    String out = ""; int i = 0;
+    while (i < cn) {
+      if (i + fn <= cn && matchesAt(cells, i, from)) {
+        int j = 0; int tn = arrayLength(to);
+        while (j < tn) { out = out + to[j]; j = j + 1; }
+        i = i + fn;
+      } else { out = out + cells[i]; i = i + 1; }
+    }
+    return out;
+  }
+  String mapCell(String cv, String[] fromSet, String[] toSet) {
+    int n = arrayLength(fromSet); if (arrayLength(toSet) < n) { n = arrayLength(toSet); }
+    int k = 0;
+    while (k < n) { if (cv == fromSet[k]) { return toSet[k]; } k = k + 1; }
+    return cv;
+  }
+  String mapCellsToString(String[] cells, String[] fromSet, String[] toSet) {
+    String out = ""; int n = arrayLength(cells); int i = 0;
+    while (i < n) { out = out + mapCell(cells[i], fromSet, toSet); i = i + 1; }
+    return out;
+  }
+  String[] splitCellsOn(String[] cells, String sepCell) {
+    int n = arrayLength(cells); int segs = 1; int i = 0;
+    while (i < n) { if (cells[i] == sepCell) { segs = segs + 1; } i = i + 1; }
+    String[] out = new String[segs]; int s = 0; String cur = ""; i = 0;
+    while (i < n) {
+      if (cells[i] == sepCell) { out[s] = cur; s = s + 1; cur = ""; }
+      else { cur = cur + cells[i]; }
+      i = i + 1;
+    }
+    out[s] = cur;
+    return out;
+  }
+  < New pure value helpers + honest bridged declarations. >
+  String suffixIf(boolean cond, String tail) { if (cond) { return value + tail; } return value; }
+  String wrapIfNotEmpty(String left, String right) {
+    if (value == null || value == "") { return ""; }
+    return left + value + right;
+  }
+  String normalize(String form) { return bridgeArg("normalize", form); }
+  String stripLeading() { return bridge("stripLeading"); }
+
+  < Bridged char-level ops -- honest descriptors, never faked. >
+  String bridge(String op) { return "text.bridge:" + op + ":" + value; }
+  String bridgeArg(String op, String a) { return "text.bridge:" + op + ":" + value + ":" + a; }
+  String bridgeKind(String op) {
+    if (op == "length" || op == "indexOf" || op == "compareTo") { return "int"; }
+    if (op == "contains" || op == "startsWith") { return "boolean"; }
+    if (op == "split") { return "string[]"; }
+    return "string";
+  }
+  String length() { return bridge("length"); }
+  String toUpperCase() { return bridge("toUpperCase"); }
+  String indexOf(String needle) { return bridgeArg("indexOf", needle); }
+  String split(String regex) { return bridgeArg("split", regex); }
+
+  void main() {
+    print("=== SLeeLa text/String surface demo ===");
+
+    < In-language ops (real results). >
+    SLString s = new SLString();
+    s.set("SLeeLa");
+    print("value      : " + s.get());
+    print("concat     : " + s.concat(" text"));
+    print("equals     : " + s.equals("SLeeLa"));
+    print("isEmpty    : " + s.isEmpty());
+
+    s.append("!").prepend(">> ");
+    print("append/pre : " + s.get());
+
+    SLString greet = new SLString();
+    greet.set("ab");
+    print("repeat(3)  : " + greet.repeat(3));
+
+    String[] parts = new String[3];
+    parts[0] = "one"; parts[1] = "two"; parts[2] = "three";
+    SLString joiner = new SLString();
+    print("join       : " + joiner.join(parts, ", "));
+    print("quote      : " + greet.quote());
+
+    < Richer in-language helpers (real). >
+    print("repeatWSep : " + greet.repeatWithSep(3, "-"));
+    String[] sparse = new String[4];
+    sparse[0] = "a"; sparse[1] = ""; sparse[2] = "b"; sparse[3] = "c";
+    print("joinNonEmpty: " + joiner.joinNonEmpty(sparse, "/"));
+    SLString color = new SLString();
+    color.set("blue");
+    String[] opts = new String[2]; opts[0] = "red"; opts[1] = "blue";
+    print("equalsAnyOf: " + color.equalsAnyOf(opts));
+
+    < --- CHAR-CELL VIEW: real char-level ops (no bridge) --------------- >
+    print("");
+    print("--- char-cell view (real char-level ops) ---");
+    SLString cell = new SLString();
+    String[] hello = new String[5];
+    hello[0] = "h"; hello[1] = "e"; hello[2] = "l"; hello[3] = "l"; hello[4] = "o";
+    print("cells      : " + cell.fromCells(hello));
+    print("lengthCells: " + cell.lengthCells(hello));
+    print("charAt(1)  : " + cell.charAtCells(hello, 1));
+    print("substr 1..4: " + cell.substringCells(hello, 1, 4));
+    print("indexOf 'l': " + cell.indexOfCell(hello, "l"));
+    print("reverse    : " + cell.reverseCells(hello));
+    print("colRight 8 : [" + cell.columnRight(hello, 8, ".") + "]");
+
+    < New real char-cell helpers (v1.1 surface): centre, truncate, subsequence >
+    < search/replace, split, and explicit-table case mapping. >
+    print("padCenter 9: [" + cell.padCenterCells(hello, 9, ".") + "]");
+    print("truncate 4 : [" + cell.truncateCells(hello, 4, "~") + "]");
+    String[] ll = new String[2]; ll[0] = "l"; ll[1] = "l";
+    print("idxSeq ll  : " + cell.indexOfSeqCells(hello, ll));
+    print("countSeq l : " + cell.countSeqCells(hello, ll));
+    String[] dash = new String[1]; dash[0] = "-";
+    print("replaceSeq : " + cell.replaceSeqCells(hello, ll, dash));
+    String[] loSet = new String[2]; loSet[0] = "h"; loSet[1] = "e";
+    String[] upSet = new String[2]; upSet[0] = "H"; upSet[1] = "E";
+    print("mapCells   : " + cell.mapCellsToString(hello, loSet, upSet));
+    String[] csvCells = new String[5];
+    csvCells[0]="x"; csvCells[1]=","; csvCells[2]="y"; csvCells[3]=","; csvCells[4]="z";
+    String[] segs = cell.splitCellsOn(csvCells, ",");
+    print("splitOn ,  : " + arrayLength(segs) + " -> " + segs[0] + "|" + segs[1] + "|" + segs[2]);
+
+    < New pure value helpers + bridged declarations. >
+    SLString av = new SLString();
+    av.set("name");
+    print("suffixIf   : " + av.suffixIf(true, ":"));
+    print("wrapIfNE   : " + av.wrapIfNotEmpty("[", "]"));
+    print("normalize  : " + av.normalize("NFC") + "   (kind " + av.bridgeKind("normalize") + ")");
+    print("stripLead  : " + av.stripLeading());
+    print("");
+
+    < copy() is independent of the original. >
+    SLString original = new SLString();
+    original.set("keep");
+    SLString dup = original.copy();
+    dup.append("-changed");
+    print("copy orig  : " + original.get());
+    print("copy dup   : " + dup.get());
+
+    < Bridged ops (honest descriptors + the type the runtime will yield). >
+    print("length     : " + s.length() + "   (kind " + s.bridgeKind("length") + ")");
+    print("toUpperCase: " + s.toUpperCase());
+    print("indexOf    : " + s.indexOf("L") + "   (kind " + s.bridgeKind("indexOf") + ")");
+    print("split      : " + s.split(" ") + "   (kind " + s.bridgeKind("split") + ")");
+
+    print("done");
+  }
+}

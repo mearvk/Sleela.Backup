@@ -1,11 +1,113 @@
-/*
- * lib/text/SLRegex.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines the SLeeLa standard-library type SLRegex used within the text library family.
- */
-#sleela 1.3
-// Unified SLeeLa standard-library front-end object.
-// Family: text. Native VM/OS work crosses an explicit bridge.
+< lib/text/SLRegex.sleela >
+< SLeeLa Standard Library Definition. >
+< Definition: SLRegex -- a comprehensive regular-expression contract for the >
+< text library family. >
+<  >
+< SLRegex holds a compiled-by-the-runtime pattern and exposes matching through >
+< the engine. Regex matching is inherently char-level, so almost all of the >
+< real work is bridged; the in-language layer manages the pattern/flags value >
+< and the honest result-reporting contract. >
+< * In-language: pattern/flags management, equality of patterns, anchoring >
+< helpers that assemble a new pattern string with +, and flag bookkeeping. >
+< * Bridged: compile, matches, find, findAll, replaceAll, split, groupCount, >
+< group -- each returns an inspectable "text.bridge:re:<op>:..." descriptor >
+< the native regex engine fulfils; never a faked match. >
+<  >
+< only; #sleela 2.1. > >
+< Comments are
+#sleela 2.5
+material;
+< Family: text. Native VM/OS work crosses an explicit bridge. >
+
 class SLRegex {
-  String value; void set(String v){value=v;} String get(){return value;} void clear(){value="";}
+
+  < the pattern source >
+  String value = "";
+  < e.g. "i", "m", "s", "ix" >
+  String flags = "";
+  < 1 once the runtime has compiled it (via bridge) >
+  int    compiled = 0;
+
+  < ---- pattern management (in-language) ------------------------------ >
+  void set(String v)   { value = v; compiled = 0; }
+  String get()         { return value; }
+  void clear()         { value = ""; flags = ""; compiled = 0; }
+  void setFlags(String f) { flags = f; compiled = 0; }
+  String getFlags()    { return flags; }
+  boolean equals(String other) { return value == other; }
+  boolean isEmpty()    { return value == ""; }
+
+  < Pattern assembly helpers (real, built with +): anchor / group / alternate. >
+  String anchored()           { return "^" + value + "$"; }
+  String startAnchored()      { return "^" + value; }
+  String endAnchored()        { return value + "$"; }
+  String grouped()            { return "(" + value + ")"; }
+  String optional()           { return "(?:" + value + ")?"; }
+  String alternate(String other) { return value + "|" + other; }
+  String withFlags()          { return "(?" + flags + ")" + value; }
+
+  < ---- bridged matching (the real engine) ---------------------------- >
+  String bridge(String op)              { return "text.bridge:re:" + op + ":" + value; }
+  String bridgeArg(String op, String a) { return "text.bridge:re:" + op + ":" + value + ":" + a; }
+  String bridgeArg2(String op, String a, String b) {
+    return "text.bridge:re:" + op + ":" + value + ":" + a + ":" + b;
+  }
+
+  String compile()                        { compiled = 1; return bridge("compile"); }
+  boolean isCompiled()                     { return compiled == 1; }
+  String matches(String input)             { return bridgeArg("matches", input); }
+  String find(String input)                { return bridgeArg("find", input); }
+  String findAll(String input)             { return bridgeArg("findAll", input); }
+  String group(String input, String idx)   { return bridgeArg2("group", input, idx); }
+  String groupCount()                      { return bridge("groupCount"); }
+  String replaceAll(String input, String to){ return bridgeArg2("replaceAll", input, to); }
+  String replaceFirst(String input, String to){ return bridgeArg2("replaceFirst", input, to); }
+  String split(String input)               { return bridgeArg("split", input); }
+
+  < ---- introspection ------------------------------------------------- >
+  String typeName()   { return "SLeeLa.text.SLRegex"; }
+  boolean available() { return true; }
+
+  < SLCloneable / SLDisposable intent. >
+  SLRegex copy() { SLRegex c = new SLRegex(); c.set(value); c.setFlags(flags); return c; }
+  void dispose() { value = ""; flags = ""; compiled = 0; }
+
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  < Eleven catalogued attributes with getter/setter pairs, so a GUI, loader, >
+  < or catalog can read and (where appropriate) override each record. >
+  < Values are faithful to the subject's real origin where publicly known. >
+  String metaVersion = "1.0.0";
+  int metaId = 4;
+  String metaAuthor = "SLeeLa standard library";
+  String metaDate = "2026-10-23";
+  String metaCopyright = "MEARVK LLC";
+  String metaTrademark = "none";
+  String metaCorporation = "MEARVK LLC";
+  String metaOrigin = "International";
+  String metaBirthDate = "2026";
+  int metaScienceRating = 8;
+  String metaNationalSchedule = "The Java Language Specification (java.util.regex.Pattern)";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
 }
