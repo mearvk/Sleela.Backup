@@ -1,0 +1,84 @@
+<< lib/wifi/SLWifiNetwork.sleela
+   One discovered access-point record. The native provider validates again at connect time. >>
+#sleela 2.5
+material;
+class SLWifiNetwork {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11440;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-20";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-20";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  String ssid;
+  String bssid;
+  int channel;
+  int frequencyMHz;
+  int signalPercent;
+  int security;
+  int inUse;
+  int protectedManagementFrames;
+
+  void configure(String networkSsid, String accessPointBssid, int channelNumber,
+                 int frequency, int signal, int securityKind, int connected,
+                 int pmfStatus) {
+    ssid = networkSsid;
+    bssid = accessPointBssid;
+    channel = channelNumber;
+    frequencyMHz = frequency;
+    signalPercent = signal;
+    security = securityKind;
+    inUse = connected;
+    protectedManagementFrames = pmfStatus;
+  }
+
+  boolean hasIdentity() {
+    return ssid != null && ssid != "" && bssid != null && bssid != "";
+  }
+
+  boolean signalIsValid() { return signalPercent >= 0 && signalPercent <= 100; }
+  boolean pmfIsKnown() { return protectedManagementFrames == 0 || protectedManagementFrames == 1; }
+  boolean pmfIsEnabled() { return protectedManagementFrames == 1; }
+  boolean connected() { return inUse == 1; }
+
+  String networkName() { return ssid; }
+  String accessPointAddress() { return bssid; }
+  int securityKind() { return security; }
+  int signalStrengthPercent() { return signalPercent; }
+  int channelNumber() { return channel; }
+  int frequencyInMHz() { return frequencyMHz; }
+}
