@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -29,6 +29,38 @@ sleela defender provision [directory] --allow-defender --sha256 <hex> --allow-ro
 ```
 
 `provision` performs fetch, build, and install in sequence.
+
+### Download and build directory
+
+The optional `[directory]` argument can be either the **download workspace**
+or the extracted backend source directory itself. It is never the SLeeLa
+installation directory.
+The driver downloads/extracts the selected backend to:
+
+- Linux: `<directory>/Linux.Admin.Defender`
+- Windows: `<directory>/Windows.Admin.Defender`
+
+If omitted, the workspace defaults to the system temporary directory under
+`sleela-defender` (for example, `/tmp/sleela-defender` on Linux). If you pass the extracted backend directory itself, the driver recognizes it
+and builds there; if you pass the workspace, it resolves the platform-specific
+source subdirectory. The native build is invoked directly in the extracted backend tree: Linux runs
+`make -C <workspace>/Linux.Admin.Defender/kernel/file-locker`; Windows invokes
+`<workspace>/Windows.Admin.Defender/build/build.ps1`. The backend is not
+supposed to be copied into SLeeLa's `~/.local/sleela` directory.
+
+Example using a persistent download workspace on Linux:
+
+```sh
+sleela defender fetch "$HOME/.cache/sleela-defender" --allow-defender --sha256 <archive-sha256>
+sleela defender build "$HOME/.cache/sleela-defender" --allow-defender --sha256 <archive-sha256>
+# Equivalent after fetch: pass the source directory itself
+sleela defender build "$HOME/.cache/sleela-defender/Linux.Admin.Defender" --allow-defender --sha256 <archive-sha256>
+```
+
+The SLeeLa runtime's own integrity gate is separate from the backend download
+and build path. If that gate reports missing or mismatched SLeeLa files, repair
+the installed SLeeLa tree by rerunning the updated installer from the verified
+checkout; do not bypass the gate or copy arbitrary files over the installation.
 
 ## Opt-in and integrity gates (required)
 
