@@ -1,0 +1,74 @@
+<< lib/wifi/SLWifiStatus.sleela
+   Status values 0-8 match wifi_status_t; 9 is a SLeeLa-only bridge state. >>
+#sleela 2.5
+material;
+class SLWifiStatus {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11444;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-20";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-20";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int OK = 0;
+  static final int INVALID_ARGUMENT = 1;
+  static final int BACKEND_UNAVAILABLE = 2;
+  static final int BACKEND_ERROR = 3;
+  static final int BUFFER_TOO_SMALL = 4;
+  static final int NETWORK_NOT_FOUND = 5;
+  static final int POLICY_BLOCKED = 6;
+  static final int AUTH_REQUIRED = 7;
+  static final int NOT_CONNECTED = 8;
+  static final int BRIDGE_REQUIRED = 9;
+
+  String name(int code) {
+    if (code == OK) { return "ok"; }
+    if (code == INVALID_ARGUMENT) { return "invalid argument"; }
+    if (code == BACKEND_UNAVAILABLE) { return "native Wi-Fi provider unavailable"; }
+    if (code == BACKEND_ERROR) { return "native Wi-Fi operation failed"; }
+    if (code == BUFFER_TOO_SMALL) { return "output buffer too small"; }
+    if (code == NETWORK_NOT_FOUND) { return "network is not in the latest scan"; }
+    if (code == POLICY_BLOCKED) { return "blocked by security policy"; }
+    if (code == AUTH_REQUIRED) { return "OS-managed authentication or a saved profile is required"; }
+    if (code == NOT_CONNECTED) { return "no active Wi-Fi connection"; }
+    if (code == BRIDGE_REQUIRED) { return "SLVM native Wi-Fi bridge is not bound"; }
+    return "unknown Wi-Fi status";
+  }
+
+  boolean succeeded(int code) { return code == OK; }
+  boolean failed(int code) { return code != OK; }
+}
