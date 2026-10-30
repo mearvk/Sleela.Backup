@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -122,12 +122,14 @@ class Hello { void main() { print("Hello, Sleela!"); } }
 ```
 
 The compiler **rejects** any file whose declared version is outside its
-supported range (shown by `sleela version`, currently `1.3 .. 1.7`); a file with
+supported range (shown by `sleela version`, currently `1.0 .. 2.8`); a file with
 no pragma is accepted with a warning and assumed to be the floor version. The
 supported range is defined in [`frontend/version.h`](frontend/version.h). The current
 normative language grammar is [`../SLEELA.syntax`](../SLEELA.syntax), syntax version
-`1.7`. The `U<n>` family (`U1` through `U1048576`) is part of this syntax; see
-[`../markdown/SOURCE.md`](../markdown/SOURCE.md) for the type-signature contract.
+`2.8`. Syntax 2.7 adds the signed wide-integer family (`int32` through
+`int16777216`); syntax 2.8 adds the matching unsigned family (`uint32` through
+`uint16777216`). See [`../markdown/SOURCE.md`](../markdown/SOURCE.md) for the
+type-signature contract.
 
 ## The language (first pass)
 
@@ -438,3 +440,9 @@ wired through the analyzer and the bytecode compiler, a latent `Binary`-operand
 bug was fixed, and several build-blocking source/Makefile defects were repaired.
 `cd impl && make` builds `sleela` and `nordshrift`, and `make test` passes every
 target. See the 2026-10-03 entry in [`../REVISIONS.md`](../REVISIONS.md).
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>
