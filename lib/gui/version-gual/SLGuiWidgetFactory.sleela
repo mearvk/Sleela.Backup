@@ -1,0 +1,196 @@
+<< lib/gui/version-gual/SLGuiWidgetFactory.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuiWidgetFactory — the single place that knows how a
+     DOM tag maps to a real SleelaUI widget. Given a node's tag and a parent
+     widget handle it calls the matching `ui*` built-in (uiBox / uiButton /
+     uiLabel / uiEntry / uiToggle / uiHeaderBar / uiStatusBar / ...) and returns
+     the new widget handle, so the reconciler (SLGuiMount) never hard-codes
+     toolkit knowledge. Tags mirror the SleelaUI vocabulary; an unknown tag
+     falls back to a vertical box so an unrecognised element still has a
+     container to hold children. This is the DOM->toolkit construction seam.
+   
+   Family: gui. The factory crosses the `ui*` SLVM bridge to the real toolkit;
+   SLeeLa still owns the node that the widget mirrors. >>
+#sleela 2.5
+material;
+class SLGuiWidgetFactory {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11349;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-19";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Orientation ordinals (mirror SLUIOrientation / SLWidget). >
+  static final int ORIENT_VERTICAL   = 0;
+  static final int ORIENT_HORIZONTAL = 1;
+
+  < Scroll-visibility policy ordinals (mirror native ScrolledView::Policy and >
+  < SLGuiScrollbar.SHOW_*): a scrolled viewport shows each axis' bar AUTO (only >
+  < on overflow), ALWAYS, or NEVER. >
+  static final int SCROLL_AUTO   = 0;
+  static final int SCROLL_ALWAYS = 1;
+  static final int SCROLL_NEVER  = 2;
+
+  < Map a CSS-style overflow keyword to a scroll policy. "auto"/"" -> AUTO, >
+  < "scroll"/"always" -> ALWAYS, "hidden"/"visible"/"clip"/"none" -> NEVER. >
+  int overflowPolicy(String kw) {
+    if (kw == null || kw == "" || kw == "auto") { return SCROLL_AUTO; }
+    if (kw == "scroll" || kw == "always")       { return SCROLL_ALWAYS; }
+    < hidden / visible / clip / none >
+    return SCROLL_NEVER;
+  }
+
+  < Construct a scrolled viewport directly with explicit per-axis policies. >
+  < SLGuiMount calls this to promote a container carrying an `overflow` attr. >
+  int constructScrolled(int parentHandle, int policyH, int policyV) {
+    if (parentHandle < 0) { return -1; }
+    return uiScrolledView(parentHandle, policyH, policyV);
+  }
+
+  < Does this tag build a native scrolled viewport (first child = content)? >
+  boolean isScrolled(String tag) {
+    return tag == "scrolled" || tag == "scrollview" || tag == "scrollarea";
+  }
+
+  < Construct the widget for `node` inside `parentHandle`. Returns the new >
+  < widget handle, or -1 when it could not be created. `label` is the node's >
+  < initial text/placeholder (empty string when it has none). >
+  int construct(int parentHandle, String tag, String label) {
+    if (parentHandle < 0) { return -1; }
+
+    < Containers. >
+    if (tag == "window" || tag == "box" || tag == "vbox") {
+      return uiBox(parentHandle, ORIENT_VERTICAL, 8);
+    }
+    if (tag == "hbox" || tag == "row") {
+      return uiBox(parentHandle, ORIENT_HORIZONTAL, 8);
+    }
+    if (tag == "header" || tag == "headerbar") { return uiHeaderBar(parentHandle); }
+    < Menus use the same host-backed widget seam as other controls. The model >
+    < classes own menu state and named actions; the host owns rendering/input. >
+    if (tag == "menubar" || tag == "menu-bar") { return uiBox(parentHandle, ORIENT_HORIZONTAL, 2); }
+    if (tag == "menu") { return uiBox(parentHandle, ORIENT_VERTICAL, 2); }
+    if (tag == "menuitem" || tag == "menu-item") { return uiButton(parentHandle, label); }
+    if (tag == "menuseparator" || tag == "menu-separator") { return uiSeparator(parentHandle, ORIENT_HORIZONTAL); }
+    if (tag == "status" || tag == "statusbar") { return uiStatusBar(parentHandle); }
+    if (tag == "frame" || tag == "group")      { return uiFrame(parentHandle, label); }
+
+    < Leaf / interactive controls. >
+    if (tag == "label" || tag == "text")   { return uiLabel(parentHandle, label); }
+    if (tag == "button")                    { return uiButton(parentHandle, label); }
+    if (tag == "entry" || tag == "input")   { return uiEntry(parentHandle, label); }
+    if (tag == "toggle" || tag == "switch") { return uiToggle(parentHandle, label, 0); }
+    if (tag == "spacer")                    { return uiSpacer(parentHandle); }
+    if (tag == "separator" || tag == "hr")  { return uiSeparator(parentHandle, ORIENT_HORIZONTAL); }
+
+    < Scrollbars (the IMPLIED scroll surface; geometry comes from >
+    < SLGuiScrollbar, which the host passes as the value/page here). A plain >
+    < "scrollbar"/"vscroll" is vertical; "hscroll" is horizontal. The initial >
+    < value/page are start-of-content with a full thumb; SLGuiScrollbar then >
+    < drives them each pass through uiWidgetSetValue. >
+    if (tag == "scrollbar" || tag == "vscroll" || tag == "vscrollbar") {
+      return uiScrollBar(parentHandle, ORIENT_VERTICAL, 0.0, 1.0);
+    }
+    if (tag == "hscroll" || tag == "hscrollbar") {
+      return uiScrollBar(parentHandle, ORIENT_HORIZONTAL, 0.0, 1.0);
+    }
+
+    < A SCROLLED VIEW: a viewport that clips its content and shows scrollbars >
+    < AUTOMATICALLY when the content overflows it (both axes, auto policy). The >
+    < first DOM child mounted into it becomes the scroll content. This is the >
+    < native overflow->scrollbar container; SLGuiMount also promotes any plain >
+    < container carrying an `overflow` attribute to one of these. >
+    if (tag == "scrolled" || tag == "scrollview" || tag == "scrollarea") {
+      return uiScrolledView(parentHandle, SCROLL_AUTO, SCROLL_AUTO);
+    }
+
+    < Fade/transition surfaces. The animation (opacity over time) is owned by >
+    < the SLeeLa models (SLGuiTransition / SLGuiToast / SLGuiModal / >
+    < SLGuiSkeleton), which drive the live widget's opacity each tick; the >
+    < factory just gives each a plain container to host its content: >
+    < - toast/snackbar  -> a horizontal strip docked to a screen corner; >
+    < - modal/dialog/overlay -> a vertical dialog box painted over a scrim; >
+    < - skeleton/placeholder -> a vertical stack of placeholder blocks; >
+    < - transition      -> a neutral wrapper whose children fade in/out. >
+    if (tag == "toast" || tag == "snackbar") {
+      return uiBox(parentHandle, ORIENT_HORIZONTAL, 8);
+    }
+    if (tag == "modal" || tag == "dialog" || tag == "overlay") {
+      return uiBox(parentHandle, ORIENT_VERTICAL, 12);
+    }
+    if (tag == "skeleton" || tag == "placeholder") {
+      return uiBox(parentHandle, ORIENT_VERTICAL, 8);
+    }
+    if (tag == "transition" || tag == "fade") {
+      return uiBox(parentHandle, ORIENT_VERTICAL, 8);
+    }
+
+    < Unknown tag: give it a vertical box so children still have a container. >
+    return uiBox(parentHandle, ORIENT_VERTICAL, 8);
+  }
+
+  < Is this tag an interactive control the host should poll for activations? >
+  boolean interactive(String tag) {
+    return tag == "button" || tag == "menuitem" || tag == "menu-item"
+        || tag == "entry" || tag == "input"
+        || tag == "toggle" || tag == "switch";
+  }
+
+  < Menubar/menuitem tags share the ordinary button activation channel.
+    The host adapter dispatches CLICK and the menu controller owns dismissal. >
+  int activationEvent(String tag) {
+    if (tag == "button" || tag == "menuitem" || tag == "menu-item") {
+      return SLGuiEventType.CLICK;
+    }
+    if (tag == "toggle" || tag == "switch") { return SLGuiEventType.TOGGLE; }
+    if (tag == "entry" || tag == "input")   { return SLGuiEventType.SUBMIT; }
+    return SLGuiEventType.CUSTOM;
+  }
+
+  boolean isContainer(String tag) {
+    return tag == "menubar" || tag == "menu-bar" || tag == "menu" || tag == "window" || tag == "box" || tag == "vbox" || tag == "hbox"
+        || tag == "row" || tag == "header" || tag == "headerbar"
+        || tag == "status" || tag == "statusbar" || tag == "frame"
+        || tag == "group"
+        || tag == "toast" || tag == "snackbar"
+        || tag == "modal" || tag == "dialog" || tag == "overlay"
+        || tag == "skeleton" || tag == "placeholder"
+        || tag == "transition" || tag == "fade"
+        || tag == "scrolled" || tag == "scrollview" || tag == "scrollarea";
+  }
+}

@@ -1,0 +1,288 @@
+<< lib/ui/SLLayoutFrame.sleela
+   SLeeLa Standard Library Definition.
+   Definition: SLLayoutFrame — the basic UI interface and the organizing root.
+     A Frame is a named rectangle that owns ONE layout (any SL*Layout from the
+     standard family) and a set of named COMPONENTS. Every component exists in
+     excellent reference to the Frame: you add a component, the Frame hands it to
+     its layout, and place() gives each component its exact rectangle RELATIVE TO
+     the Frame. So the Frame organizes -- it is the place components live and the
+     origin they are measured from.
+
+   This is the pure-SLeeLa, beginner-first organizing Frame (no native handle; it
+   always checks and runs). It complements -- and is distinct from -- the native,
+   bridge-backed container lib/user-interface/SLFrame (which `extends SLWidget`
+   and bottoms out in `uiFrame`); that one is a drawn widget, this one is the
+   component-organizing root of the standard layout family.
+
+   Easy path (a Frame with a vertical layout and three named components):
+     SLLayoutFrame f = new SLLayoutFrame(); f.create();
+     f.title("Settings");
+     f.useColumn(8, 12);            < give it a stack layout: gap 8, pad 12 >
+     f.add("header", 40);           < a 40px component >
+     f.add("list",   0);            < flexible: fills the rest >
+     f.add("footer", 32);
+     f.place(0, 0, 320, 600);       < the Frame's own rectangle >
+     SLLayoutBox list = f.boxOf("list");   < that component's rect, vs the Frame >
+   >>
+#sleela 2.5
+material;
+< Family: ui. The basic UI interface: the Frame that organizes components via a layout. >
+class SLLayoutFrame {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11607;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-25";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-25";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 8;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < which standard layout governs this Frame's children >
+  static final int LAYOUT_STACK = 0;
+  static final int LAYOUT_GRID  = 1;
+  static final int MAX_COMPONENTS = 128;
+  < A Frame never opens smaller than this, no matter how few components it has: >
+  < the absolute assumed floor for a usable starting window. >
+  static final int MIN_FRAME_W = 160;
+  static final int MIN_FRAME_H = 120;
+  < presentation mode: NORMAL uses the assumed/explicit size; FULLSCREEN fills >
+  < the supplied screen rectangle. >
+  static final int MODE_NORMAL = 0;
+  static final int MODE_FULLSCREEN = 1;
+
+  String frameTitle;
+  int kind;
+  < the Frame's own rectangle (origin + size), set by place() >
+  int fx; int fy; int fw; int fh;
+  < the governing layout (exactly one; chosen by a useXxx() call) >
+  SLStackLayout stack;
+  SLGridLayout  grid;
+  < the named components the Frame organizes, in add order >
+  String[] names;
+  < each component's quality (role + emphasis + interactivity), parallel to names >
+  SLComponentQuality[] qualities;
+  int count;
+  < 1 once place() has arranged the layout >
+  int placed;
+  < presentation mode: MODE_NORMAL or MODE_FULLSCREEN, set by how it was placed >
+  int mode;
+
+  void create() {
+    frameTitle = "";
+    kind = LAYOUT_STACK;
+    fx = 0; fy = 0; fw = 0; fh = 0;
+    stack = new SLStackLayout(); stack.create();
+    grid = null;
+    names = new String[MAX_COMPONENTS];
+    qualities = new SLComponentQuality[MAX_COMPONENTS];
+    count = 0;
+    placed = 0;
+    mode = MODE_NORMAL;
+  }
+
+  void title(String t) { if (t != null) { frameTitle = t; } }
+  String getTitle() { return frameTitle; }
+
+  < ---- choose the layout that organizes the components -------------------- >
+  < A vertical stack (gap, uniform padding). The 90% case. >
+  void useColumn(int gap, int pad) {
+    kind = LAYOUT_STACK;
+    stack = new SLStackLayout(); stack.create(); stack.column(); stack.gap(gap); stack.pad(pad);
+    grid = null;
+  }
+  < A horizontal stack. >
+  void useRow(int gap, int pad) {
+    kind = LAYOUT_STACK;
+    stack = new SLStackLayout(); stack.create(); stack.row(); stack.gap(gap); stack.pad(pad);
+    grid = null;
+  }
+  < A grid (columns, gap, uniform padding). >
+  void useGrid(int columns, int gap, int pad) {
+    kind = LAYOUT_GRID;
+    grid = new SLGridLayout(); grid.create(); grid.columns(columns); grid.gap(gap); grid.pad(pad);
+  }
+
+  < ---- add components (each referenced to the Frame through the layout) --- >
+  < Add a named component with a main-axis size (0 = flexible, stack only). The >
+  < Frame remembers the name and hands the size to its layout. Returns the >
+  < component's index, or -1 if the Frame is full. >
+  int add(String name, int sizePx) {
+    if (count >= MAX_COMPONENTS) { return -1; }
+    if (kind == LAYOUT_GRID) { grid.add(); }
+    else { stack.add(sizePx); }
+    names[count] = name;
+    SLComponentQuality q = new SLComponentQuality(); q.create();
+    qualities[count] = q;
+    int idx = count; count = count + 1;
+    return idx;
+  }
+  int size() { return count; }
+
+  < ---- per-component quality (role + emphasis + interactivity) ------------ >
+  < The quality descriptor for component `index` (never null for a valid >
+  < index; defaults to body/normal/enabled until the caller customizes it). >
+  SLComponentQuality qualityAt(int index) {
+    if (index < 0 || index >= count) { return null; }
+    return qualities[index];
+  }
+  < The quality descriptor for a named component, or null if unknown. >
+  SLComponentQuality qualityOf(String name) {
+    int idx = indexOf(name);
+    if (idx < 0) { return null; }
+    return qualities[idx];
+  }
+  < Replace a component's quality wholesale (ignored for an unknown index). >
+  void setQualityAt(int index, SLComponentQuality q) {
+    if (index < 0 || index >= count || q == null) { return; }
+    qualities[index] = q;
+  }
+
+  < the index of a named component, or -1 if the Frame never heard of it >
+  int indexOf(String name) {
+    if (name == null) { return -1; }
+    int i = 0;
+    while (i < count) { if (names[i] == name) { return i; } i = i + 1; }
+    return -1;
+  }
+
+  < ---- place the Frame, which arranges every component relative to it ----- >
+  void place(int x, int y, int w, int h) {
+    fx = x; fy = y;
+    fw = (w < 0) ? 0 : w; fh = (h < 0) ? 0 : h;
+    if (kind == LAYOUT_GRID) { grid.arrange(fx, fy, fw, fh); }
+    else { stack.arrange(fx, fy, fw, fh); }
+    mode = MODE_NORMAL;
+    placed = 1;
+  }
+
+  < ---- assumed size: how large this Frame must START, from its components -- >
+  << The assumed minimum WIDTH for this Frame: the natural width of its
+     governing layout (derived from the components' sizes, gaps, and padding),
+     never less than MIN_FRAME_W. This is the "it has so many components so wide
+     that the starting size must be at least so large" rule, made explicit. >>
+  int assumedWidth() {
+    int nat = (kind == LAYOUT_GRID) ? grid.naturalWidth() : stack.naturalWidth();
+    return (nat < MIN_FRAME_W) ? MIN_FRAME_W : nat;
+  }
+  << The assumed minimum HEIGHT for this Frame: the natural height of its
+     governing layout, never less than MIN_FRAME_H. >>
+  int assumedHeight() {
+    int nat = (kind == LAYOUT_GRID) ? grid.naturalHeight() : stack.naturalHeight();
+    return (nat < MIN_FRAME_H) ? MIN_FRAME_H : nat;
+  }
+
+  << Place the Frame at `(x, y)` using its ASSUMED size — the starting size
+     computed from the components it holds. This is the initialization sizing:
+     call it instead of place() when you want the Frame to open at least as
+     large as its contents require, without hand-computing a width/height. >>
+  void placeAssumed(int x, int y) {
+    place(x, y, assumedWidth(), assumedHeight());
+  }
+
+  << Place the Frame FULL SCREEN: it fills the supplied screen rectangle
+     (`screenW` x `screenH` at `x, y`) rather than its assumed size. The screen
+     extent is supplied by the caller/host because this pure-SLeeLa Frame has no
+     native display handle to query; a native host passes its real screen size.
+     The Frame is never placed smaller than its assumed size, so a tiny screen
+     still shows every component. >>
+  void placeFullscreen(int x, int y, int screenW, int screenH) {
+    int w = (screenW < assumedWidth()) ? assumedWidth() : screenW;
+    int h = (screenH < assumedHeight()) ? assumedHeight() : screenH;
+    fx = x; fy = y; fw = w; fh = h;
+    if (kind == LAYOUT_GRID) { grid.arrange(fx, fy, fw, fh); }
+    else { stack.arrange(fx, fy, fw, fh); }
+    mode = MODE_FULLSCREEN;
+    placed = 1;
+  }
+  < True when this Frame was placed in full-screen mode. >
+  boolean isFullscreen() { return mode == MODE_FULLSCREEN; }
+  < The presentation mode: MODE_NORMAL or MODE_FULLSCREEN. >
+  int getMode() { return mode; }
+
+  << To place the Frame FULL SCREEN at the host's REAL primary-display size,
+     discovered per-OS by the Ballum display subsystem, call
+     SLBallumScreenFit.fitFrame(frame, x, y) in lib/ballum. The screen-size
+     bridge lives on the Ballum side so this lib/ui package stays pure (no native
+     dependency); pass the real pixels to placeFullscreen(x, y, w, h) directly if
+     you already know them. >>
+
+  < ---- read a component's rectangle, in reference to the Frame ------------ >
+  SLLayoutBox boxOf(String name) {
+    int idx = indexOf(name);
+    if (idx < 0) { return null; }
+    if (kind == LAYOUT_GRID) { return grid.boxOf(idx); }
+    return stack.boxOf(idx);
+  }
+  SLLayoutBox boxAt(int index) {
+    if (index < 0 || index >= count) { return null; }
+    if (kind == LAYOUT_GRID) { return grid.boxOf(index); }
+    return stack.boxOf(index);
+  }
+
+  < ---- read the plan (for a native realizer such as SLLayoutDriver) ------- >
+  < Which standard layout governs this Frame: LAYOUT_STACK or LAYOUT_GRID. >
+  int getLayoutKind() { return kind; }
+  < True when the governing layout is a horizontal row stack. >
+  boolean isRowLayout() { return kind == LAYOUT_STACK && stack != null && stack.isRow(); }
+  < The gap (px) the governing layout uses between adjacent children/cells. >
+  int getGap() {
+    if (kind == LAYOUT_GRID) { return (grid == null) ? 0 : grid.getGap(); }
+    return (stack == null) ? 0 : stack.getGap();
+  }
+  < The column count for a grid Frame (1 for a stack Frame). >
+  int getColumns() {
+    if (kind == LAYOUT_GRID && grid != null) { return grid.getColumns(); }
+    return 1;
+  }
+  < True if component `index` is flexible (stack size 0). Grid cells are never >
+  < flexible here — the grid sizes its own cells. >
+  boolean isFlexibleAt(int index) {
+    if (kind == LAYOUT_GRID) { return false; }
+    return (stack != null) && stack.isFlexibleAt(index);
+  }
+
+  < the Frame's own rectangle, for a host to draw its border/title >
+  int getX() { return fx; }
+  int getY() { return fy; }
+  int getWidth() { return fw; }
+  int getHeight() { return fh; }
+  boolean isPlaced() { return placed == 1; }
+
+  boolean honored() {
+    boolean kindOk = kind == LAYOUT_STACK || kind == LAYOUT_GRID;
+    boolean lay = (kind == LAYOUT_GRID) ? grid.honored() : stack.honored();
+    boolean modeOk = mode == MODE_NORMAL || mode == MODE_FULLSCREEN;
+    return kindOk && lay && modeOk && count >= 0 && count <= MAX_COMPONENTS && fw >= 0 && fh >= 0;
+  }
+}
