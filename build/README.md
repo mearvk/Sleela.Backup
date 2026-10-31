@@ -1,7 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
-
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -41,7 +40,14 @@ Requirements: GCC or Clang with C++17 support.
     chmod +x build/skya-linux.sh
     ./build/skya-linux.sh
 
-Output: `build/skya/linux/skya`
+The script builds `build/skya/linux/skya`, then asks whether to start the
+server. Answer `y` or `yes` to launch it in the background; the build script
+returns immediately. Answer `n`, `no`, or press Enter to leave it stopped.
+Non-interactive builds compile Skya without starting the server.
+
+When started, output is redirected to `build/skya/linux/skya.log`, and the
+process ID is recorded in `build/skya/linux/skya.pid`. Set `SKYA_ROOM` to
+override the default `lobby` room.
 
 ## Windows 10+
 
@@ -108,7 +114,6 @@ Slecompiler's CMake project is explicitly C++20. The API examples, CLI, tests, a
 
 After configuration, the native test suite can be invoked from the generated build directory with CTest. The repository also contains five API exemplars, which provide compile-time coverage of the public usage path. Cross-platform CI and packaged release verification remain future build layers.
 
-
 ### Windows 10+ toolchain notes
 
 The Slecompiler Windows entry point uses CMake and PowerShell and does not require a POSIX shell. Visual Studio 2022 can be selected explicitly:
@@ -128,3 +133,9 @@ CMAKE_OSX_ARCHITECTURES="x86_64;arm64" MACOSX_DEPLOYMENT_TARGET=11.0 ./build/sle
 ```
 
 This permits a universal macOS build when the installed SDK/toolchain supports both architectures.
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>
