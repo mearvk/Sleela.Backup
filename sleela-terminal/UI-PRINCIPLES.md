@@ -30,22 +30,38 @@ All colours come from a single named palette defined once at the top of the CSS
 (as CSS custom properties / `@define-color`). No raw hex values are scattered
 through individual selectors. Changing the theme means editing one block.
 
-The palette is the project's established dark rich-purple family on a near-black
-terminal:
+The window chrome retains the project's dark rich-purple family, while the
+terminal text pane and command-result surfaces use a separate neutral, high-contrast
+reading palette:
 
 | Token | Value | Use |
 |---|---|---|
-| `--sl-bg` | `#15101c` | window / terminal background (unified) |
+| `--sl-bg` | `#15101c` | window chrome background |
 | `--sl-surface` | `#21112f` | popovers, dialogs, raised surfaces |
 | `--sl-surface-hi` | `#321a4d` | gradient top / hover surface |
 | `--sl-chrome` | `#24103f` | title bar / footer base |
 | `--sl-border` | `#7f56aa` | 1px separators and surface borders |
-| `--sl-fg` | `#ffffff` | primary text / controls |
+| `--sl-fg` | `#ffffff` | chrome text / controls |
 | `--sl-fg-dim` | `rgba(255,255,255,.70)` | secondary / note text |
 | `--sl-accent` | `#9d6cff` | focus ring, suggested action |
 
-The terminal background and the window background are the **same** value so the
-terminal does not float as a separate near-black rectangle inside purple chrome.
+The GTK workspace uses `#fcfcfc` (RGB 252, 252, 252). The interactive VTE
+terminal surface uses charcoal `#4b4b4b` with near-white `#f2f2f2` text. Keep
+this three-colour hierarchy consistent: near-white workspace, dark terminal
+surface, light readable terminal text. The purple/black palette belongs to the
+surrounding window chrome only.
+
+**Command summary row:** after an interactive command is submitted, `slsh`
+prints a muted warm-brown summary strip containing the entered command and
+local date/time. The command's output begins on the following line. This is
+ANSI background applied to the summary text cells, not a separate GTK panel.
+The terminal/workspace colours remain unchanged. Non-interactive scripts do
+not receive these presentation rows.
+
+**Implementation boundary:** VTE still presents an ongoing interactive PTY
+stream, not discrete command-result widgets. The summary strip does not yet
+create a separate rounded output panel that appears only when output exists.
+Do not describe that larger output-view architecture as implemented.
 
 ## 3. Restraint over effects
 
@@ -110,3 +126,31 @@ stylesheet still parses. If a change adds motion, a new colour, or a new
 spacing value, it must either fit these principles or update them deliberately.
 
 — SleelaTerminal™ · MEARVK LLC
+
+## 11. File browsing and `ls` output
+
+The main workspace remains near-white (`#FCFCFC`); the interactive terminal
+uses charcoal (`#4B4B4B`) with light text (`#F2F2F2`). The custom `ls`
+builtin and per-file tiles have been removed. The shell resolves `ls` through
+the normal external-command PATH lookup, so the platform's standard `ls`
+provides its native output format and full flag set (including `-l` and
+`-la`). Command flags are preserved as argv entries, and redirected output
+and pipelines remain free of GUI styling sequences.
+
+The command summary strip is separate from command output: it shows the command
+text and local timestamp, then the result follows on the next line. It does
+not alter command arguments, stdout bytes, or redirection contents.
+
+
+## 12. Independent terminal tabs
+
+The main terminal workspace supports multiple tabs in one window. Each tab owns
+its own VTE widget, PTY, shell process, scrollback, and terminal state; commands
+and working-directory changes in one tab must not affect another. The first
+and subsequent tabs share the application frame, palette, settings, and footer.
+A plus control creates a tab; each tab has its own close control. Keyboard
+shortcuts: Ctrl+Shift+T creates a tab, Ctrl+Shift+W closes the current tab,
+Ctrl+Tab / Ctrl+Page Down advances, and Ctrl+Shift+Tab / Ctrl+Page Up goes back.
+Closing a shell tab must not terminate other tabs; closing the final tab closes
+the application. The existing near-white workspace and charcoal terminal
+surface are unchanged.

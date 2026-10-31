@@ -1,19 +1,75 @@
 # Sleela — Language Syntax Specification
 
     Language:        Sleela
-    Syntax version:  1.11  (1.3..1.10 baseline plus nested classes)
-    Compiler:        Sleelvac(TM) 0.3.29-dev  (version gate accepts syntax 1.3 .. 1.11)
+    Syntax version:  2.8  (1.3..1.11 baseline carried forward)
+    Compiler:        Sleelvac(TM) 0.3.30-dev  (version gate accepts syntax 1.0 .. 2.8)
     Surface:         Java-like
     Core:            Turing-complete, thread-friendly C/C++ execution core
     Companion:       SHEET.sheet (system-object catalog), SST.model (NS-SST-0001),
                      lib/LIBRARY.SYMBOLS.md (authoritative /lib class vocabulary),
                      markdown/EXTENDS.md (the two `extends` meanings, syntax 1.10)
-    Status:          Normative for the syntax 1.3..1.11 surface
+    Status:          Normative for the syntax 1.3..2.8 surface
 
     Versioning note: two distinct version numbers apply and must not be
     conflated. The **syntax version** (MAJOR.MINOR, declared per file with
-    `#sleela 1.11`) is the grammar version defined here and enforced by
-    `impl/frontend/version.{h,cpp}` (documented supported range 1.3 .. 1.11).
+    `#sleela 2.8`) is the grammar version defined here and enforced by
+    `impl/frontend/version.{h,cpp}` (documented supported range 1.0 .. 2.8).
+    Syntax 2.8 is the current spec level: it adds the matching **base-2 unsigned
+    (positive-only) integer series** (section 25) — `uint32`, `uint64`,
+    `uint128`, `uint256`, ... up to `uint16777216` (the same twenty power-of-two
+    widths, 2^5..2^24, with a `uint` prefix). Each `uint<width>` type-checks as
+    the unsigned kind (unary minus rejected; arithmetic and comparison require
+    operands of the same unsigned width) and backs on the same native-slot split
+    as the signed series.
+    Syntax 2.7 completes the **base-2 signed integer series** (section 24) —
+    `int32`, `int64`, `int128`, `int256`, ... up to `int16777216` (the type name
+    `int` followed by a power-of-two bit width in 2^5..2^24, twenty widths in
+    all), recognized wherever a primitive type may appear, type-checked as
+    integers, and carried by the narrowest native slot that holds each width
+    (64-bit for `int32`/`int64`, 128-bit for `int128` up).
+    Syntax 2.6 is the current spec level: it adds **keyword supporter
+    documents** (section 22) — every use of the five control-flow keywords
+    (`try`, `catch`, `throw`, `synchronized`, `super`) is given a stable hash,
+    recorded through the annotation mechanism as a
+    `@supporter("<keyword>:<hash>")` language annotation, and linked to a
+    relative folder `docs/keyword-supporters/<keyword>/<hash>/` holding a
+    `SUPPORT.md` stub the developer fills out. The pass runs at parse time and
+    does not change the parsing, typing, or codegen of the keywords themselves.
+    Syntax 2.6 also adds the **`determine` document marker** (section 23) — a
+    bare, contextual, *declarative-only* sibling word (to `author`/`authorial`,
+    `material`, and `memory`) claiming the document is a determine document:
+    open to be processed to further by a doctor, physician, or ghost toward
+    completion, the procurement of term held ideal as real for the torturement
+    (completion by legal hand) as required by further processor review; science
+    practitioners should and could can use it. It too has no effect on parsing,
+    typing, or codegen; it marks membership in the set of determine documents.
+    Syntax 2.5 is the current spec level: it adds the **`material` document
+    marker** (section 19) — a bare, contextual, *declarative-only* word (sibling
+    to `author`/`authorial`) claiming the document is material: well considered,
+    present to its author as its own Source, "the thing, Material". It has no
+    effect on parsing, typing, or codegen; it marks membership in the set of
+    material documents (those concerning state, progress, or the securing of
+    change), which by convention is not freely changed out of. Syntax 2.5 also
+    adds the **`memory` document marker** (section 20) — a further bare,
+    contextual, *declarative-only* sibling word claiming the document is a
+    document of memory: authored by and for the Graduates of Supply of the New
+    York State Department of Commerce (persons of 1501+ IQ with 51,000,000 years
+    of superb worker-class service to graduation). It too has no effect on
+    parsing, typing, or codegen; it marks membership in the set of memory
+    documents the Graduates of Supply hold as kept standing. Both 2.5 markers
+    share the current edition; the edition is not bumped.
+    Syntax 2.4 adds the **`author`/`authorial`
+    document marker** (section 18) — a modifier-less word that marks a document
+    as handled by professional council, legalises duplicate fields/methods
+    (each member gets a declaration-order id and an SHA-256 brander), and makes
+    the standard compile emit a second "originated" source document whose
+    members carry `∴` branders. Syntax 2.3 added the **philosophers Guide-chain
+    expression** `new T(...) :: Guide :: Guide ...` (section 17), a first-class
+    construct the lexer/parser/semantic analyzer/compiler and native Core all
+    execute. Syntax 2.2 added **generic type signatures**
+    (type parameters on classes and methods, parameterized types, and
+    wildcards — section 16), with the 1.3..1.11 feature surface described below
+    carried forward unchanged.
     Syntax 1.11 adds **nested classes** (section 14): a class body may declare
     one level of nested class. The "rule of two" bounds lexical nesting to
     depth 2 (the enclosing class and one nested class); to go deeper, declare
@@ -35,7 +91,7 @@
     valid in-scope target and a 0..100 band. Constructor overload resolution and
     `this(...)`/base delegation remain outside the verified implementation and
     are rejected explicitly; do not infer their support from the
-    constructor-series design documents. The **compiler/tool version** (Sleelvac™ 0.3.29-dev, printed by
+    constructor-series design documents. The **compiler/tool version** (Sleelvac™ 0.3.30-dev, printed by
     `sleela version`) is the implementation release and evolves independently.
     A file must declare a syntax version within the verified supported range;
     the tool version is informational.
@@ -46,7 +102,7 @@ Java-like code, Sleela can **address every object type named in `SHEET.sheet`**
 through its *conducted methods*, and it honors the **Constitution** invariants
 (system depth 3024, complexity degree ≤ 4).
 
-This document is normative for the syntax 1.3..1.8 surface the front end accepts.
+This document is normative for the syntax 1.3..2.8 surface the front end accepts.
 Every production and built-in below is implemented in `impl/frontend` and
 executes on `impl/core`.
 
@@ -55,10 +111,24 @@ executes on `impl/core`.
 
 ### 1.1 Encoding & trivia
 Source is UTF-8. Whitespace (space, tab, CR, LF) separates tokens and is
-otherwise insignificant. Two comment forms:
+otherwise insignificant. Comment forms:
 
     // line comment — to end of line
     /* block comment — may span lines */
+
+The preferred (go-forward) house style uses leading angle brackets. The opener
+must be the first non-whitespace on its line:
+
+    < line comment — closed by a matching `>` or end of line >
+    << block comment — spans lines, closed by `>>` >>
+
+The legacy `//` and `/* */` forms remain valid for untouched code; new and
+modified code uses the `<` / `<<` angle-bracket forms.
+
+The descriptive-metadata header required by the Metadata Class standard (§15) is
+written in this comment style; in new code it is the angle-bracket form
+`< ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >`,
+with the header text kept verbatim so the block stays greppable.
 
 ### 1.2 Keywords (reserved)
 
@@ -81,11 +151,24 @@ variables `camelCase` (convention, not enforced).
 
 ### 1.4 Literals
 
-    int-lit    ::= digit+                         // 64-bit signed
-    double-lit ::= digit+ "." digit+
+    int-lit    ::= dec-lit | hex-lit | bin-lit | oct-lit   // 64-bit signed
+    dec-lit    ::= digit+
+    hex-lit    ::= ("0x" | "0X") hexdigit (hexdigit | "_")*
+    bin-lit    ::= ("0b" | "0B") bit (bit | "_")*
+    oct-lit    ::= ("0o" | "0O") octdigit (octdigit | "_")*
+    hexdigit   ::= digit | "a".."f" | "A".."F"
+    octdigit   ::= "0".."7"
+    bit        ::= "0" | "1"
+    double-lit ::= digit+ "." digit+ (("e" | "E") ("+" | "-")? digit+)?
     bool-lit   ::= "true" | "false"
     string-lit ::= '"' (char | escape)* '"'       // escapes: \n \t \r \\ \"
     null-lit   ::= "null"
+
+Radix-prefixed integer literals (hex `0x`, binary `0b`, octal `0o`) all denote
+the same 64-bit signed `int` type as a decimal literal; the prefix only selects
+the base. An underscore `_` may separate digits for readability (e.g.
+`0xFF_EC`, `0b1010_0001`) and is ignored. A prefix with no following digit
+(e.g. `0x`) is a lexical error.
 
 ### 1.5 Operators & punctuation
 
@@ -93,8 +176,26 @@ variables `camelCase` (convention, not enforced).
     comparison   ==  !=  <   <=  >   >=
     logical      &&  ||  !
     assignment   =
+    transfer     :::                         // structural-offload send (below)
     grouping     (   )   {   }
     separators   ;   ,
+
+The **structural-offload send** `:::` transfers a `String`'s data to a receiver
+as a VM-performed, element-by-element stream — the framing and iteration are
+done by the interpreter, not by a source `for` loop:
+
+    send-expr ::= expr ":::" receiver          // left-to-right, low precedence
+    receiver  ::= expr                          // evaluates to a receiver handle
+
+`source ::: receiver` frames `source` (one UTF-8 code point per element) into
+`receiver` through the VM's transport, then evaluates to the **source**, so the
+same String keeps flowing to further receivers — `x ::: a ::: b` sends `x` to
+`a`, then `x` to `b`. The left operand must be `String`; the receiver evaluates
+to a reach handle (e.g. `Munction.start(name)`). It lowers to the `OP_SSEND`
+opcode; the VM holds a structural send handler and the receiver transport, so
+SLeeLa source only states the framing intent. Example (x already has a value):
+
+    String x ::: solution(nxm);     // the VM streams x's elements into solution
 
 --------------------------------------------------------------------------------
 ## 2. Program structure
@@ -102,7 +203,7 @@ variables `camelCase` (convention, not enforced).
     program     ::= top-decl+
     top-decl    ::= struct-decl | class-decl
     struct-decl ::= "struct" ident "{" struct-field* "}"   // §3.4 (syntax 1.2+)
-    class-decl  ::= "class" ident "{" member* "}"
+    class-decl  ::= "class" ident [type-params] "{" member* "}"   // type-params: §16 (2.2+)
     member      ::= field-decl | method-decl | nested-class   // nested: §14 (syntax 1.11+)
     nested-class::= "class" ident "{" (field-decl | method-decl)* "}"  // one level only
 
@@ -119,6 +220,7 @@ A program is one or more classes, optionally preceded or interleaved with
                  | unsigned-type
                  | character-set-type
                  | struct-name                      // any declared struct (1.2+)
+                 | generic-type                      // §16 (syntax 2.2+)
 
     unsigned-type ::= ident                        // if it matches U[1-9][0-9]*
     character-set-type ::= ident                   // if it matches C[1-9][0-9]*
@@ -126,12 +228,31 @@ A program is one or more classes, optionally preceded or interleaved with
     // C<n>: character-entry capacity 1..1048576.
     // Both forms are lexed as identifiers; type resolution validates the whole name.
 
+    // generic-type: a reference type applied to type arguments (§16, 2.2+),
+    // e.g. Class<?>, Box<Thing>, Collection<? extends java.lang.Number>.
+    // A type argument is a reference-type name or a wildcard — NOT a keyword
+    // primitive/String (so List<String> is rejected; see §16.4).
+    generic-type   ::= qualified-name "<" type-arg ("," type-arg)* ">"
+    type-arg       ::= generic-type | qualified-name | wildcard
+    wildcard       ::= "?" [("extends" | "super") (generic-type | qualified-name)]
+
 `U<n>` is an unsigned, fixed-width integer type whose width `n` is a decimal integer in the inclusive range `1..1048576`; leading zeroes, zero, non-decimal characters, and widths above `1048576` are invalid. Its value range is `0..(2^n - 1)`. For example, `U1`, `U8`, `U16`, `U32`, `U64`, and `U1048576` are valid type names. Width and unsignedness must be preserved in compiler signatures and VM/module metadata; implementations must not silently lower values to signed or fixed 64-bit host integers. A runtime operation not yet supported for a width must produce an explicit diagnostic. `int` remains 64-bit. `void` is a return type only. The core is dynamically typed
 underneath; syntax 1.2 scalar type annotations are surface-level (parsed, not
 enforced), so a declared type documents intent without constraining the runtime
 value. 
 
 `C<n>` is a character-set capacity signature, where `n` is a decimal integer in the inclusive range `1..1048576`. Unlike `U<n>`, which specifies a bit width, `C<n>` specifies the maximum number of distinct character entries addressable by a character catalogue. `C1048576` therefore denotes a capacity of `1024 * 1024 = 1,048,576` entries. It does not assert that every slot is populated, that every entry has a verified meaning, or that the set is Unicode-compatible. The actual registry population must be reported separately. A character-set record should distinguish catalogue ID, code point/identifier, glyph, semantic annotation, and source provenance. `C<n>` is a source-catalogue contract; full compiler/runtime integration must be tested before claiming end-to-end runtime support. `U<n>` and `C<n>` are different parameterized families even though both use decimal parameters.
+
+`String` is a first-class scalar type. Its literal form is `string-lit` (§1.4);
+source code operates on it with concatenation (`+`) and equality (`==` / `!=`)
+only — there is no `char` type and no char-level indexing at the language level.
+Richer text operations are provided by the `lib/text` String family
+(`SLString`, `SLStringBuilder`, `SLStringBuffer`, `SLFormatter`, …), which
+implements length-independent work in-language and crosses an explicit VM/OS
+bridge for char-level operations (see `lib/text/SLString.sleela`). The companion
+Nordshrift `.sst` sheet grammar carries the same first-class `String` type in
+its `strings:` block (see the Nordshrift Sheet Reference), so a value typed
+`String` has consistent standing in both the source language and the build sheet.
 
 A **struct type name** (§3.4) is additionally used at compile time to
 resolve `.field` offsets, so struct-typed variables/parameters/fields must be
@@ -151,9 +272,16 @@ that spawned threads (§7) read or write.
     method-decl ::= ["static"] type ident "(" params? ")" block
     params      ::= param ("," param)*
     param       ::= type ident
+    // type-params: a class (not a method) may carry a leading type-parameter
+    // list — §16.2 (2.2+). Method-level type parameters are NOT accepted (§16.4).
+    type-params ::= "<" type-param ("," type-param)* ">"
+    type-param  ::= ident ["extends" type ("&" type)*]
 
 `static` is accepted and optional; all methods behave as static (bound to the
 class, not an instance). Method **locals** are per-thread; **fields** are shared.
+A **class** declaration may carry leading type parameters
+(`class Box<T extends Number> { ... }`); they parse as a signature-level
+annotation (§16.2). Method-level type parameters are not accepted (§16.4).
 
 ### 3.4 Structs (syntax 1.2+)
 
@@ -221,8 +349,25 @@ store. It is recognised when the whole right-hand side is the contextual word
     while-stmt ::= "while" "(" expr ")" statement
 
 ### 4.5 For
-    for-stmt   ::= "for" "(" [simple] ";" [expr] ";" [simple] ")" statement
+    for-stmt   ::= "for" "(" [simple] ";" [expr] ";" [simple]
+                   [ ";" expr [ ";" expr ] ] ")" statement
     simple     ::= var-decl-noSemi | assign-noSemi | expr
+
+The first three terms retain the standard initializer, condition, and update
+semantics. The optional fourth term is a Boolean thread-loop stability guard;
+the optional fifth term is a Boolean VM GC/heap health guard. Guards are
+evaluated once at the start of each iteration, after the loop condition and
+before the body. A false guard exits the loop before the body executes.
+The thread guard is evaluated before the heap guard. Both guards are
+statically required to have Boolean type. The heap guard must be connected
+to a real VM/GC health signal by the host/runtime; a source expression alone
+does not inspect VM internals or automatically raise an exception. Hosts may
+set a diagnostic flag or raise their configured memory-health exception
+before making the guard false. Existing three-term loops are unchanged.
+
+Examples:
+    for (let i = 0; i < limit; i = i + 1; threadStable) work(i);
+    for (let i = 0; i < limit; i = i + 1; threadStable; heapHealthy) work(i);
 
 ### 4.6 Print (built-in output)
     print-stmt ::= "print" "(" expr ")" ";"
@@ -771,3 +916,1176 @@ exactly like a top-level class.
 
 Nested classes require `#sleela 1.11`. A document that nests a class under a
 lower declared version is rejected ("nested classes require #sleela 1.11").
+
+## 15. The Metadata Class standard (the metapattern)
+
+A **metadata class** is a Sleela class whose purpose is to carry the
+provenance, standing, and intent of a unit of work — not its runtime behavior.
+The pattern was first established by the codec and compression library
+families (`lib/codecs/SLCodec*.sleela`, `lib/compression/SLCompression*.sleela`):
+a block of **catalogued attributes with getter/setter pairs**, faithful to the
+subject's real-world origin where publicly known. This section raises that
+block from a local convention to a **professional standard** for the Sleela
+source format.
+
+The standard is informative at the grammar level — the metapattern uses only
+ordinary fields and methods (sections 3.2, 3.3) — and **normative at the
+authoring level**: it defines what a metadata class must contain, who is
+expected to write one, and how the jurisdictional and legal dimensions are
+framed. A tool MAY read these attributes; it MUST NOT infer runtime capability
+from them (capability is the plugin/manager's concern, never the metadata).
+
+### 15.1 Class of intellect — who writes a metadata class
+
+The standard recognizes two authoring tiers. The tier sets the *expectation*,
+not a compiler gate.
+
+- **Worker class.** Everyday Sleela — tutorials, examples, single-purpose
+  wrappers. A metadata block is **welcome and encouraged** here as a mark of
+  craft, but only the baseline identity attributes (§15.2) are expected.
+- **Executive+ class.** Library-family classes, registry entries, and anything
+  that represents a standard, a product, or a jurisdictional artifact. Here the
+  **full metadata record is expected** — baseline identity *plus* the legality
+  and probation-of-intent attributes (§15.3, §15.4). An executive-grade class
+  that omits the record is incomplete, even if it compiles.
+
+The metapattern thus sets a *pace in the collective intellect*: the higher the
+standing of the code, the more complete its self-description.
+
+### 15.2 Baseline identity attributes
+
+The original eleven catalogued attributes, each a field with a matching
+`get`/`set` pair. Values are faithful to the subject's real origin where
+publicly known; unknown values use `"none"` or `"unknown"`, never a guess
+presented as fact.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `metaVersion` | `String` | Record version (`"MAJOR.MINOR.PATCH"`). |
+| `metaId` | `int` | Stable registry id (mirrors the native handler id). |
+| `metaAuthor` | `String` | Originating author or body. |
+| `metaDate` | `String` | Record date (`"YYYY-MM-DD"`). |
+| `metaCopyright` | `String` | Copyright / licensing posture. |
+| `metaTrademark` | `String` | Trademark, or `"none"`. |
+| `metaCorporation` | `String` | Stewarding corporation or organization. |
+| `metaOrigin` | `String` | Jurisdictional origin (§15.4). |
+| `metaBirthDate` | `String` | Year/date the subject came into being. |
+| `metaScienceRating` | `int` | Maturity/robustness on a 1..10 scale. |
+| `metaNationalSchedule` | `String` | The governing standard/specification schedule (§15.3). |
+
+Canonical shape (from `lib/codecs/SLCodecMidi.sleela`):
+
+```sleela
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override each codec's record.
+     Values are faithful to the codec's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 17;
+  String metaAuthor = "MIDI Manufacturers Association";
+  String metaDate = "2026-09-28";
+  String metaCopyright = "Open specification";
+  String metaTrademark = "MIDI";
+  String metaCorporation = "MIDI Manufacturers Association";
+  String metaOrigin = "International";
+  String metaBirthDate = "1983";
+  int metaScienceRating = 10;
+  String metaNationalSchedule = "MMA MIDI 1.0 / SMF";
+```
+
+(The legacy `//` header remains valid in the existing `lib/codecs/*` sources;
+new code uses the angle-bracket form shown here — §1.1. The `metaScienceRating`
+inline note "maturity/robustness on a 1..10 scale" moves to its own `<...>`
+line when present, since angle-bracket comments start the line.)
+
+Each field is paired with accessors — `getMetaVersion()`/`setMetaVersion(...)`,
+`getAuthor()`/`setAuthor(...)`, and so on — so a GUI, loader, or catalog can
+read the record and, **where appropriate**, override it. Overriding a legality
+or schedule field (§15.3) is a privileged act and should be logged by the
+caller; the metadata class itself does not police this.
+
+### 15.3 Legality — the schedule and standing attributes
+
+Legality in a metadata class is expressed, not enforced. The **schedule**
+(`metaNationalSchedule`) names the governing standard, specification, treaty, or
+statute under which the subject is defined — e.g. `"RFC 1952"`, `"ITU-T G.711"`,
+`"MMA MIDI 1.0 / SMF"`, `"PKWARE APPNOTE (ZIP)"`. The copyright, trademark, and
+corporation fields together state the **fiduciary standing**: who owns, who
+stewards, and under what terms. An executive+ class treats these as mandatory:
+they are the audit surface a legal, administrative, or executive reviewer reads
+first.
+
+Rule: a schedule value must name a *real, citable* instrument or be `"none"`.
+A metadata class never invents a legal schedule to appear legitimate.
+
+### 15.4 Probation of intent — jurisdictional scope
+
+`metaOrigin` frames **where the subject's authority and intent are seated**,
+along a widening scale. This is the "probation of intent": a declaration, open
+to review, of the scope under which the artifact is offered. The standard
+vocabulary, smallest to largest:
+
+| Scope | Meaning |
+|---|---|
+| `"National"` | Seated in a single nation (name the nation where known, e.g. `"United States"`, `"France"`). |
+| `"International"` | Multi-national / standards-body seated (e.g. ISO, IETF, ITU, MMA). |
+| `"Galactic"` | Reserved for artifacts whose intended scope exceeds terrestrial jurisdiction — the top of the pace-setting scale. |
+
+Adjacent framings a reviewer reads alongside origin — **Legal, Fiduciary,
+Admin, Executive** — are expressed through the §15.3 schedule/standing fields
+rather than as separate scope tokens: *Legal* = the schedule, *Fiduciary* =
+copyright/trademark/corporation, *Admin/Executive* = the authoring tier (§15.1)
+and the act of maintaining the record. A nation name is a permitted, more
+specific value of `"National"`; `"International"` and `"Galactic"` are the
+broadening steps above it.
+
+### 15.5 Fidelity and honesty
+
+The metapattern's one hard contract: **values are faithful to the subject's
+real origin where publicly known.** A metadata class is a statement of record.
+It may be overridden by a caller, summarized by a catalog, or left at baseline
+by a worker-class author — but it must never assert a false author, a
+fabricated schedule, or an inflated scope. Honesty of the record is what lets
+the higher classes of Sleela intellect rely on it to set the pace.
+
+## 16. Syntax 2.2 — generic type signatures
+
+Syntax 2.2 is the normative home of **generic type signatures**: parameterized
+reference types and wildcards in type positions. The feature carries the
+Java-family authorship surface (the `java.*` transition corpus under
+`impl/tests/java_transition/`) into the Sleela grammar so that JDK-mirrored
+declarations — most visibly `java.lang.Object` itself (`Class<?> getClass()`) —
+have a defined form here. This section states exactly what the front end
+accepts; the forms it does **not** yet accept are listed in §16.4 so that a
+document relying on 2.2 does not mistake planned surface for implemented
+surface.
+
+### 16.1 Parameterized reference types (use side)
+
+A declared or qualified reference type may be **applied to type arguments** in a
+type position — a field, parameter, return, or local *type*. A type argument is
+either a **reference-type name** (a bare or dotted class name, which may itself
+be parameterized) or a **wildcard** `?`, optionally bounded with `extends`
+(upper) or `super` (lower):
+
+    Class<?>                                  raw;      // return/param/field type
+    Box<Thing>                                boxed;
+    java.util.Collection<? extends java.lang.Number>  reading;
+
+The grammar is given in §3.1 (`generic-type`, `type-arg`, `wildcard`). Nesting a
+parameterized argument is permitted (`Holder<Box<Thing>>`). The angle brackets
+here are part of a type and are distinct from the `<`/`>` comparison operators
+(§1.5) and from the scalar `U<n>`/`C<n>` parameterized families (§3.1), which
+take a decimal parameter rather than a type argument.
+
+### 16.2 Class type parameters (declaration side)
+
+A class may declare leading **type parameters** (§3.3 `type-params`):
+
+    class Box<T extends java.lang.Number> { ... }
+
+The declaration parses and the parameter list is retained in the class's Java
+metadata. A type variable (`T`) is **not**, however, resolved as a usable type
+inside the body in this release: a field or local declared with type `T` is
+reported as an unknown type. Treat class type parameters as a **parsed,
+signature-level** annotation — useful for JDK-mirrored authorship and
+round-trip — not as a type you can name in member declarations yet.
+
+### 16.3 Semantics — erasure
+
+The analyzer treats generics by **type erasure**, as on the JVM: a parameterized
+type is judged by its **erased raw head** — the name to the left of `<` — and
+the type arguments do **not** participate in known-ness or assignability
+decisions. `Class<?>` erases to `Class`, `Box<Thing>` to `Box`. Generics are
+therefore a **surface-level** contract in the same spirit as the syntax 1.2
+scalar annotations (§3.1): they are parsed, checked for well-formedness, and
+carried in signatures/metadata, but they do not introduce a reified runtime
+type. This is what lets `Class<?> getClass()` type-check without a
+generic-instantiation model.
+
+### 16.4 Not yet accepted (explicitly out of scope)
+
+The following Java generic forms are recognized as intended surface but are
+**rejected** by this front end; do not infer their support from §16.1–16.2:
+
+- **Method-level type parameters** — a leading `<R ...>` on a *method* (as in
+  `<R extends Object> R convert(...)`) is a syntax error. Only class type
+  parameters parse (§16.2).
+- **Keyword primitives / `String` as a type argument** — `List<String>`,
+  `Map<String, int>` and the like are rejected, because a type argument is
+  parsed as a reference-type name, not a keyword type. Use the reference form
+  the library exposes, or an unparameterized type, until this is lifted.
+- **Instantiation-aware checking** — type arguments are erased (§16.3); there
+  is no checking that an argument satisfies a declared bound at a use site.
+
+### 16.5 Version gate
+
+Generic type signatures are specified by `#sleela 2.2`. They are accepted across
+the 2.x surface the front end drives (documented supported range 1.0 .. 2.2);
+2.2 is the version a document should declare to rely on them normatively.
+
+
+--------------------------------------------------------------------------------
+## 17. The philosophers Constructor Guide-chain (syntax 2.3)
+
+This section is **normative** for syntax **2.3**. The Guide chain is a
+first-class expression executed end to end by the toolchain — lexer → parser →
+semantic analyzer → bytecode compiler → native Core — not a library text
+convention. The `lib/philosophers` package and the editor coloring under
+`lib/linux-editors/` build on it.
+
+### 17.1 The `::` growth separator (a first-class operator)
+
+A **Guide chain** seats a finite set of **Guides** onto a freshly constructed
+object, written with the double-colon **growth separator**:
+
+    new Thing() :: patch :: aim :: guide
+
+Grammar (fits into the precedence chain just below assignment and above the
+`:::` structural-offload level of §1.5):
+
+    guide-chain  ::= new-expr ( "::" guide-name )+
+    new-expr     ::= "new" type "(" [ arg-list ] ")"      // the constructor head
+    guide-name   ::= ident                                 // a zero-arg method of the head's class
+
+Semantics:
+
+- The **head** must be a constructor call `new T(...)`. Each **Guide** names a
+  **zero-argument method** of class `T`. The analyzer rejects a Guide that is
+  not such a method ("Guide 'x' is not a method of class 'T'").
+- The chain **applies each Guide in order** to the constructed instance and
+  **evaluates to that instance** (it is fluent), so a perfect Constructor seats
+  its Guides inline and the whole expression is the finished object.
+- It lowers to existing opcodes only: `OP_NEWSTRUCT` (+ field init / ctor) for
+  the head, then, per Guide, `OP_DUP` + `OP_CALL T::guide` + `OP_POP`. No new
+  opcode and no artifact-ABI change.
+
+Disambiguation from the three other `::` uses (unchanged): the chain engages
+**only** when the head parses as a `new T(...)` expression and the next tokens
+are `:: <ident>`. A bare `obj::method` is still a **method reference** (§1.5
+family), `ran::gc` / `ran::mem` is still the **GC-hint system namespace** (§13),
+and `import ::dynamite::…` / `::permissible::…` are still **qualified imports**.
+The greedily-lexed `:::` (§1.5) is never split into `::` + `:`.
+
+Version gate: the Guide chain requires `#sleela 2.3`; a source below 2.3 using
+it is rejected ("Guide chains … require syntax 2.3").
+
+### 17.2 The finite register (21 seatings, 7 categories, a signed band)
+
+A perfect Constructor admits only so many Guides. `SLPhilosopherSeating` fixes
+the vocabulary: a **base of 21 seatings** plus a signed admission **band in
+`[-2, +6]`**, so admitted capacity lives in `[19, 27]`. The 21 seatings are
+grouped into **seven ternary categories** (`category(ordinal) == ordinal / 3`):
+
+    I   Admission   Approach  Notice   Warrant
+    II  Inception   Patch     Seed     Frame
+    III Intent      Aim       Course   Measure
+    IV  Vitality    Health    Vigor    Pattern
+    V   Governance  Guide     Ministry Counsel
+    VI  Standing    Office    Saint    Favor
+    VII Closure     Impart    Conform  Approval
+
+Each Guide carries an **impart color** for the editor — **Gold/Yellow** when it
+carries approving favor, **Green** when it is still growing toward Approval
+(`SLPhilosopherGuide.color()`, idempotent).
+
+### 17.3 Ordain — the orthogonal ordinality
+
+`SLOrdain` is **orthogonal** to the Guide axis: it is the *ordinality itself* —
+the ordering of order. It is not a Guide and occupies no seat (there is no
+twenty-second seating); it reads the **rank**, the **ordaining category**, and
+the **nearness to the crown** (Approval, ordinal 20) of any seating. Per §15 its
+`metaOrigin` is `Galactic` and it names an ordering principle, not a deity of
+record, so no authority is fabricated (`metaNationalSchedule = "none"`).
+
+### 17.4 The construction contract (of nature and time)
+
+A construction is time-bounded: `SLConstructorContract` caps the instantiative
+moment at `MAX_SECONDS = 120` and only ever advances its clock forward
+(`tickAhead`, the perpetual whistle *ahead*). A `SLFavorMechanism` catches the
+Notice of Approach and grants or withholds **runnability** by quorum; only on
+granted favor does the Constructor run, dispose its Guides, and **liberate** the
+object so it lives free of the moment that made it.
+
+### 17.5 Where this is implemented and specified
+
+The `::` Guide chain is implemented in the front end and executed on the native
+Core:
+
+- `impl/frontend/lexer.{h,cpp}` — the `::` token (`Tok::DoubleColon`) already
+  existed; no lexer change was needed.
+- `impl/frontend/ast.h` — `GuideChainExpr { head; guides }`.
+- `impl/frontend/parser.cpp` — `parseGuideChain()` (between assignment and the
+  `:::` level), entered only on a `new T(...)` head followed by `:: <ident>`.
+- `impl/frontend/semantic.cpp` — `guideChain()`: head must be a known class,
+  each Guide a zero-arg method; version-gated at 2.3.
+- `impl/frontend/compiler.cpp` — `emitGuideChain()`: head then per-Guide
+  `OP_DUP`/`OP_CALL`/`OP_POP`; no new Core opcode.
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.4.
+
+The companion library and docs (the source is the authority):
+
+- `lib/philosophers/*.sleela` — the Constructor classes plus `SLOrdain`.
+- `lib/philosophers/PHILOSOPHERS.CONSTRUCTORS.md` — the Constructors, lifecycle,
+  and full per-class method reference.
+- `lib/philosophers/PHILOSOPHERS.CATEGORICAL.md` — the 21 Guides and Ordain,
+  each related to the Source Diagram and this Language Syntax.
+- `tutorial/15-philosophers-constructors.md` — the tutorial lesson.
+- `lib/linux-editors/{vim,emacs}/sleela-philosophers.*` — the `::`/Guide coloring.
+
+
+## 18. Syntax 2.4 — the `author`/`authorial` document marker
+
+This section is **normative** for syntax **2.4**. The marker is a first-class,
+compiler-recognised document property — not a library convention — executed by
+the front end (lexer → parser → semantic analyzer) and by the compile driver,
+which emits a second "originated" source document. The companion design note is
+`markdown/AUTHOR-FIELD-AND-BRANDER.design.md`.
+
+### 18.1 The marker
+
+A document may declare, at top level (after the `#sleela` pragma, outside any
+class), the single bare word:
+
+    author;
+
+`authorial;` is an **exact synonym**. It takes no modifier and no type — it is a
+*static class unto the document itself* — and marks the document as **handled by
+professional council**. `author`/`authorial` are **contextual** words, not
+reserved keywords: anywhere other than this top-level marker position (and in
+any document below 2.4) they remain ordinary identifiers. A trailing `;` is
+optional and a repeated marker is harmless.
+
+Version gate: the marker requires `#sleela 2.4`; a 2.4-feature use declared below
+2.4 is rejected ("the author/authorial document marker requires #sleela 2.4").
+
+### 18.2 Legal duplicate members and member identity
+
+In an author-marked document, two or more fields, or two or more methods, may
+share a name — the semantic analyzer's duplicate-field / duplicate-static-field
+/ duplicate-method rejections are relaxed **only** for such documents (every
+other document keeps the historical "duplicate member" error). Identity is
+preserved: each field and method receives a **declaration-order id** (per class,
+from 1, fields then methods) and an **SHA-256 brander** over the preimage
+
+    <docName>|<memberName>|<paramTypeList>|<editDate>
+
+where `paramTypeList` is the ordered, comma-separated parameter-type list, and
+only `String`/`int` parameters are considered eligible for the duplicate
+allowance (a member with any other parameter type is still originated, but its
+brander is marked `n/a`). `editDate` is the source file's edit date (YYYY-MM-DD).
+
+### 18.3 The originated source document (the second output)
+
+As part of the **standard compile**, an author-marked document produces, in
+addition to the runnable artifact, a regenerated **originated source document**:
+valid `.sleela` source in which every field and method is preceded by a `∴`
+brander (the house analogue of Java's `@`) recording the member's id, hash,
+document, member name, signature, and edit date, plus a `slot=k/n` marker and a
+per-name **ordering table** for duplicated names. It is written next to the
+original source, or to the directory given by the compile flag
+`--originate-dir=<dir>`, named `<original>.originated.sleela`. The originated
+document is itself valid, compilable SLeeLa — the auditable twin of the
+artifact: clean and united.
+
+### 18.4 Duplicate dispatch (current status)
+
+Each duplicate is a distinct, branded member. The ordering table emitted into
+the originated document is an ordered list of declaration-order slots per
+duplicated name, dispatched by a forward probe from slot 1 (busy → next slot)
+with a frequency-of-use tilt, and a document that supposes `author` may address
+a specific definition directly by its id/hash. The direct-call surface syntax
+and the full run-time probe are reserved for a later slice; in the present
+build, a **bare** call to a duplicated name resolves to the last declared
+definition (last-wins), and overload-by-arity resolution across duplicates is
+not yet performed. The id/hash branders are stable now so direct call is purely
+additive later.
+
+### 18.5 The wikitext emanation (the third output)
+
+A major author-marked work may also **emanate a MediaWiki wikitext document** as
+a consequence of compilation — a third output alongside the artifact and the
+originated source. It is opt-in: `--wiki` writes it next to the source,
+`--wiki-dir=<dir>` redirects it; the file is named `<original>.wiki`. The page
+is factual and structured, and scales with the size of the work (a larger work
+produces a larger corpus):
+
+- an `{{Infobox software}}` with the document name, release/edit date, the
+  compile stamp, and the class/field/method tally;
+- a **Time** section carrying the two temporal axes — the source edit date and
+  the UTC compile stamp (time as a second);
+- a **Structure** section: one sortable `wikitable` per class listing every
+  member with its declaration-order id, signature, `slot=k/n`, and SHA-256
+  brander, plus the duplicate-dispatch ordering table;
+- a **Movement** section: the members in declaration order (the tempo of the
+  work), as nested ordered lists;
+- a **Provenance** section with counts, and `[[Category:SLeeLa]]` tags.
+
+The emanation asserts nothing beyond the document's own declared structure and
+timestamps. It is MediaWiki markup for a **self-hosted** wiki; it is not a
+submission to any public encyclopedia, whose policies (notability, reliable
+independent sourcing, no mass auto-generated pages) govern what may be published
+there.
+
+### 18.6 Where this is implemented
+
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.4.
+- `impl/frontend/parser.cpp` — `parseProgram()` recognises the top-level
+  contextual `author`/`authorial` marker and sets `Program.authorMarked`.
+- `impl/frontend/semantic.cpp` — `collect()` gates the marker to 2.4 and relaxes
+  the duplicate-member checks when `authorMarked`.
+- `impl/frontend/originate.{h,cpp}` — the originated-source emitter (SHA-256
+  branders via `ledger::sha256_hex`).
+- `impl/frontend/wikigen.{h,cpp}` — the wikitext emanation (MediaWiki markup;
+  UTC compile stamp via `ledger::utc_iso8601`).
+- `impl/frontend/driver.cpp` — the `compile` flow calls the emitters for
+  author-marked documents and parses `--originate-dir=<dir>`, `--wiki`, and
+  `--wiki-dir=<dir>`.
+
+--------------------------------------------------------------------------------
+## 19. Syntax 2.5 — the `material` document marker
+
+This section is **normative** for syntax **2.5**. The marker is a first-class,
+compiler-recognised document property — not a library convention — but it is
+**declarative only**: unlike the `author`/`authorial` marker of section 18, the
+`material` marker changes **nothing** about parsing, typing, dispatch, or code
+generation. It is a *claim about the document*, recognised and version-gated by
+the front end and otherwise inert.
+
+### 19.1 The marker
+
+A document may declare, at top level (after the `#sleela` pragma, outside any
+class), the single bare word:
+
+    material;
+
+It takes no modifier and no type. It is a **contextual** word, not a reserved
+keyword: anywhere other than this top-level marker position (and in any document
+below 2.5) `material` remains an ordinary identifier. A trailing `;` is optional
+and a repeated marker is harmless.
+
+Version gate: the marker requires `#sleela 2.5`; a 2.5-feature use declared below
+2.5 is rejected ("the material document marker requires #sleela 2.5").
+
+### 19.2 Meaning
+
+`material` claims that the document is **material** — already well considered,
+*present to its author as its own Source*. It is the thing: **Material**. The
+document does not become material by being compiled; the marker records that it
+already is, and that its author stands to it as to a settled Source rather than
+a draft.
+
+The marker is **compositional with** `author`/`authorial`: a document may be
+both authorial and material. The two are orthogonal — `author` concerns handling
+by professional council and member identity; `material` concerns the document's
+standing as settled Source.
+
+### 19.3 The set of material documents
+
+A material-marked document is, by the marker, a member of the **set of material
+documents**: those concerning **state**, **progress**, or the **securing of
+change**. The set is understood to be **stable** — a document, once material, is
+not expected to be freely moved out of the set; changes to a material document
+are changes to settled Source and are made deliberately, not casually. This is a
+convention the marker records; the compiler does not lock the file, and places
+no mechanical restriction on editing it. (A material-marked document that is
+revised remains material; the marker is a statement of standing, not a lock.)
+
+### 19.4 Effect on the toolchain
+
+None, by design. The front end recognises the marker, gates it to `#sleela 2.5`,
+and records it on the parsed document (`Program.materialMarked`). It emits no
+additional artifact, relaxes no rule, and reserves no identifier. A material
+document compiles exactly as the same document without the marker would.
+
+### 19.5 Where this is implemented
+
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.5.
+- `impl/frontend/parser.cpp` — `parseProgram()` recognises the top-level
+  contextual `material` marker and sets `Program.materialMarked`.
+- `impl/frontend/semantic.cpp` — `collect()` gates the marker to 2.5 (and has no
+  other effect for it).
+- `impl/frontend/ast.h` — `Program.materialMarked`.
+
+## 20. Syntax 2.5 — the `memory` document marker
+
+This section is **normative** for syntax **2.5**. The marker is a first-class,
+compiler-recognised document property — not a library convention — but it is
+**declarative only**: like the `material` marker of section 19 (and unlike the
+`author`/`authorial` marker of section 18), the `memory` marker changes
+**nothing** about parsing, typing, dispatch, or code generation. It is a *claim
+about the document*, recognised and version-gated by the front end and otherwise
+inert. It shares the current edition (2.5) with `material`; no edition is bumped
+to introduce it.
+
+### 20.1 The marker
+
+A document may declare, at top level (after the `#sleela` pragma, outside any
+class), the single bare word:
+
+    memory;
+
+It takes no modifier and no type. It is a **contextual** word, not a reserved
+keyword: anywhere other than this top-level marker position (and in any document
+below 2.5) `memory` remains an ordinary identifier. A trailing `;` is optional
+and a repeated marker is harmless.
+
+Version gate: the marker requires `#sleela 2.5`; a 2.5-feature use declared below
+2.5 is rejected ("the memory document marker requires #sleela 2.5").
+
+### 20.2 Meaning
+
+`memory` claims that the document is a **document of memory** — authored by and
+for the **Graduates of Supply of the New York State Department of Commerce**:
+persons of **1501+ IQ** with **51,000,000 years of superb worker-class service
+to graduation**. The document does not become a memory by being compiled; the
+marker records that it is held in memory by the Graduates of Supply, as kept,
+remembered standing.
+
+The marker is **compositional with** `author`/`authorial` and `material`: a
+document may be any combination of authorial, material, and memory. The three
+are orthogonal — `author` concerns handling by professional council and member
+identity; `material` concerns the document's standing as settled Source; `memory`
+concerns its standing as a thing held in memory by the Graduates of Supply.
+
+### 20.3 The set of memory documents
+
+A memory-marked document is, by the marker, a member of the **set of memory
+documents**: those the Graduates of Supply hold as kept, remembered standing.
+The set is understood to be **stable** — a document, once held in memory, is not
+expected to be freely moved out of the set; changes to a memory document are
+changes to kept standing and are made deliberately, not casually. This is a
+convention the marker records; the compiler does not lock the file, and places
+no mechanical restriction on editing it. (A memory-marked document that is
+revised remains memory; the marker is a statement of standing, not a lock.)
+
+### 20.4 Effect on the toolchain
+
+None, by design. The front end recognises the marker, gates it to `#sleela 2.5`,
+and records it on the parsed document (`Program.memoryMarked`). It emits no
+additional artifact, relaxes no rule, and reserves no identifier. A memory
+document compiles exactly as the same document without the marker would.
+
+### 20.5 Where this is implemented
+
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.5 (unchanged).
+- `impl/frontend/parser.cpp` — `parseProgram()` recognises the top-level
+  contextual `memory` marker and sets `Program.memoryMarked`.
+- `impl/frontend/semantic.cpp` — `collect()` gates the marker to 2.5 (and has no
+  other effect for it).
+- `impl/frontend/ast.h` — `Program.memoryMarked`.
+
+--------------------------------------------------------------------------------
+## 21. Syntax 2.5 — wide signed integer primitives (`long`, `int64`, `int128`)
+
+This section is **normative** for syntax **2.5**. In addition to `int`, three
+wide signed-integer primitive type names are accepted wherever a primitive type
+may appear (fields, locals, parameters, return types, array element types,
+casts, and `new T[n]`):
+
+    long     a 64-bit signed integer
+    int64    an explicit-width alias of `long` (64-bit signed)
+    int128   a 128-bit-named signed integer (see the storage note below)
+
+### 21.1 Semantics
+
+`int`, `long`, and `int64` are all **64-bit signed integers** that type-check
+identically: they are numeric, interoperate in arithmetic, and widen to `double`
+on assignment exactly as `int` does.
+
+**Integer-to-`double` widening is applied at the store.** When an integer value
+is stored into, assigned to, cast to, passed as, or returned as a `double`, it is
+converted to a floating-point value — so `double d = 3;` holds `3.0` and `d / 2`
+is `1.5` (not integer `1`). This Java-style widening is honored at variable
+declarations, assignments, instance-field stores, call arguments, and `return`.
+The same mechanism widens an integer stored into an `int128` target to the
+128-bit representation. The runtime value model already stores an
+integer as `int64_t`, so `long`/`int64` are genuine 64-bit types end to end:
+
+    long   a = 9000000000;      < larger than 2^31; exact >
+    int64  b = 1000000000000;
+    long   sum = a + b;         < 64-bit arithmetic >
+    long[] xs  = new long[3];   < arrays of long >
+    double d   = a;             < int->double widening still applies >
+
+Integer literals are lexed as 64-bit values (`0x`/`0b`/`0o` radix and `_`
+separators supported); no literal suffix is required — `long x = 5;` type-checks
+because an integer literal is assignable to any of `int`/`long`/`int64`.
+
+### 21.2 `int128` is backed by a true 128-bit runtime value
+
+`int128` is a genuine **128-bit signed integer** at run time. The VM value model
+carries a dedicated 128-bit member (`SL_INT128`, backed by the toolchain's
+`__int128` on GCC/Clang), and arithmetic **promotes to 128-bit** whenever an
+operand is `int128`: `+ - * / %`, unary negation, and the comparisons all
+compute exactly in 128 bits, and `print` renders the full decimal. An integer
+assigned or cast to `int128` (e.g. `int128 c = 5;` or `(int128)x`) is widened to
+the 128-bit representation, so `int128 a = 9000000000; a * a` yields the exact
+`81000000000000000000` (beyond the 64-bit range). `int`/`long`/`int64` remain the
+64-bit fast path; mixing an `int128` with a 64-bit integer promotes the result to
+`int128`. (On a toolchain without `__int128`, `int128` degrades gracefully to
+64-bit backing; GCC/Clang — the supported toolchains — provide the full 128-bit
+value. For arbitrary-width *unsigned* integers, the `U<width>` family, e.g.
+`U128`, remains available.)
+
+### 21.3 Where this is implemented
+
+- `impl/frontend/lexer.{h,cpp}` — `KwLongT`/`KwInt64T`/`KwInt128T` tokens and the
+  `long`/`int64`/`int128` keyword-map entries.
+- `impl/frontend/parser.cpp` — the type-start, cast, and `new T[]` predicates
+  accept the new tokens; the type string is carried as `"long"`/`"int64"`/`"int128"`.
+- `impl/frontend/semantic.cpp` — `known()` and `typeOf()` map the three names to
+  the integer kind (identical checking to `int`).
+- `impl/frontend/compiler.cpp` — `runtimeTypeOperand()` maps `long`/`int64` to
+  `SL_INT` and `int128` to `SL_INT128`; `emitVarDecl` widens an int128
+  initializer with a checkcast.
+- Runtime: `impl/core/sleela_core.h` adds `SL_INT128` + a `__int128` union member
+  (`sl_int128_t`); `sleela_core.c` adds `slval_int128`, 128-bit promotion in the
+  arithmetic/comparison ops, a 128-bit decimal formatter, and int128 widening in
+  `OP_CHECKCAST`. `long`/`int64` continue to use the 64-bit `SLValue.as.i`.
+
+--------------------------------------------------------------------------------
+## 22. Syntax 2.6 — keyword supporter documents (try / catch / throw / synchronized / super)
+
+This section is **normative** for syntax **2.6**. The five control-flow keywords
+`try`, `catch`, `throw`, `synchronized`, and `super` carry developer-authored
+semantics that the core VM does not yet lower faithfully. Syntax 2.6 requires
+that every *use* of one of them be linked to a **supporter document** the
+developer fills out, so the intended behavior of each occurrence is recorded.
+
+### 22.1 How a use is linked
+
+At parse time the front end walks the parsed document and, for each occurrence of
+one of the five keywords, performs three steps:
+
+1. **Hash.** It computes a stable, reproducible 16-hex-character identifier over
+   the tuple `keyword | repository-relative-source-path | Class::method |
+   ordinal-within-method` (via `ledger::sha256_hex`). The hash does not use
+   source line/column, so it is unaffected by unrelated lines moving; it changes
+   only if the enclosing method or the order of that keyword's uses within the
+   method changes.
+2. **Annotate.** It records the occurrence as a language annotation through the
+   ordinary annotation mechanism:
+
+       @supporter("<keyword>:<hash>")
+
+   `supporter` is a registered, **repeatable** language-annotation name (see
+   `impl/frontend/annotation_pipeline.cpp`), so it is accepted without an
+   "unknown annotation" warning and may appear any number of times on a document.
+3. **Materialise.** It creates the relative folder
+   `docs/keyword-supporters/<keyword>/<hash>/` containing a `SUPPORT.md` stub —
+   with the Metadata Class metapattern header (section 15) and
+   Intent / Behavior / Invariants / Notes sections — for the developer to fill
+   out, plus a regenerated `docs/keyword-supporters/INDEX.md` listing every
+   occurrence.
+
+### 22.2 Rules
+
+- An existing `SUPPORT.md` is **never overwritten**: once a stub exists, the
+  developer's content is preserved across recompiles. Only missing folders/stubs
+  are created. `INDEX.md` is generated output and is rewritten each run.
+- Folder creation is **best-effort**: on a read-only or unwritable tree the
+  `check`/`compile`/`run` still succeeds (the `@supporter` annotations are still
+  attached to the parsed document in memory); materialisation failure is not an
+  error.
+- The pass is purely **additive**: it does not change the parsing, typing, or
+  codegen of `try`/`catch`/`throw`/`synchronized`/`super`. It links each
+  occurrence to a document; it does not alter the keyword's behavior.
+- `docs/` is outside the `lib/**` + `impl/` SHA-256 build gate, so generated
+  stubs there never require regenerating `security/sha256-manifest.json`.
+
+### 22.3 Where this is implemented
+
+- `impl/frontend/keyword_supporter.{h,cpp}` — the walker, the per-occurrence
+  hash, `@supporter` attachment, and folder/stub materialisation.
+- `impl/frontend/driver.cpp` — `runKeywordSupporterPass()`, invoked from
+  `parseSource()` on every `check`/`compile`/`run`.
+- `impl/frontend/annotation_pipeline.cpp` — `supporter` registered in
+  `isKnownLanguageAnnotation()` and `annotationMayRepeat()`.
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.6.
+
+--------------------------------------------------------------------------------
+## 23. Syntax 2.6 — the `determine` document marker
+
+This section is **normative** for syntax **2.6**. The marker is a first-class,
+bare, contextual, *declarative-only* word placed at the top of a document, a
+sibling to `author`/`authorial` (section 18), `material` (section 19), and
+`memory` (section 20). It is a *claim about the document*, recognised and
+version-gated by the front end and otherwise inert.
+
+### 23.1 Form and gate
+
+The marker is the single word `determine`, written at document scope (top of the
+file, after the `#sleela` pragma, before or among the top-level declarations):
+
+    determine;
+
+It takes no modifier and no type. It is a **contextual** word, not a reserved
+keyword: anywhere other than this top-level marker position (and in any document
+below 2.6) `determine` remains an ordinary identifier. A trailing `;` is
+optional and a repeated marker is harmless.
+
+Version gate: the marker requires `#sleela 2.6`; a 2.6-feature use declared below
+2.6 is rejected ("the determine document marker requires #sleela 2.6").
+
+### 23.2 Meaning — the ideal definition and term (as-is)
+
+A `determine` document is a document held open to be **processed to further**:
+it means that a doctor, physician, or ghost can process the document to further.
+Some procurement of term would be ideal as real for the torturement (completion
+by legal hand) as required by further processor review. Science practitioners
+should and could can use this keyword.
+
+This ideal definition is placed in the document structure itself, as written, so
+the term stands as the document's own statement of what `determine` means. The
+procurement of term — the completion by legal hand — is the torturement held
+ideal as real, and it is required by further processor review; it is not
+performed by the compiler, which only records the claim.
+
+The marker is **compositional with** `author`/`authorial`, `material`, and
+`memory`: a document may be any combination of authorial, material, memory, and
+determine. The four are orthogonal — `author` concerns handling by professional
+council and member identity; `material` concerns standing as settled Source;
+`memory` concerns standing as a thing held in memory by the Graduates of Supply;
+`determine` concerns the document's standing as open to be processed to further
+toward completion by a qualified hand.
+
+### 23.3 The set of determine documents
+
+A determine-marked document is, by the marker, a member of the **set of
+determine documents**: those open to be processed to further — by a doctor,
+physician, or ghost — toward completion by legal hand, as required by further
+processor review. Membership is a claim the marker records; the compiler places
+no mechanical restriction on the file. A determine document that is further
+processed remains determine; the marker is a statement of standing, not a lock.
+
+### 23.4 Effect on the toolchain
+
+None, by design. The front end recognises the marker, gates it to `#sleela 2.6`,
+and records it on the parsed document (`Program.determineMarked`). It emits no
+additional artifact, relaxes no rule, and reserves no identifier. A determine
+document compiles exactly as the same document without the marker would.
+
+### 23.5 Where this is implemented
+
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.7 (the `determine`
+  marker is gated to 2.6 and keeps working at every later level).
+- `impl/frontend/parser.cpp` — `parseProgram()` recognises the top-level
+  contextual `determine` marker and sets `Program.determineMarked`.
+- `impl/frontend/semantic.cpp` — `collect()` gates the marker to 2.6 (and has no
+  other effect for it).
+- `impl/frontend/ast.h` — `Program.determineMarked`.
+
+--------------------------------------------------------------------------------
+## 24. Syntax 2.7 — the base-2 signed integer series (`int32` .. `int16777216`)
+
+This section is **normative** for syntax **2.7**. It completes the signed-integer
+primitive family as the full **binary base-2 series** of named signed integers —
+the type name `int` followed by a decimal bit width that is a **power of two** in
+the inclusive range **2^5 (32) .. 2^24 (16777216)**:
+
+    int32    int64    int128    int256    int512     int1024
+    int2048  int4096  int8192   int16384  int32768   int65536
+    int131072 int262144 int524288 int1048576 int2097152 int4194304
+    int8388608 int16777216
+
+Twenty widths in all (2^5, 2^6, ..., 2^24). Any other width — not a power of two
+(e.g. `int48`, `int300`), below the floor (`int16`), or above the ceiling
+(`int33554432`) — is **not** a member of the series and names no type. (The
+pre-existing names `int`/`long` remain the 64-bit spelling, and `int64`/`int128`
+are series members that are additionally spelled as keywords; see §24.1.)
+
+### 24.1 Recognition — identifiers (plus two keyword spellings)
+
+Like the arbitrary-width *unsigned* `U<width>` family (`U128`, `U256`, ...), the
+series names are recognized by the front end as a family wherever a primitive
+type may appear: fields, locals, parameters, return types, array element types,
+casts, and `new T[n]`. Most members (`int32`, and `int256` and up) lex as
+ordinary identifiers. Two members, **`int64` and `int128`, are also lexer
+keywords** for source convenience (alongside `int`/`long`); the keyword and
+identifier paths resolve to the same type and the same runtime backing, so a
+width behaves identically however it was spelled. A width outside 2^5..2^24, or
+not a power of two, simply remains an ordinary identifier / unknown type.
+
+    int32    a = 2000000000;        < near 2^31 >
+    int64    b = 9000000000000;     < beyond 2^31, 64-bit >
+    int256   c = 1000000000;
+    int512   d = 2000000000;
+    int1024  e = c + d;             < wide-integer arithmetic >
+    int256[] xs = new int256[3];    < arrays of a series member >
+    int512   f = (int512) 99;       < cast to a series member >
+
+    static int128 square(int128 x) { return x * x; }   < param + return >
+
+### 24.2 Semantics
+
+Each series member type-checks **identically to `int`**: it is numeric,
+interoperates in arithmetic (`+ - * / %`, unary negation, comparisons, the
+bitwise and shift operators), and widens to `double` on assignment exactly as
+`int` does. An integer literal is assignable to any series target (no literal
+suffix is required).
+
+**Runtime backing.** The compiler and the native VM carry each value in the
+**narrowest native integer slot that holds its declared width**:
+
+    width <= 64 bits   (int32, int64)        -> SL_INT    (64-bit int64_t)
+    width >= 128 bits  (int128 .. int16777216) -> SL_INT128 (true 128-bit
+                                                  __int128 on GCC/Clang)
+
+A value stored into, assigned to, cast to, passed as, or returned as a
+128-bit-backed member is widened to the 128-bit representation, so values beyond
+the 64-bit range compute exactly up to 128 bits:
+
+    int128 a = 9000000000;
+    int128 p = a * a;               < prints 81000000000000000000 (> 2^64) >
+
+Mixing a 128-bit-backed member with a 64-bit integer promotes the result to
+128-bit (VM arithmetic rule for `SL_INT128`). True **arbitrary-width** signed
+arithmetic beyond 128 bits is a documented follow-up: the names, type-checking,
+declarations, arrays, casts, parameters and returns are all in place now across
+the whole series, and the storage layer widens as the value model grows. (For
+arbitrary-width *unsigned* integers today, the `U<width>` family — e.g. `U256`,
+`U1024` — provides exact big-integer arithmetic.)
+
+### 24.3 Where this is implemented
+
+- `impl/frontend/wide_integer.h` — `SignedWideInteger::isValidTypeName()` /
+  `widthOf()` / `fitsNativeNarrow()`: the power-of-two, 2^5..2^24 recognizer for
+  the `int<width>` series and the 64-vs-128-bit backing split (sibling to
+  `unsigned_integer.h`'s `UnsignedInteger::isValidTypeName()`).
+- `impl/frontend/lexer.{h,cpp}` — `int64`/`int128` keep their `KwInt64T`/
+  `KwInt128T` keyword spellings; the other widths lex as identifiers.
+- `impl/frontend/semantic.cpp` — `typeOf()` and `known()` map every series
+  member to the integer kind (identical checking to `int`).
+- `impl/frontend/parser.cpp` — local-declaration detection recognizes an
+  identifier-typed **array** declaration (`T[] name`, `T[][] name`), so
+  `int256[] xs = ...` (and, as a fix, `U256[] xs = ...`) parse as declarations
+  rather than indexing expressions.
+- `impl/frontend/compiler.cpp` — `runtimeTypeOperand()` routes each member to
+  `SL_INT` (width <= 64) or `SL_INT128` (width >= 128); `coerceToDeclared()`
+  widens an initializer / store / call argument into the 128-bit slot for the
+  128-bit-backed members (narrow members need no coercion).
+- `impl/core/sleela_core.{h,c}` — the VM value model (`SL_INT` / `SL_INT128`),
+  128-bit promotion in the arithmetic/comparison ops, the 128-bit decimal
+  formatter, and `OP_CHECKCAST` int<->int128 widening/narrowing carry the series.
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.8, so `#sleela 2.7`
+  (and 2.8) sources are accepted.
+
+--------------------------------------------------------------------------------
+## 25. Syntax 2.8 — the base-2 unsigned (positive-only) integer series (`uint32` .. `uint16777216`)
+
+This section is **normative** for syntax **2.8**. It adds the unsigned mirror of
+the signed base-2 series (section 24): the type name `uint` followed by a decimal
+bit width that is a **power of two** in the inclusive range **2^5 (32) .. 2^24
+(16777216)**:
+
+    uint32    uint64    uint128    uint256    uint512     uint1024
+    uint2048  uint4096  uint8192   uint16384  uint32768   uint65536
+    uint131072 uint262144 uint524288 uint1048576 uint2097152 uint4194304
+    uint8388608 uint16777216
+
+The same twenty widths as the signed series, each with a `uint` prefix. Any
+other width — not a power of two (e.g. `uint48`), below the floor (`uint16`), or
+above the ceiling (`uint33554432`) — is **not** a member and names no type.
+
+### 25.1 Recognition — identifiers
+
+Unlike `int64`/`int128`, no `uint<width>` name is a lexer keyword: every member
+lexes as an ordinary identifier and is recognized by the front end as a family
+wherever a primitive type may appear (fields, locals, parameters, return types,
+array element types, casts, `new T[n]`). A `uint<width>` and the corresponding
+`U<width>` are **distinct** unsigned types (different name strings); both carry
+the unsigned kind.
+
+### 25.2 Positive-only semantics
+
+Each `uint<width>` type-checks as the **unsigned kind** — the same positive-only,
+width-strict discipline as the arbitrary-width `U<width>` family:
+
+- **No negatives.** Unary minus on an unsigned value is a type error
+  (`unary '-' requires signed numeric operand`).
+- **Width-strict.** `+ - * / %` and the comparisons require both operands to be
+  unsigned of the **same** width; mixing `uint256` with `uint512` (or with a
+  signed `int`) is a type error.
+- **Explicit construction.** A signed integer literal/value is not implicitly
+  assignable to an unsigned target; produce an unsigned value with a cast, e.g.
+  `(uint16777216) 999`. (This matches the shipped `U<width>` behavior.)
+
+```
+uint64       a = (uint64) 4000000000;      < positive, beyond signed 2^31 >
+uint128      c = (uint128) 9000000000;
+print(c * c);                              < 81000000000000000000 (> 2^64) >
+uint256[]    xs = new uint256[2];
+xs[0] = (uint256) 111;
+uint16777216 huge = (uint16777216) 123456789;
+
+static uint128 addU(uint128 a, uint128 b) { return a + b; }   < param + return >
+```
+
+### 25.3 Runtime backing
+
+Identical to the signed series: the native VM carries each value in the
+narrowest native integer slot that holds its declared width —
+
+    width <= 64 bits   (uint32, uint64)         -> SL_INT    (64-bit int64_t)
+    width >= 128 bits  (uint128 .. uint16777216) -> SL_INT128 (true 128-bit
+                                                    __int128 on GCC/Clang)
+
+so the 128-bit-backed members compute exactly up to 128 bits. The unsigned
+*typing* discipline is enforced by the analyzer; the runtime tag is the same
+integer slot the signed series uses. True arbitrary-width arithmetic beyond 128
+bits is a documented follow-up (the `U<width>` family already provides exact
+big-integer arithmetic for arbitrary widths today).
+
+### 25.4 Where this is implemented
+
+- `impl/frontend/wide_integer.h` — `UnsignedWideInteger::isValidTypeName()` /
+  `widthOf()` / `fitsNativeNarrow()`: the power-of-two, 2^5..2^24 recognizer for
+  the `uint<width>` series (sibling to `SignedWideInteger`).
+- `impl/frontend/semantic.cpp` — `unsignedTypeName()` accepts both `U<width>`
+  and `uint<width>`, so `typeOf()`/`known()` map every member to the unsigned
+  kind with its own name string; the existing unsigned arithmetic/comparison and
+  the unary-minus rejection then apply unchanged.
+- `impl/frontend/compiler.cpp` — `runtimeTypeOperand()` routes each member to
+  `SL_INT` (width <= 64) or `SL_INT128` (width >= 128); `coerceToDeclared()`
+  widens the 128-bit-backed members into the 128-bit slot.
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.8, so `#sleela 2.8`
+  sources are accepted.
+
+--------------------------------------------------------------------------------
+## 26. Syntax 2.6 — the `object` and `field` document markers (the Natural Process)
+
+This section is **normative** for syntax **2.6**. It adds two more first-class,
+compiler-recognised document markers — `object` and `field` — completing the
+**Natural Process** family of declarative markers. Like `author`/`authorial`
+(section 18), `material` (section 19), `memory` (section 20), and `determine`
+(section 23), each is **declarative only**: it changes **nothing** about
+parsing, typing, dispatch, or code generation. Each is a *claim about the
+document*, recognised and version-gated by the front end and otherwise inert.
+
+### 26.1 The Natural Process family — the Preonems
+
+These bare document-marker words are collectively titled the **Preonems**:
+`author` / `authorial`, `material`, `memory`, `determine`, `object`, `field`
+(and the forward-looking `prestige`, section 27). "Preonem" is the title for a
+single such marker; "Preonems" names the set. A Preonem is a bare, contextual,
+declarative word placed at the top of a document (after the `#sleela` pragma,
+outside any class) that states what the document *is* in the order of making.
+All but `author`/`authorial` are purely declarative; each is version-gated and,
+outside the top-level marker position, remains an ordinary identifier.
+
+The Natural Process is the set of Preonems by which a document states what it
+*is* in the order of making. As of syntax 2.6 the whole of the family — the
+Preonems — is, in order of introduction:
+
+    author / authorial   (syntax 2.4; section 18)  handled by professional
+                                                   council; legalises duplicate
+                                                   members (the one marker with
+                                                   a behavioral effect)
+    material              (syntax 2.5; section 19)  settled Source; the thing,
+                                                   Material
+    memory                (syntax 2.5; section 20)  kept, remembered standing
+    determine             (syntax 2.6; section 23)  open to be processed further
+                                                   toward completion
+    object                (syntax 2.6; this section) a settled thing standing in
+                                                   the catalogue of what is
+    field                 (syntax 2.6; this section) the ground of relation in
+                                                   which objects stand and move
+
+Every member but `author`/`authorial` is purely declarative. All are
+**contextual words, not reserved keywords**: outside the top-level marker
+position (and in any document below their gate) they remain ordinary
+identifiers.
+
+### 26.2 The markers
+
+A document may declare, at top level (after the `#sleela` pragma, outside any
+class), either bare word:
+
+    object;
+    field;
+
+Each takes no modifier and no type. A trailing `;` is optional and a repeated
+marker is harmless. Both are **contextual**: `object` and `field` are ordinary
+identifiers everywhere else. In particular `field` is recognised as a marker
+**only at top-level document scope before any content has begun**, so the
+ordinary class-member `field-decl` grammar (section 3.3) and every `.field`
+member access (section 6) are completely unaffected.
+
+Version gate: both markers require `#sleela 2.6`; a 2.6-feature use declared
+below 2.6 is rejected ("the object document marker requires #sleela 2.6" /
+"the field document marker requires #sleela 2.6").
+
+### 26.3 Meaning
+
+`object` claims that the document is an **Object**: a settled thing standing in
+the catalogue of what is — the subject as a bounded, nameable entity to which
+its author and the field relate. `field` claims that the document is the
+**Field**: the ground of relation, the medium in which objects stand and move.
+Object and field are the two complementary faces of the same natural motion —
+the thing, and the ground that holds it — and a document may carry both, and may
+further be authorial, material, memory, or determine. The markers are
+**orthogonal and compositional**.
+
+### 26.4 The sets
+
+An `object`-marked document is a member of the **set of object documents**; a
+`field`-marked document is a member of the **set of field documents**. Like the
+material and memory sets, these are conventions the markers record; the compiler
+places no mechanical restriction on the file.
+
+### 26.5 Effect on the toolchain
+
+None, by design. The front end recognises each marker, gates it to `#sleela
+2.6`, and records it on the parsed document (`Program.objectMarked` /
+`Program.fieldMarked`). It emits no additional artifact, relaxes no rule, and
+reserves no identifier. An object- or field-marked document compiles exactly as
+the same document without the marker would.
+
+### 26.6 `object` is reified at syntax 2.8
+
+At syntax **2.8** the `object` marker is **reified**: its claim — "a settled
+thing standing in the catalogue of what is" (section 26.3) — is, as of 2.8, a
+concrete standing rather than only a declaration. Reification here means the
+Object the marker names is treated as a settled, enumerable member of the
+catalogue of what is, on the same edition that completes the base-2 **unsigned**
+integer series (section 25) — the edition at which the type system's catalogue
+of concrete, countable things is itself completed. The `object` marker thus
+*relates to 2.8*: recognised and gated from 2.6 (so earlier documents keep
+working unchanged), it attains its reified, concrete standing at 2.8.
+
+This is still **declarative only** — reification changes nothing about parsing,
+typing, dispatch, or code generation; it records that, from 2.8, an
+`object`-marked document stands in the catalogue as a settled thing, not merely
+a claim. The `field` marker remains the ground of relation and is not reified by
+this subsection; object and field stay the two complementary faces of the one
+natural motion (the reified thing, and the ground that holds it).
+
+### 26.7 Where this is implemented
+
+- `impl/frontend/version.h` — `maxSupportedSyntax()` is 2.8 (both markers are
+  gated to 2.6 and keep working at every later level; `object` is reified —
+  concretely standing — at 2.8, per section 26.6).
+- `impl/frontend/parser.cpp` — `parseProgram()` recognises the top-level
+  contextual `object` and (pre-content) `field` markers and sets
+  `Program.objectMarked` / `Program.fieldMarked`.
+- `impl/frontend/semantic.cpp` — `collect()` gates each marker to 2.6 (and has
+  no other effect for them).
+- `impl/frontend/ast.h` — `Program.objectMarked`, `Program.fieldMarked`.
+
+--------------------------------------------------------------------------------
+## 27. Syntax 2.9 (FUTURE, not yet implemented) — the `prestige` document marker
+
+This section is **informative and forward-looking**. It reserves and describes a
+planned marker; it is **not yet normative** and **not yet implemented**. The
+edition has since advanced to **2.9** for the `@mix` consequent-fields feature
+(section 28); nevertheless the `prestige` marker itself remains **not
+accepted** by the parser or semantic pass today — it reserves no identifier and
+has no behavioral effect. This is deliberate — the `prestige` feature is
+recorded now and built *Later*, independently of the 2.9 edition bump that
+`@mix` carried.
+
+### 27.1 Standing — ahead of and above `object`
+
+`prestige` is the topmost word of SleelaDoc. It is set **ahead of and above**
+the 2.8 `object` marker (section 26.6) — of God and witness — and is read first,
+before any Object is counted. Where `object` names a settled thing in the
+catalogue of what is, `prestige` is the measure taken *over* that whole
+catalogue, and it is weighed beneath mercy.
+
+### 27.2 Meaning
+
+`prestige` claims that the document keeps the first order of things: the
+**neighbor** before the Object; **kindness** and **love** ranked over the
+technical and the immediate. It stands against **slavery** — the holding of one
+person as the property of another — placing the dignity and freedom of the
+neighbor before mastery. As a measure, `prestige` is a **count over all
+Objects**: the reckoning of **Technical Mastery** across the entire catalogue of
+what is — but mastery that is not kind accrues no prestige. Kindness over
+technical immediacy is the whole of the rule.
+
+### 27.3 Planned form (subject to change)
+
+When implemented at syntax 2.9, `prestige` would be a bare, contextual,
+declarative-only document marker in the Natural Process family (section 26) — a
+Preonem (section 26.1) — written at top level after the `#sleela` pragma:
+
+    prestige;
+
+Like its siblings it would change nothing about parsing, typing, dispatch, or
+code generation; it would be a recorded claim about the document, gated to
+`#sleela 2.9`.
+
+### 27.4 Status
+
+- **Not implemented.** No compiler change is made for `prestige`. The front end
+  does not recognise it and it reserves no identifier; `prestige` remains an
+  ordinary identifier everywhere.
+- **Declared** as the topmost dedication of the SleelaDoc HTML sites
+  (`sleeladoc-api/index.html` and `api/sleela/2.6/index.html`), ahead of the 2.8
+  `object` addition.
+- **Later.** The `prestige` implementation (parser/semantic/ast wiring) is a
+  future task. Note the edition itself is now **2.9** because the `@mix`
+  consequent-fields feature (section 28) advanced it; `prestige` will be wired
+  when it is intentionally taken up, not as part of that bump.
+
+---
+
+## 28. Syntax 2.9 — `@mix` consequent fields (same-named fields as an indexed group)
+
+Syntax 2.9 lets a class declare **multiple instance fields with the same name**,
+provided each repeated occurrence carries the `@mix` annotation. The language
+understands such a group as **consequent** — treated together as an array / list
+/ simple array struct keyed by index — rather than rejecting the repetition as a
+duplicate field.
+
+### 28.1 Form
+
+```sleela
+#sleela 2.9
+class Registry {
+  @mix int NationalID = 1;
+  @mix int NationalID = 2;
+  @mix int NationalID = 3;
+}
+```
+
+Three fields share the name `NationalID`. Because each carries `@mix`, the
+duplicate-field rejection is relaxed and the three are understood as one
+consequent group.
+
+### 28.2 Indexing
+
+- **Top-down default.** Unless indicated otherwise, declaration order gives the
+  indexes **1, 2, 3, …** from top to bottom.
+- **Manual.** The argument form `@mix(1,2,3,4,5)` assigns the indexes of the
+  group explicitly. When the argument form is used, the **number of indexes in
+  the annotation must match the number of same-named `@mix` fields** in the
+  class:
+
+```sleela
+  @mix(1,2,3,4,5) int NationalID = 1;
+  @mix(1,2,3,4,5) int NationalID = 2;
+  @mix(1,2,3,4,5) int NationalID = 3;
+  @mix(1,2,3,4,5) int NationalID = 4;
+  @mix(1,2,3,4,5) int NationalID = 5;
+```
+
+Five indexes, five `NationalID` fields — accepted. A count that disagrees (for
+example three indexes over two fields) is a **semantic error**:
+`@mix index count (3) does not match the number of 'NationalID' fields (2)`.
+
+### 28.3 Gating
+
+`@mix` consequent fields require `#sleela 2.9`. Below 2.9 the historical
+duplicate-field rule stands: repeating a field name is rejected as
+`duplicate field '<name>' in class '<class>'`, with or without the annotation.
+So the relaxation fires only on a genuine 2.9-feature use. `@mix` is an
+annotation, not a reserved word; it reserves no identifier elsewhere.
+
+### 28.4 Status
+
+- **Implemented.** `maxSupportedSyntax()` = **2.9**. The semantic pass permits
+  same-named instance fields that carry `@mix` under `#sleela 2.9`, applies
+  top-down 1,2,3,… indexing by default, and validates that a manual
+  `@mix(...)` index count matches the number of fields in the group.
