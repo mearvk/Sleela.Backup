@@ -1,46 +1,87 @@
-/*
- * lib/user-interface/SLDrawContext.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLDrawContext — the SLeeLa binding of the comprehensive
- *   SleelaUI Draw API (user-interface/include/sleela_ui_draw.h). It is an owned
- *   RGBA pixel surface with an optional back buffer, giving a SLeeLa program the
- *   PIXELS: clear/present buffering, pixel-level get/set/blend, a blend mode and
- *   layer opacity, a clip stack, and the full primitive set — rects, rounded
- *   rects, lines, polylines, circles, ellipses, arcs, triangles, linear/radial
- *   gradients, text, and surface-to-surface blits. Every method bottoms out in
- *   a `draw*` SLVM built-in that calls the genuine Draw API, which renders with
- *   the toolkit's own software rasterizer (identical pixels on every OS).
- *
- * A draw context can be free-standing (an image you render and read back) or
- * handed to you by an SLCanvasView's per-frame draw routine. It is a VM-local
- * handle (-1 = none). Colours are 0xRRGGBBAA words (see SLColor).
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `draw*` SLVM
- * bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLDrawContext.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLDrawContext — the SLeeLa binding of the comprehensive
+     SleelaUI Draw API (user-interface/include/sleela_ui_draw.h). It is an owned
+     RGBA pixel surface with an optional back buffer, giving a SLeeLa program the
+     PIXELS: clear/present buffering, pixel-level get/set/blend, a blend mode and
+     layer opacity, a clip stack, and the full primitive set — rects, rounded
+     rects, lines, polylines, circles, ellipses, arcs, triangles, linear/radial
+     gradients, text, and surface-to-surface blits. Every method bottoms out in
+     a `draw*` SLVM built-in that calls the genuine Draw API, which renders with
+     the toolkit's own software rasterizer (identical pixels on every OS).
+   
+   A draw context can be free-standing (an image you render and read back) or
+   handed to you by an SLCanvasView's per-frame draw routine. It is a VM-local
+   handle (-1 = none). Colours are 0xRRGGBBAA words (see SLColor).
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `draw*` SLVM
+   bridge. >>
+#sleela 2.5
+material;
 class SLDrawContext {
-  // Buffer-mode ordinals (mirror SLUIBufferMode).
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10361;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Buffer-mode ordinals (mirror SLUIBufferMode). >
   static final int BUFFER_SINGLE = 0;
   static final int BUFFER_DOUBLE = 1;
-  // Blend-mode ordinals (mirror SLUIBlendMode).
+  < Blend-mode ordinals (mirror SLUIBlendMode). >
   static final int BLEND_OVER     = 0;
   static final int BLEND_COPY     = 1;
   static final int BLEND_ADD      = 2;
   static final int BLEND_MULTIPLY = 3;
   static final int BLEND_SCREEN   = 4;
   static final int BLEND_MAX      = 5;
-  // Orientation ordinals (mirror SLUIOrientation), for linear gradients.
+  < Orientation ordinals (mirror SLUIOrientation), for linear gradients. >
   static final int ORIENT_VERTICAL   = 0;
   static final int ORIENT_HORIZONTAL = 1;
 
-  int dc;   // VM-local draw-context handle (-1 = none)
+  < VM-local draw-context handle (-1 = none) >
+  int dc;
 
-  // Create a free-standing context of width x height device pixels.
+  < Create a free-standing context of width x height device pixels. >
   void create(int width, int height, int bufferMode) {
     dc = drawCreate(width, height, bufferMode);
   }
-  // Adopt a context handed in by an SLCanvasView draw routine.
+  < Adopt a context handed in by an SLCanvasView draw routine. >
   void adopt(int handle) { dc = handle; }
   int handle() { return dc; }
   boolean valid() { return dc >= 0; }
@@ -50,25 +91,25 @@ class SLDrawContext {
   int width()  { if (dc < 0) { return 0; } return drawWidth(dc); }
   int height() { if (dc < 0) { return 0; } return drawHeight(dc); }
 
-  // ---- state --------------------------------------------------------------
+  < ---- state -------------------------------------------------------------- >
   void setBlend(int mode)       { if (dc >= 0) { drawSetBlend(dc, mode); } }
   void setOpacity(double value) { if (dc >= 0) { drawSetOpacity(dc, value); } }
   void clipPush(int x, int y, int w, int h) { if (dc >= 0) { drawClipPush(dc, x, y, w, h); } }
   void clipPop()                { if (dc >= 0) { drawClipPop(dc); } }
   void clipReset()              { if (dc >= 0) { drawClipReset(dc); } }
 
-  // ---- buffering ----------------------------------------------------------
+  < ---- buffering ---------------------------------------------------------- >
   void clear(int color) { if (dc >= 0) { drawClear(dc, color); } }
   void present()        { if (dc >= 0) { drawPresent(dc); } }
 
-  // ---- pixel-level control ------------------------------------------------
+  < ---- pixel-level control ------------------------------------------------ >
   void setPixel(int x, int y, int color) { if (dc >= 0) { drawSetPixel(dc, x, y, color); } }
   int getPixel(int x, int y) { if (dc < 0) { return 0; } return drawGetPixel(dc, x, y); }
   void blendPixel(int x, int y, int color, double coverage) {
     if (dc >= 0) { drawBlendPixel(dc, x, y, color, coverage); }
   }
 
-  // ---- primitives ---------------------------------------------------------
+  < ---- primitives --------------------------------------------------------- >
   void fillRect(int x, int y, int w, int h, int color) {
     if (dc >= 0) { drawFillRect(dc, x, y, w, h, color); }
   }

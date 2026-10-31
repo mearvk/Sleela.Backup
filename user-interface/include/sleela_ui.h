@@ -1,3 +1,14 @@
+/* =============================================================================
+ * SleelaUI theme model.
+ *
+ * Safe spacing basis: a theme is expected to keep a predictable rhythm, and the
+ * practical safe baseline for component separation in SleelaUI is about 10px.
+ * The toolkit's underlying spacing unit is 4px, so 10px is a comfortable
+ * layout rule (about 2.5 units) for padding and gaps between adjacent widgets,
+ * cards, and panels. The theme sets the visual palette and family metrics; the
+ * app code should treat 10px as the default safe spacing basis unless a more
+ * specific composition requires a tighter or looser arrangement.
+ * ============================================================================= */
 #ifndef SLEELA_UI_H
 #define SLEELA_UI_H
 /* =============================================================================
@@ -10,7 +21,7 @@
  *
  * SleelaUI is an ORIGINAL toolkit: it is not GTK, Qt, wxWidgets, or a wrapper
  * around them. It draws its own widgets with its own software rasterizer so the
- * look -- the "Slick Black" matte default -- is pixel-identical on every target.
+ * look -- the graphite/charcoal default -- is pixel-identical on every target.
  * It talks to the real host window system through one backend interface with
  * three implementations:
  *
@@ -52,6 +63,11 @@ typedef enum {
 
 /* The backend that was compiled in and is driving this process. */
 SLUIBackend slui_backend(void);
+
+/* Open the host operating system's network settings. This does not claim to
+ * scan, connect, or disconnect networks; those require a native radio provider.
+ * Returns SLUI_OK when the settings launcher was started, otherwise an error. */
+int slui_wifi_open_settings(void);
 const char *slui_backend_name(SLUIBackend backend);
 const char *slui_version_string(void);
 
@@ -75,6 +91,9 @@ typedef struct { int w, h; } SLUISize;
 typedef struct { int x, y, w, h; } SLUIRect;
 typedef uint32_t SLUIColor; /* 0xRRGGBBAA */
 
+/* Root content is inset 10px from each client-area edge. */
+#define SLUI_WINDOW_CONTENT_PADDING 10
+
 static inline SLUIColor slui_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     return ((SLUIColor)r << 24) | ((SLUIColor)g << 16) | ((SLUIColor)b << 8) |
            (SLUIColor)a;
@@ -84,23 +103,28 @@ static inline SLUIColor slui_rgb(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 /* --------------------------------------------------------------------------
- * Theme. The toolkit ships a configurable palette; the DEFAULT is "Slick
- * Black" -- a deep matte-black family with a single cool accent. A theme is a
- * flat set of named role colours plus a corner radius and base metrics, so a
- * host can restyle the whole UI by editing one struct (or loading a .conf).
+ * Theme. The DEFAULT is a graphite/charcoal family with neutral text and a
+ * steel-blue accent. White, blue, black and gray presets are also available.
+ * A theme is a flat set of named role colours plus metrics, selected in source
+ * or loaded explicitly from a .conf file.
  * ------------------------------------------------------------------------- */
 typedef enum {
     SLUI_THEME_SLICK_BLACK = 0,  /* the original matte-black theme            */
     SLUI_THEME_GRAPHITE = 1,     /* a lighter neutral alternative             */
     SLUI_THEME_CUSTOM = 2,       /* fully host-defined via SLUITheme fields   */
-    SLUI_THEME_SLEELA_BASE = 3   /* THE DEFAULT: base colour #2B1608 (warm)   */
+    SLUI_THEME_SLEELA_BASE = 3,  /* THE DEFAULT: graphite + steel blue       */
+    /* The four Standard Patterns -- flat, one-accent palettes a host can pick
+     * by id with no field edits. Appended after SLEELA_BASE to preserve the
+     * existing ABI numbering. */
+    SLUI_THEME_WHITE = 4,        /* light surface, dark text, blue accent     */
+    SLUI_THEME_BLACK = 5,        /* deep black surface, light text            */
+    SLUI_THEME_BLUE = 6,         /* blue-tinted surfaces, light text          */
+    SLUI_THEME_GRAY = 7          /* neutral mid-gray surfaces                 */
 } SLUIThemeId;
 
-/* Sleela's configurable BASE COLOUR, the floor of the default theme. Deep warm
- * brown #2B1608. A host may override it at code time (edit the SLUITheme after
- * slui_theme_preset) or at configuration time (slui_theme_set_base_color /
- * a loaded .conf), and the rest of the warm palette is derived from it. */
-#define SLUI_BASE_COLOR_DEFAULT 0x2B1608FFu /* #2B1608, opaque */
+/* Base floor for the default graphite theme. Custom base colours remain
+ * supported, but use a neutral steel-blue accent instead of warm amber. */
+#define SLUI_BASE_COLOR_DEFAULT 0x1D2025FFu /* #1D2025, opaque */
 
 typedef struct {
     SLUIThemeId id;
@@ -129,20 +153,17 @@ typedef struct {
 } SLUITheme;
 
 /* Fill `out` with one of the built-in palettes. SLUI_THEME_SLEELA_BASE is the
- * documented default (base colour #2B1608) and what slui_window_create() uses
+ * documented graphite/charcoal default and what slui_window_create() uses
  * when given no theme. */
 void slui_theme_preset(SLUITheme *out, SLUIThemeId id);
 
-/* Re-derive the whole warm palette in `out` from a new base colour, in place.
- * This is the configuration-time hook: pass the colour read from a .conf (or a
- * code-time choice) and every surface/border/accent is recomputed as a tasteful
- * tint/shade of it, so a single value re-themes the UI. The alpha of `base` is
- * ignored (the floor is opaque). */
+/* Re-derive a neutral/cool palette in `out` from a custom base colour.
+ * Surfaces are re-derived and the accent remains steel-blue; alpha is ignored. */
 void slui_theme_set_base_color(SLUITheme *out, SLUIColor base);
 
 /* Load the base colour (and optional overrides) from a simple key=value config
  * file into `out`, which must already hold a preset. Recognised keys:
- *   base_color=#RRGGBB      (or 0xRRGGBB)   -> re-derives the warm palette
+ *   base_color=#RRGGBB      (or 0xRRGGBB)   -> re-derives a neutral palette
  *   accent=#RRGGBB  font_family=...  font_size=NN  radius=NN
  * Returns SLUI_OK, or SLUI_ERR_INVALID if the file could not be read. Unknown
  * keys are ignored so the file can carry other sections. */
@@ -238,14 +259,36 @@ int slui_app_pump(SLUIApp *app, int block);
 int slui_app_run(SLUIApp *app);
 void slui_app_quit(SLUIApp *app, int exit_code);
 
+/* Primary screen / display size in pixels. On success returns SLUI_OK and
+ * writes the dimensions through *w,*h; returns SLUI_ERR_INVALID (and leaves
+ * the outputs untouched) when the backend cannot report a size -- e.g. the
+ * headless build with no display -- so callers can fall back to a modeled
+ * resolution. Either pointer may be NULL to ignore that dimension. */
+SLUIStatus slui_screen_size(SLUIApp *app, int *w, int *h);
+
 /* --------------------------------------------------------------------------
  * Windows. A window owns a root container widget; add children to it.
  * ------------------------------------------------------------------------- */
+
+/* Presentation buffering mode -- how a freshly painted Canvas reaches the
+ * screen. SINGLE blits the Canvas straight to the live window (the original
+ * behavior; cheapest, but a mid-repaint frame can tear, and a resize repaints
+ * visibly). DOUBLE paints into one off-screen back buffer and copies the whole
+ * finished frame to the window in a single operation, so a resize/redraw lands
+ * atomically with no tearing. TRIPLE adds a second back buffer in a small ring
+ * so the next frame can be prepared without waiting on the previous blit --
+ * smoother under rapid resize / animation at a little more memory. */
+typedef enum {
+    SLUI_BUFFERING_SINGLE = 0,
+    SLUI_BUFFERING_DOUBLE = 1,
+    SLUI_BUFFERING_TRIPLE = 2
+} SLUIBufferingMode;
+
 typedef struct {
     const char *title;
     int width, height;
     int resizable;              /* 0/1                                       */
-    const SLUITheme *theme;     /* NULL -> Slick Black default               */
+    const SLUITheme *theme;     /* NULL -> graphite/charcoal default         */
     int custom_titlebar;        /* 1 -> SleelaUI draws its own title bar      */
 } SLUIWindowConfig;
 
@@ -258,6 +301,32 @@ SLUIWidget *slui_window_root(SLUIWindow *window);
 const SLUITheme *slui_window_theme(const SLUIWindow *window);
 void slui_window_set_theme(SLUIWindow *window, const SLUITheme *theme);
 void slui_window_request_redraw(SLUIWindow *window);
+/* Force one synchronous layout + paint pass now (measure -> arrange -> paint
+ * into the window's canvas). The app loop does this every frame; this entry
+ * point lets a headless host or a test settle widget geometry (so e.g. a
+ * scrolled view's overflow is computed) without spinning the event loop. */
+void slui_window_render(SLUIWindow *window);
+
+/* Choose how painted frames reach the screen (SLUIBufferingMode). DOUBLE (the
+ * default from SleelaUI's side once set) presents a complete frame in one blit
+ * so resizes and redraws do not tear; TRIPLE rings a second back buffer for
+ * smoother rapid resize/animation; SINGLE restores the direct-blit path. The
+ * mode is remembered on the window and survives backend resurface; a backend
+ * that cannot honor it (headless) ignores it gracefully. */
+void slui_window_set_buffering(SLUIWindow *window, int mode);
+int slui_window_buffering(const SLUIWindow *window);
+
+/* Client-area sizes are measured in device pixels. Zero minimums use the
+ * automatic widget-tree minimum; zero maximums mean unbounded. The effective
+ * minimum includes measured root content plus 10px on every edge. Failed
+ * changes are atomic; a maximum below the current measured minimum is rejected. */
+SLUIStatus slui_window_set_min_size(SLUIWindow *window, int width, int height);
+SLUIStatus slui_window_set_max_size(SLUIWindow *window, int width, int height);
+SLUIStatus slui_window_set_size_limits(SLUIWindow *window,
+                                       int min_width, int min_height,
+                                       int max_width, int max_height);
+SLUIStatus slui_window_get_min_size(const SLUIWindow *window, SLUISize *out);
+SLUIStatus slui_window_get_max_size(const SLUIWindow *window, SLUISize *out);
 
 /* A per-window event callback, called for events the widget tree did not fully
  * consume (e.g. window CLOSE). Return non-zero to mark the event handled. */
@@ -323,6 +392,21 @@ SLUIWidget *slui_card(SLUIWidget *parent);
 SLUIWidget *slui_grid(SLUIWidget *parent, int columns, int spacing);
 SLUIWidget *slui_status_bar(SLUIWidget *parent);
 
+/* A scrolled viewport: clips and scrolls its content when the content is larger
+ * than the viewport. The FIRST child attached to the returned widget is the
+ * scroll content (fill it like a box); the view owns its own scroll bars and
+ * shows them automatically per the per-axis policy (0=auto shown only on
+ * overflow, 1=always, 2=never). This is the native overflow->scrollbar muscle.
+ * `policy_h` governs the horizontal bar, `policy_v` the vertical. */
+SLUIWidget *slui_scrolled_view(SLUIWidget *parent, int policy_h, int policy_v);
+/* Programmatic scroll control / query for a scrolled view (no-op / 0 for a
+ * widget that is not a scrolled view). Offsets are in content pixels, clamped
+ * to the scrollable range. */
+void slui_scrolled_view_scroll_to(SLUIWidget *view, int x, int y);
+void slui_scrolled_view_scroll_by(SLUIWidget *view, int dx, int dy);
+int slui_scrolled_view_scroll_x(SLUIWidget *view);
+int slui_scrolled_view_scroll_y(SLUIWidget *view);
+
 /* Display / ornament. */
 SLUIWidget *slui_image(SLUIWidget *parent, const char *glyph, int w, int h);
 SLUIWidget *slui_avatar(SLUIWidget *parent, const char *initial, int diameter);
@@ -377,9 +461,22 @@ void slui_widget_set_size_request(SLUIWidget *w, int min_w, int min_h);
 void slui_widget_set_sensitive(SLUIWidget *w, int sensitive); /* grey out     */
 void slui_widget_set_visible(SLUIWidget *w, int visible);
 
+/* Popup panel primitive. Creates a themed card under parent, initially hidden.
+ * Call slui_popup_set_open(panel, 1) to show it and 0 to dismiss it. The panel
+ * is owned by its parent like every other widget; set_open never frees it.
+ * This is a layout-hosted popup surface (not a separate native window), so the
+ * caller should place it in an appropriate overlay/stack container. */
+SLUIWidget *slui_popup_create(SLUIWidget *parent);
+void slui_popup_set_open(SLUIWidget *popup, int open);
+int slui_popup_is_open(const SLUIWidget *popup);
+
 /* Text accessors (label/button/entry). text buffers are copied in; `out`/`cap`
  * read the current value and return the full length (even if truncated). */
 void slui_widget_set_text(SLUIWidget *w, const char *text);
+/* Attach a JPEG icon to a button. If loading fails, a named vector fallback
+ * such as "Wifi" is drawn instead. The asset path is relative to the process. */
+void slui_widget_set_icon(SLUIWidget *w, const char *asset_path,
+                          const char *symbol_name);
 size_t slui_widget_get_text(const SLUIWidget *w, char *out, size_t cap);
 
 /* State accessors. */
@@ -392,6 +489,11 @@ double slui_widget_get_value(const SLUIWidget *w);
  * returns 1 at most once per activation and clears the latch. The callback path
  * (slui_widget_on_activate) still works independently. */
 int slui_widget_take_activated(SLUIWidget *w);
+int slui_widget_is_hovered(SLUIWidget *w);
+int slui_widget_take_pressed(SLUIWidget *w);
+int slui_widget_take_released(SLUIWidget *w);
+int slui_widget_take_hover_entered(SLUIWidget *w);
+int slui_widget_take_hover_left(SLUIWidget *w);
 
 /* Mark a button/entry as the single suggested (accent) action in its group. */
 void slui_widget_set_suggested(SLUIWidget *w, int suggested);
