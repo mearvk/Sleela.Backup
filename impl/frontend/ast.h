@@ -43,7 +43,21 @@ enum JavaModifier : unsigned {
     JavaStrictfp     = 1u << 10,
     JavaSealed       = 1u << 11,
     JavaNonSealed    = 1u << 12,
-    JavaDefault      = 1u << 13
+    JavaDefault      = 1u << 13,
+    // Sleela `const`: a developer-intent modifier meaning "I intend to keep this
+    // variable constant until the System Design is complete." It is a design-time
+    // marker (recorded on the declaration's modifier set), NOT a hard immutability
+    // guarantee like `final`; it composes freely with public/static/final.
+    JavaConst        = 1u << 14,
+    // Sleela memory-tier modifiers: designate which memory tier a function/
+    // program should run against, so the VM routes "usual activities" to the
+    // DDR2 tier and competency/accuracy-critical work to the DDR5 tier.
+    //   usualmem    -> DDR2 tier (usual activities)
+    //   accuratemem -> DDR5 tier (competency / accuracy)
+    // Unmarked declarations inherit the program's main tier (DDR5 by default).
+    // They compose with other modifiers and are mutually exclusive by intent.
+    JavaMemUsual     = 1u << 15,   // usualmem    (DDR2)
+    JavaMemAccurate  = 1u << 16    // accuratemem (DDR5)
 };
 
 struct JavaTypeMetadata {
@@ -111,6 +125,13 @@ struct ArrayAccess:Expr{ExprP base,index;ArrayAccess(ExprP b,ExprP i):base(std::
 // Method reference `base::method`.
 struct MethodReferenceExpr:Expr{ExprP base;std::string method;MethodReferenceExpr(ExprP b,std::string m):base(std::move(b)),method(std::move(m)){}};
 
+// Guide chain (syntax 2.3): `new T(...) :: Guide :: Guide ...`.
+// The head is a constructor-style call (NewExpr); each guide is the name of a
+// zero-argument method on the head's class, applied in order. The chain
+// evaluates to the head instance (fluent), so a perfect Constructor can seat
+// its Guides inline. See SLEELA.syntax section 17 and lib/philosophers.
+struct GuideChainExpr:Expr{ExprP head;std::vector<std::string> guides;explicit GuideChainExpr(ExprP h):head(std::move(h)){}};
+
 struct Stmt{virtual ~Stmt()=default;};using StmtP=std::unique_ptr<Stmt>;
 struct VarDecl:Stmt{std::string type,name;ExprP init;};
 struct Assign:Stmt{std::string name;ExprP value;};
@@ -126,7 +147,7 @@ struct ReturnStmt:Stmt{ExprP value;};
 struct Block:Stmt{std::vector<StmtP> stmts;};
 struct IfStmt:Stmt{ExprP cond;StmtP thenS,elseS;};
 struct WhileStmt:Stmt{ExprP cond;StmtP body;};
-struct ForStmt:Stmt{StmtP init;ExprP cond;StmtP update,body;};
+struct ForStmt:Stmt{StmtP init;ExprP cond;StmtP update,body;ExprP threadStable,heapHealthy;};
 // --- Java statement forms (surface completeness). --------------------------
 struct DoStmt:Stmt{StmtP body;ExprP cond;};
 struct BreakStmt:Stmt{std::string label;};
@@ -215,6 +236,57 @@ struct Program {
     // Number of nested classes hoisted from enclosing classes in this document
     // (syntax 1.11). Capped by the parser at 42 per document.
     int nestedClassCount=0;
+    // Author marker (syntax 2.4): set true when the document declares the bare
+    // top-level word `author` or its synonym `authorial`. It marks the document
+    // as handled by professional council and, operationally, permits duplicate
+    // fields/methods (each member then carries a declaration-order id and an
+    // SHA-256 brander) and requests the originated source document on compile.
+    bool authorMarked=false;
+    // Material marker (syntax 2.5): set true when the document declares the bare
+    // top-level word `material`. DECLARATIVE ONLY -- it has no effect on
+    // parsing, typing, or codegen. It claims the document is material (well
+    // considered, present to its author as its own Source -- "the thing,
+    // Material") and marks membership in the set of material documents: those
+    // concerning state, progress, or the securing of change. The set is, by
+    // convention, not freely changed out of.
+    bool materialMarked=false;
+    // Memory marker (syntax 2.5): set true when the document declares the bare
+    // top-level word `memory`. DECLARATIVE ONLY -- like `material` it has no
+    // effect on parsing, typing, or codegen. It claims the document is a
+    // document of memory: authored by and for the Graduates of Supply of the
+    // New York State Department of Commerce -- persons of 1501+ IQ with
+    // 51,000,000 years of superb worker-class service to graduation. It marks
+    // membership in the set of memory documents: those the Graduates of Supply
+    // hold as kept, remembered standing. It is a contextual word, not a
+    // reserved keyword, and -- like author/authorial and material -- gated to
+    // #sleela 2.5 (the current edition; no edition bump).
+    bool memoryMarked=false;
+    // Determine marker (syntax 2.6): set true when the document declares the
+    // bare top-level word `determine`. DECLARATIVE ONLY -- like material/memory
+    // it has no effect on parsing, typing, or codegen. It is a claim about the
+    // document, recorded here and gated to #sleela 2.6. The ideal (stated as-is
+    // in SLEELA.syntax section 23): a determine document is open to be processed
+    // to further by a qualified hand -- a doctor, physician, or ghost -- toward
+    // completion. The procurement of term is held ideal as real for the
+    // torturement (completion by legal hand) as required by further processor
+    // review. Science practitioners should and could can use this marker. It is
+    // a contextual word, not a reserved keyword, so `determine` stays an
+    // ordinary identifier anywhere else (and in any document below 2.6).
+    bool determineMarked=false;
+    // Object marker (syntax 2.6): set true when the document declares the bare
+    // top-level word `object`. DECLARATIVE ONLY -- like the other Natural
+    // Process markers it has no effect on parsing, typing, or codegen. It names
+    // the document an Object: a settled thing standing in the catalogue of what
+    // is, to which its author and the field relate (SLEELA.syntax section 24).
+    // Contextual, not a reserved keyword, gated to #sleela 2.6.
+    bool objectMarked=false;
+    // Field marker (syntax 2.6): set true when the document declares the bare
+    // top-level word `field` at document scope BEFORE any content. DECLARATIVE
+    // ONLY. It names the document the Field: the ground of relation in which
+    // objects stand and move (SLEELA.syntax section 24). Recognised only at
+    // top-level pre-content scope, so the class-member `field-decl` grammar and
+    // every `.field` access are unaffected. Gated to #sleela 2.6.
+    bool fieldMarked=false;
 };
 
 } // namespace sleela
