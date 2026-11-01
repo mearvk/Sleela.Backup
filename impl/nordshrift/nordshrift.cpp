@@ -40,6 +40,7 @@
 #include "../frontend/dynamite.h"
 #include "../frontend/permissible.h"
 #include "../frontend/version.h"
+#include "../frontend/common_rails_banner.hpp"
 extern "C" {
 #include "../core/sleela_core.h"
 #include "../core/sleela_design_activity.h"
@@ -47,11 +48,19 @@ extern "C" {
 
 using namespace nordshrift;
 
+// CommonRails banner surface for Nordshrift (opt-in via SLEELA_RAILS=1). The
+// machine-parsed contract lines ("... N error(s), M warning(s)", "OK: target-
+// language = ...") are emitted verbatim by their own call sites; the rails
+// status lines are additive decoration so default output is unchanged.
+static bool nsRailsBannersEnabled(){const char*v=std::getenv("SLEELA_RAILS");return v&&(std::string(v)=="1"||std::string(v)=="true"||std::string(v)=="yes");}
+
 static const char* kVersion =
-    "Nordshrift 2.7.1-dev (NS-SST-0001; source validation; semantic analysis; semantic subject model; Sleelvac™ runnable .sleela target)";
+    "Nordshrift 2.7.1-dev (NS-SST-0001 spec 2.2; drives SLeeLa source syntax up to 2.5; source validation; semantic analysis; semantic subject model; Sleelvac™ runnable .sleela target)";
 
 static int usage() {
     std::cerr <<
+        "Nordshrift - the SLeeLa .sst transpiler driver (NS-SST-0001 spec 2.2)\n"
+        "\n"
         "Usage:\n"
         "  nordshrift check <sheet.sst>              validate a sheet; print diagnostics\n"
         "  nordshrift build <sheet.sst>              compile the sheet's sources to its target\n"
@@ -303,7 +312,7 @@ static void validateSourcePrograms(const Sheet& sheet, const std::string& sheetP
                 std::cout << " line=" << connector.line
                           << " admissible=" << (sleela::permissible::isAdmissible(connector) ? "candidate" : "incomplete") << "\n";
             }
-            sleela::SemanticResult semantic = sleela::analyzeSemantics(program, vr.declared);
+            sleela::SemanticResult semantic = sleela::analyzeSemantics(program, vr.declared, false);
             for (const auto& err : semantic.errors)
                 diags.error("NSS-E-SEM-001", srcPath, 0, err, "SST-SOURCE-SEMANTIC");
             for (const auto& warn : semantic.warnings)
@@ -328,8 +337,14 @@ static int doCheck(const std::string& path) {
               << diags.warningCount() << " warning(s)\n";
     if (!diags.hasErrors()) {
         std::cout << "OK: target-language = " << langName(sheet.target.language) << "\n";
+        if (nsRailsBannersEnabled()) {
+            sleela::rails::component(std::cerr, "Nordshrift", 1, 1, "checked " + sheet.meta.name);
+            sleela::rails::complete(std::cerr, "0 error(s), target-language = " + std::string(langName(sheet.target.language)));
+        }
         reportComponentSeries(sheet);
         reportInputObjects(sheet);
+    } else if (nsRailsBannersEnabled()) {
+        sleela::rails::error(std::cerr, std::to_string(diags.errorCount()) + " error(s) in " + sheet.meta.name);
     }
     return diags.hasErrors() ? 1 : 0;
 }
@@ -353,6 +368,8 @@ static int doBuild(const std::string& path) {
     std::cout << diags.render();
     if (diags.hasErrors()) {
         std::cerr << "nordshrift: build halted — " << diags.errorCount() << " error(s)\n";
+        if (nsRailsBannersEnabled())
+            sleela::rails::error(std::cerr, "build halted: " + std::to_string(diags.errorCount()) + " error(s)");
         return 1;
     }
 
@@ -393,6 +410,8 @@ static int doBuild(const std::string& path) {
                 sleela::compileToArtifact(prog, output, nullptr, vr.declared);
                 std::cout << "nordshrift: " << srcPath << " -> " << output
                           << " (runnable Sleela Core artifact)\n";
+                if (nsRailsBannersEnabled())
+                    sleela::rails::complete(std::cerr, "transpiled " + srcPath + " -> " + output);
                 // Additionally emit a .ledger (QR insignia + SHA-256 chain +
                 // ISO-8601 UTC timestamp) next to the artifact, via the shared
                 // ledger core (matches the standalone ledger tool).
@@ -413,9 +432,9 @@ static int doBuild(const std::string& path) {
     }
 
     // Emit a component/subject manifest artifact from the declared network,
-    // finance, and subject series, so declaring those blocks has a real,
-    // inspectable build effect. Written next to the sheet for the sleela
-    // target; printed for java/c (matching the source emission behavior).
+    // finance, subject, reach, measure, and strings series, so declaring those
+    // blocks has a real, inspectable build effect. Written next to the sheet for
+    // the sleela target; printed for java/c (matching the source emission behavior).
     if (hasComponentManifest(sheet)) {
         std::string manifest = emitComponentManifest(sheet, lang, sheet.target.packageRoot);
         if (lang == TargetLang::Sleela) {
@@ -427,7 +446,7 @@ static int doBuild(const std::string& path) {
             if (mf) {
                 mf << manifest;
                 std::cout << "nordshrift: manifest -> " << out.string()
-                          << " (network/finance/subject component manifest)\n";
+                          << " (component manifest)\n";
             } else {
                 std::cerr << "nordshrift: cannot write manifest '" << out.string() << "'\n";
                 rc = 1;
@@ -520,7 +539,16 @@ static int doRelevance(int argc, char** argv) {
 int main(int argc, char** argv) {
     if (argc < 2) return usage();
     std::string cmd = argv[1];
-    if (cmd == "version" || cmd == "--version" || cmd == "-v") { std::cout << kVersion << "\n"; return 0; }
+    if (cmd == "version" || cmd == "--version" || cmd == "-v") {
+        std::cout << kVersion << "\n";
+        // Nordshrift delegates the #sleela syntax gate to the shared front end,
+        // so report the exact range it drives (currently 1.0 .. 2.5).
+        std::cout << "SLeeLa source syntax: "
+                  << sleela::minSupportedSyntax().str() << " .. "
+                  << sleela::maxSupportedSyntax().str()
+                  << " (default " << sleela::defaultSyntaxVersion().str() << ")\n";
+        return 0;
+    }
     if (cmd == "check") { if (argc < 3) return usage(); return doCheck(argv[2]); }
     if (cmd == "build") { if (argc < 3) return usage(); return doBuild(argv[2]); }
     if (cmd == "objects") { return doObjects(); }
