@@ -58,6 +58,7 @@ enum class WidgetKind {
     PasswordEntry,
     Heading,
     ScrollBar,
+    ScrolledView,
     StatusBar,
     InfoBar,
     Tooltip,
@@ -125,9 +126,25 @@ public:
     /* Paint self then children. */
     virtual void paint(PaintContext& ctx) = 0;
 
+    /* Overlay flag: an overlay widget (e.g. a popup/menu) floats FORWARD of the
+     * frame. It is skipped during the normal in-tree child paint (so it is not
+     * drawn clipped or mid-tree) and painted LAST by the Window, unclipped, so
+     * it appears above everything. */
+    bool is_overlay() const { return is_overlay_; }
+    void set_overlay(bool on) { is_overlay_ = on; }
+
     void paint_children(PaintContext& ctx) {
         for (auto& c : children_) {
-            if (c->visible_) c->paint(ctx);
+            if (c->visible_ && !c->is_overlay_) c->paint(ctx);
+        }
+    }
+
+    /* Depth-first collect of visible overlay widgets, for the Window's top pass. */
+    void collect_overlays(std::vector<Widget*>& out) {
+        for (auto& c : children_) {
+            if (!c->visible_) continue;
+            if (c->is_overlay_) out.push_back(c.get());
+            c->collect_overlays(out);
         }
     }
 
@@ -151,7 +168,14 @@ public:
     void set_expand(bool h, bool v) { hexpand_ = h; vexpand_ = v; }
     void set_size_request(int w, int h) { min_w_ = w; min_h_ = h; }
     void set_sensitive(bool s) { sensitive_ = s; invalidate(); }
-    void set_visible(bool v) { visible_ = v; }
+    /* Visibility affects both layout and paint; invalidate only on a real
+     * transition so dropdowns/popovers appear immediately without redraw loops. */
+    void set_visible(bool v) {
+        if (visible_ != v) {
+            visible_ = v;
+            invalidate();
+        }
+    }
     bool visible() const { return visible_; }
     bool hexpand() const { return hexpand_; }
     bool vexpand() const { return vexpand_; }
@@ -204,6 +228,25 @@ public:
         activated_ = false;
         return a;
     }
+    bool hovered() const { return hovered_; }
+    bool has_pressed_descendant() const {
+        if (pressed_) return true;
+        for (const auto& child : children_)
+            if (child->has_pressed_descendant()) return true;
+        return false;
+    }
+    void pointer_moved_outside() {
+        if (hovered_) {
+            hovered_ = false;
+            hover_leave_event_ = true;
+            invalidate();
+        }
+        for (auto& child : children_) child->pointer_moved_outside();
+    }
+    bool take_pressed() { bool v = press_event_; press_event_ = false; return v; }
+    bool take_released() { bool v = release_event_; release_event_ = false; return v; }
+    bool take_hover_entered() { bool v = hover_enter_event_; hover_enter_event_ = false; return v; }
+    bool take_hover_left() { bool v = hover_leave_event_; hover_leave_event_ = false; return v; }
 
 protected:
     void emit_activate() {
@@ -239,10 +282,15 @@ protected:
     bool sensitive_ = true;
     bool hovered_ = false;
     bool pressed_ = false;
+    bool press_event_ = false;
+    bool release_event_ = false;
+    bool hover_enter_event_ = false;
+    bool hover_leave_event_ = false;
     bool focused_ = false;
     bool suggested_ = false;
     bool destructive_ = false;
     bool activated_ = false; /* one-shot activation latch (take_activated) */
+    bool is_overlay_ = false; /* floats forward of the frame; painted last */
 
     SLUIActivateHandler activate_ = nullptr;
     void* activate_user_ = nullptr;
@@ -300,8 +348,16 @@ public:
     void set_text(const std::string& t) override { text_ = t; invalidate(); }
     std::string text() const override { return text_; }
 
+    /* Attach a JPEG asset with a named-symbol fallback (e.g. "Wifi"). */
+    void set_icon(const std::string& asset_path, const std::string& symbol_name);
+
 private:
     std::string text_;
+    std::string icon_asset_path_;
+    std::string icon_symbol_;
+    std::vector<unsigned char> icon_rgb_;
+    int icon_width_ = 0;
+    int icon_height_ = 0;
 };
 
 class Toggle : public Widget {
@@ -641,11 +697,70 @@ public:
     bool wants_focus() const override { return true; }
     void set_value(double v) override;
     double value() const override { return value_; }
+    /* Set the thumb size (fraction of content visible), [0,1]. */
+    void set_page(double p) { page_ = std::clamp(p, 0.0, 1.0); invalidate(); }
+    double page() const { return page_; }
+    /* Set the position without emitting value_changed -- used when an owner
+     * (e.g. ScrolledView) drives the bar to reflect a scroll offset, to avoid a
+     * feedback loop back into the owner. */
+    void set_value_silent(double v) { value_ = std::clamp(v, 0.0, 1.0); invalidate(); }
 
 private:
     SLUIOrientation orient_;
     double value_, page_;
     bool dragging_ = false;
+};
+
+/* A scrolled viewport: a container that clips its content to its own bounds and
+ * scrolls it when the content is larger than the viewport. The FIRST child
+ * added becomes the scroll content (the programmer fills it like any box); the
+ * view owns two ScrollBars (vertical + horizontal) it manages itself.
+ *
+ * Per axis a policy decides whether the bar is shown:
+ *   SCROLL_AUTO   (0) -- shown only while the content overflows that axis;
+ *   SCROLL_ALWAYS (1) -- always shown (the gutter is reserved);
+ *   SCROLL_NEVER  (2) -- never shown (that axis does not scroll).
+ *
+ * This is the native muscle behind the SLeeLa "implied scrollbar": overflow is
+ * detected here (content natural size vs. the viewport) and the bars appear
+ * automatically; dragging a bar (or set_scroll_*) moves a clamped content
+ * offset, and painting is clipped to the viewport via the Canvas clip stack. */
+class ScrolledView : public Widget {
+public:
+    enum Policy { SCROLL_AUTO = 0, SCROLL_ALWAYS = 1, SCROLL_NEVER = 2 };
+    ScrolledView(int policy_h, int policy_v);
+    SLUISize measure(const PaintContext& ctx) override;
+    void arrange(const PaintContext& ctx, const Rect& area) override;
+    void paint(PaintContext& ctx) override;
+    bool on_event(const SLUIEvent& ev) override;
+
+    /* The content child (first non-scrollbar child), or nullptr when empty. */
+    Widget* content_child() const;
+
+    /* Overflow questions (valid after an arrange()). */
+    bool overflow_x() const { return content_w_ > view_w_; }
+    bool overflow_y() const { return content_h_ > view_h_; }
+    bool bar_visible_x() const;
+    bool bar_visible_y() const;
+
+    /* Clamped content offset in px. */
+    int max_offset_x() const { return content_w_ > view_w_ ? content_w_ - view_w_ : 0; }
+    int max_offset_y() const { return content_h_ > view_h_ ? content_h_ - view_h_ : 0; }
+    void set_scroll_x(int px);
+    void set_scroll_y(int px);
+    void scroll_by(int dx, int dy) { set_scroll_x(offset_x_ + dx); set_scroll_y(offset_y_ + dy); }
+    int scroll_x() const { return offset_x_; }
+    int scroll_y() const { return offset_y_; }
+
+private:
+    void sync_bars();           /* push offset/page onto the owned ScrollBars */
+    int policy_h_, policy_v_;
+    int offset_x_ = 0, offset_y_ = 0;
+    /* Geometry captured at the last arrange() so overflow/offset math is live. */
+    int view_w_ = 0, view_h_ = 0;      /* inner viewport (minus reserved gutters) */
+    int content_w_ = 0, content_h_ = 0;/* content natural size */
+    ScrollBar* vbar_ = nullptr;        /* owned children (also in children_) */
+    ScrollBar* hbar_ = nullptr;
 };
 
 /* A footer status bar: chrome strip + top hairline, lays children horizontally. */
