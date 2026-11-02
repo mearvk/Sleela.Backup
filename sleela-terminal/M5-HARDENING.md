@@ -62,9 +62,21 @@ The M5 workflow now performs the following sequence on relevant changes:
 4. Clang installation;
 5. libFuzzer target compilation.
 
-The fuzz harness is bounded to 64 KiB input and exercises lexer input first, then parser input when lexing succeeds.
+The fuzz harness is bounded to 64 KiB input and exercises lexer input, parser input when lexing succeeds, and word expansion in a fresh environment with command execution disabled.
 
 **Important:** the presence of these workflow gates is evidence of repeatable validation infrastructure, not evidence that every future workflow run has passed. GitHub Actions results must be inspected separately.
+
+### Expansion and process failure hardening (follow-up review)
+
+- Numeric brace ranges are parsed defensively; out-of-range numeric text does not escape as an uncaught conversion exception.
+- Brace expansion is limited to 4,096 results, 64 recursive levels, and 1 MiB of input per expansion word. Over-limit input remains a literal word rather than allocating unbounded results.
+- Pipeline setup closes already-created descriptors if a later `pipe()` fails. If a stage `fork()` fails, descriptors are closed and already-started stages are waited out.
+- Pipeline waits retry on `EINTR` and interpret wait failures without reading an uninitialized status.
+- Here-document helper startup now handles `fork()` failure, and its writer retries interrupted writes.
+- Command-substitution completion updates the parent environment's last-status field from the child wait result.
+- The bounded fuzz harness now invokes word expansion with command execution disabled, and smoke coverage includes large-range and cartesian brace-expansion cases.
+
+Quote provenance is still flattened by the current lexer/expansion interface. Full POSIX-compatible quoted field splitting (including `"$@"`, empty quoted arguments, and preserving quoted whitespace) needs a token/word representation that retains quote metadata; it is not claimed as solved by this patch.
 
 ## 4. Regression baseline
 
@@ -74,6 +86,9 @@ The M5 smoke suite covers:
 - invalid and valid selection behavior;
 - `<(...)` process substitution;
 - `>(...)` process substitution;
+- cleanup of process-substitution FIFOs after normal completion;
+- pipeline last-command exit-status propagation and `$?`;
+- explicit `exit` status and termination behavior;
 - signal trap registration and dispatch;
 - multi-segment pathname globbing;
 - filenames containing shell metacharacters;
@@ -89,12 +104,13 @@ The current classification remains **BETTER+** because the following evidence is
 - Windows-native terminal/PTY validation where Windows support is targeted;
 - descriptor-leak tests across pipelines, substitutions, and redirections;
 - signal-burst and blocking-input trap stress tests;
-- complete command-substitution and pipeline exit-status conformance tests;
+- complete command-substitution and pipeline exit-status conformance tests (the new smoke checks cover only the pipeline's last-command status);
 - symlink, permission, inaccessible-directory, and filesystem-race testing;
 - long-running resource-limit tests;
 - repeatable performance benchmarks;
 - retained fuzz corpus and sustained fuzz execution in CI;
-- broader POSIX behavior matrices.
+- broader POSIX behavior matrices;
+- quote-provenance implementation and regression tests for empty quoted words, quoted whitespace, glob suppression, single-quote literal expansion, and `"$@"` argument boundaries.
 
 ## 6. Engineering conclusion
 

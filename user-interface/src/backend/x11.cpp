@@ -26,6 +26,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <string>
@@ -34,6 +35,31 @@
 
 namespace slui {
 namespace {
+
+/* Set both the ICCCM title and the EWMH UTF-8 title properties.
+ * XStoreName alone writes WM_NAME using the legacy STRING convention; a
+ * UTF-8 title containing characters such as U+2122 TRADE MARK SIGN can then
+ * be decoded incorrectly by the window manager. Keep the ICCCM properties
+ * for compatibility, and explicitly publish UTF8_STRING EWMH properties for
+ * modern window managers. */
+void set_utf8_window_title(Display* display, ::Window window,
+                           const std::string& title) {
+    Xutf8SetWMProperties(display, window, title.c_str(), title.c_str(),
+                         nullptr, 0, nullptr, nullptr, nullptr);
+
+    const Atom utf8_string = XInternAtom(display, "UTF8_STRING", False);
+    const Atom net_wm_name = XInternAtom(display, "_NET_WM_NAME", False);
+    const Atom net_wm_icon_name =
+        XInternAtom(display, "_NET_WM_ICON_NAME", False);
+    const auto* bytes =
+        reinterpret_cast<const unsigned char*>(title.data());
+    const int length = static_cast<int>(title.size());
+
+    XChangeProperty(display, window, net_wm_name, utf8_string, 8,
+                    PropModeReplace, bytes, length);
+    XChangeProperty(display, window, net_wm_icon_name, utf8_string, 8,
+                    PropModeReplace, bytes, length);
+}
 
 /* Translate an X11 KeySym into one of SleelaUI's normalised key codes. */
 uint32_t map_keysym(KeySym ks) {
@@ -68,16 +94,19 @@ class X11Backend; /* fwd */
 
 class X11Window : public NativeWindow {
 public:
-    X11Window(Display* dpy, ::Window win, GC gc);
+    X11Window(Display* dpy, ::Window win, GC gc, bool resizable);
     ~X11Window() override;
 
     void set_title(const std::string& title) override;
     void show() override;
     void hide() override;
+    void set_size_limits(int minw, int minh, int maxw, int maxh) override;
+    void resize_content(int width, int height) override;
     int width() const override { return width_; }
     int height() const override { return height_; }
     void request_redraw() override { dirty_ = true; }
     void present(const Canvas& canvas) override;
+    void set_buffering(SLUIBufferingMode mode) override;
 
     ::Window handle() const { return win_; }
     void set_size(int w, int h) {
@@ -91,13 +120,33 @@ public:
     }
 
 private:
+    /* Number of off-screen back pixmaps for the current mode: 0 (single,
+     * direct blit), 1 (double), or 2 (triple, a small ring). */
+    int back_count() const {
+        if (mode_ == SLUI_BUFFERING_TRIPLE) return 2;
+        if (mode_ == SLUI_BUFFERING_DOUBLE) return 1;
+        return 0;
+    }
+    void free_backbuffers();
+
     Display* dpy_;
     ::Window win_;
     GC gc_;
+    bool resizable_ = true;
     int width_ = 0, height_ = 0;
+    int min_width_ = 0, min_height_ = 0, max_width_ = 0, max_height_ = 0;
     bool dirty_ = true;
     XImage* image_ = nullptr;
     std::vector<uint32_t> buffer_;
+
+    /* Off-screen back buffers (Pixmaps) for double/triple buffering. The Canvas
+     * is drawn into the current back pixmap via XPutImage, then copied to the
+     * window in one XCopyArea so a resize/redraw lands atomically. A ring of 2
+     * (triple) lets the next frame start without waiting on the last copy. */
+    SLUIBufferingMode mode_ = SLUI_BUFFERING_DOUBLE;
+    Pixmap backbuf_[2] = {0, 0};
+    int back_w_ = 0, back_h_ = 0;
+    int back_idx_ = 0;
 };
 
 class X11Backend : public Backend {
@@ -122,6 +171,14 @@ public:
 
     SLUIBackend id() const override { return SLUI_BACKEND_X11; }
 
+    /* Primary display size, straight from the open X connection. */
+    bool screen_size(int* w, int* h) const override {
+        if (!dpy_) return false;
+        if (w) *w = DisplayWidth(dpy_, screen_);
+        if (h) *h = DisplayHeight(dpy_, screen_);
+        return true;
+    }
+
     std::unique_ptr<NativeWindow> create_window(Window* owner,
                                                 const std::string& title,
                                                 int width, int height,
@@ -139,20 +196,11 @@ public:
             static_cast<unsigned>(height), 0, CopyFromParent, InputOutput,
             CopyFromParent, CWBackPixel | CWEventMask, &attrs);
 
-        XStoreName(dpy_, win, title.c_str());
+        set_utf8_window_title(dpy_, win, title);
         XSetWMProtocols(dpy_, win, &wm_delete_, 1);
 
-        if (!resizable) {
-            XSizeHints* hints = XAllocSizeHints();
-            hints->flags = PMinSize | PMaxSize;
-            hints->min_width = hints->max_width = width;
-            hints->min_height = hints->max_height = height;
-            XSetWMNormalHints(dpy_, win, hints);
-            XFree(hints);
-        }
-
         GC gc = XCreateGC(dpy_, win, 0, nullptr);
-        auto* nw = new X11Window(dpy_, win, gc);
+        auto* nw = new X11Window(dpy_, win, gc, resizable);
         nw->set_size(width, height);
         owners_[win] = owner;
         windows_[win] = nw;
@@ -253,6 +301,7 @@ public:
         FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(px));
         active_face_ = face;
         current_key_ = key;
+        current_px_ = px;
         glyph_cache_.clear();
         return true;
     }
@@ -272,7 +321,14 @@ public:
 
     bool rasterize_glyph(uint32_t cp, GlyphBitmap* out) override {
         if (!active_face_) return false;
-        if (FT_Load_Char(active_face_, cp, FT_LOAD_RENDER) != 0) return false;
+        /* Coherent Dignity typography (section 4): below 12px, force MONOCHROME
+         * hinting. Grayscale sub-pixel AA at tiny sizes smears thin stems and,
+         * on dark backgrounds, produces coloured fringing; a crisp 1-bpp render
+         * expanded to full-coverage keeps small technical text ultra-sharp.
+         * At 12px and up we keep the antialiased render for smooth larger text. */
+        const bool mono = current_px_ < 12;
+        FT_Int32 flags = FT_LOAD_RENDER | (mono ? FT_LOAD_TARGET_MONO : 0);
+        if (FT_Load_Char(active_face_, cp, flags) != 0) return false;
         FT_GlyphSlot g = active_face_->glyph;
         out->left = g->bitmap_left;
         out->top = g->bitmap_top;
@@ -280,10 +336,23 @@ public:
         out->height = static_cast<int>(g->bitmap.rows);
         out->advance = g->advance.x / 64.0;
         out->coverage.assign(static_cast<size_t>(out->width) * out->height, 0);
-        for (int row = 0; row < out->height; ++row) {
-            const unsigned char* src = g->bitmap.buffer + row * g->bitmap.pitch;
-            std::memcpy(out->coverage.data() + static_cast<size_t>(row) * out->width,
-                        src, static_cast<size_t>(out->width));
+        if (g->bitmap.pixel_mode == FT_PIXEL_MODE_MONO) {
+            /* 1 bit per pixel, MSB-first within each byte; expand to 0/255. */
+            for (int row = 0; row < out->height; ++row) {
+                const unsigned char* src = g->bitmap.buffer + row * g->bitmap.pitch;
+                for (int x = 0; x < out->width; ++x) {
+                    unsigned char bit = (src[x >> 3] >> (7 - (x & 7))) & 1u;
+                    out->coverage[static_cast<size_t>(row) * out->width + x] =
+                        bit ? 255 : 0;
+                }
+            }
+        } else {
+            /* 8-bit grayscale coverage (antialiased). */
+            for (int row = 0; row < out->height; ++row) {
+                const unsigned char* src = g->bitmap.buffer + row * g->bitmap.pitch;
+                std::memcpy(out->coverage.data() + static_cast<size_t>(row) * out->width,
+                            src, static_cast<size_t>(out->width));
+            }
         }
         return true;
     }
@@ -303,12 +372,8 @@ public:
     int screen() const { return screen_; }
 
 private:
-    std::string resolve_face(const std::string& family) {
-        /* Fontconfig picks a real installed face for the requested family;
-         * "system" maps to the default sans family. */
-        const char* req = (family == "system" || family.empty())
-                              ? "sans-serif"
-                              : family.c_str();
+    /* Resolve one requested family to a real installed face file, or "". */
+    std::string match_one(const char* req) {
         FcPattern* pat = FcNameParse(reinterpret_cast<const FcChar8*>(req));
         FcConfigSubstitute(nullptr, pat, FcMatchPattern);
         FcDefaultSubstitute(pat);
@@ -323,6 +388,44 @@ private:
         }
         FcPatternDestroy(pat);
         return path;
+    }
+    std::string resolve_face(const std::string& family) {
+        /* A specific requested family resolves directly through Fontconfig. */
+        if (!(family == "system" || family.empty()))
+            return match_one(family.c_str());
+        /* Coherent Dignity typography (sections 1-2): "system" prefers the
+         * indestructible Neo-Grotesque workhorses in order, then any sans. The
+         * first family Fontconfig resolves to a REAL file wins; if a name is not
+         * installed, Fontconfig still returns its best substitute for the final
+         * "sans-serif" request, so a face is always found. We only accept an
+         * EXACT family match for the preferred names so we don't stop early on a
+         * substitute; the final sans-serif entry is the guaranteed fallback. */
+        static const char* kPreferred[] = {
+            "Inter", "SF Pro Text", "SF Pro", "Segoe UI", "Roboto", "sans-serif"
+        };
+        for (const char* fam : kPreferred) {
+            FcPattern* pat = FcNameParse(reinterpret_cast<const FcChar8*>(fam));
+            FcConfigSubstitute(nullptr, pat, FcMatchPattern);
+            FcDefaultSubstitute(pat);
+            FcResult res;
+            FcPattern* match = FcFontMatch(nullptr, pat, &res);
+            std::string path, got;
+            if (match) {
+                FcChar8* file = nullptr;
+                if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch && file)
+                    path = reinterpret_cast<const char*>(file);
+                FcChar8* famGot = nullptr;
+                if (FcPatternGetString(match, FC_FAMILY, 0, &famGot) == FcResultMatch && famGot)
+                    got = reinterpret_cast<const char*>(famGot);
+                FcPatternDestroy(match);
+            }
+            FcPatternDestroy(pat);
+            bool isFallback = (std::string(fam) == "sans-serif");
+            /* Accept an exact family hit, or the guaranteed final fallback. */
+            if (!path.empty() && (isFallback || got == fam)) return path;
+            if (isFallback && !path.empty()) return path;
+        }
+        return match_one("sans-serif");
     }
 
     bool dispatch(const XEvent& xe) {
@@ -435,6 +538,7 @@ private:
     FT_Library ft_ = nullptr;
     FT_Face active_face_ = nullptr;
     std::string current_key_;
+    int current_px_ = 14;   /* active face pixel size (for sub-12px hinting) */
     std::unordered_map<std::string, FT_Face> faces_;
     std::unordered_map<uint32_t, double> glyph_cache_;
 
@@ -443,20 +547,41 @@ private:
 };
 
 /* ---- X11Window out-of-line ---------------------------------------------- */
-X11Window::X11Window(Display* dpy, ::Window win, GC gc)
-    : dpy_(dpy), win_(win), gc_(gc) {}
+X11Window::X11Window(Display* dpy, ::Window win, GC gc, bool resizable)
+    : dpy_(dpy), win_(win), gc_(gc), resizable_(resizable) {}
 
 X11Window::~X11Window() {
     if (image_) {
         image_->data = nullptr; /* buffer_ owns the storage */
         XDestroyImage(image_);
     }
+    free_backbuffers();
     if (gc_) XFreeGC(dpy_, gc_);
     if (win_) XDestroyWindow(dpy_, win_);
 }
 
+void X11Window::free_backbuffers() {
+    for (int i = 0; i < 2; ++i) {
+        if (backbuf_[i]) {
+            XFreePixmap(dpy_, backbuf_[i]);
+            backbuf_[i] = 0;
+        }
+    }
+    back_w_ = back_h_ = 0;
+    back_idx_ = 0;
+}
+
+void X11Window::set_buffering(SLUIBufferingMode mode) {
+    if (mode == mode_) return;
+    mode_ = mode;
+    /* Drop any existing back pixmaps; present() lazily (re)creates the right
+     * number for the new mode at the current size. */
+    free_backbuffers();
+    dirty_ = true;
+}
+
 void X11Window::set_title(const std::string& title) {
-    XStoreName(dpy_, win_, title.c_str());
+    set_utf8_window_title(dpy_, win_, title);
 }
 void X11Window::show() {
     XMapWindow(dpy_, win_);
@@ -466,6 +591,25 @@ void X11Window::hide() {
     XUnmapWindow(dpy_, win_);
     XFlush(dpy_);
 }
+void X11Window::set_size_limits(int minw, int minh, int maxw, int maxh) {
+    min_width_ = minw; min_height_ = minh; max_width_ = maxw; max_height_ = maxh;
+    XSizeHints hints{};
+    if (!resizable_) {
+        hints.flags = PMinSize | PMaxSize;
+        hints.min_width = hints.max_width = std::max(1, width_);
+        hints.min_height = hints.max_height = std::max(1, height_);
+    } else {
+        if (minw > 0 || minh > 0) { hints.flags |= PMinSize; hints.min_width = std::max(1, minw); hints.min_height = std::max(1, minh); }
+        if (maxw > 0 || maxh > 0) { hints.flags |= PMaxSize; hints.max_width = maxw > 0 ? maxw : 65535; hints.max_height = maxh > 0 ? maxh : 65535; }
+    }
+    XSetWMNormalHints(dpy_, win_, &hints); XFlush(dpy_);
+}
+void X11Window::resize_content(int w, int h) {
+    w = std::max(w, min_width_); h = std::max(h, min_height_);
+    if (max_width_ > 0) w = std::min(w, max_width_);
+    if (max_height_ > 0) h = std::min(h, max_height_);
+    if (w > 0 && h > 0) { XResizeWindow(dpy_, win_, static_cast<unsigned>(w), static_cast<unsigned>(h)); XFlush(dpy_); }
+}
 
 void X11Window::present(const Canvas& canvas) {
     int w = canvas.width(), h = canvas.height();
@@ -473,6 +617,7 @@ void X11Window::present(const Canvas& canvas) {
     size_t count = static_cast<size_t>(w) * h;
     buffer_.assign(canvas.pixels(), canvas.pixels() + count);
 
+    int depth = DefaultDepth(dpy_, DefaultScreen(dpy_));
     if (!image_ || image_->width != w || image_->height != h) {
         if (image_) {
             image_->data = nullptr;
@@ -480,18 +625,48 @@ void X11Window::present(const Canvas& canvas) {
             image_ = nullptr;
         }
         ::Visual* vis = DefaultVisual(dpy_, DefaultScreen(dpy_));
-        int depth = DefaultDepth(dpy_, DefaultScreen(dpy_));
         image_ = XCreateImage(dpy_, vis, static_cast<unsigned>(depth), ZPixmap, 0,
                               reinterpret_cast<char*>(buffer_.data()), w, h, 32,
                               w * 4);
     } else {
         image_->data = reinterpret_cast<char*>(buffer_.data());
     }
-    /* Canvas packs 0xAARRGGBB; on little-endian X with a 24/32-bit TrueColor
-     * visual the ZPixmap byte order is BGRA, which matches our word layout. */
-    XPutImage(dpy_, win_, gc_, image_, 0, 0, 0, 0, static_cast<unsigned>(w),
-              static_cast<unsigned>(h));
+
+    int backs = back_count();
+    if (backs == 0) {
+        /* SINGLE buffering: blit the Canvas straight to the window. Cheapest,
+         * but a partially-copied frame can be visible during a resize.
+         * Canvas packs 0xAARRGGBB; on little-endian X with a 24/32-bit
+         * TrueColor visual the ZPixmap byte order is BGRA, which matches. */
+        XPutImage(dpy_, win_, gc_, image_, 0, 0, 0, 0,
+                  static_cast<unsigned>(w), static_cast<unsigned>(h));
+        XFlush(dpy_);
+        return;
+    }
+
+    /* DOUBLE / TRIPLE buffering: render the whole frame into an off-screen
+     * Pixmap, then copy it to the window in a single XCopyArea so the window
+     * never shows a half-drawn frame (no tearing on resize/redraw). TRIPLE
+     * rings two pixmaps so consecutive frames reuse alternate buffers. */
+    if (back_w_ != w || back_h_ != h) {
+        free_backbuffers();
+        back_w_ = w;
+        back_h_ = h;
+    }
+    if (back_idx_ >= backs) back_idx_ = 0;
+    if (!backbuf_[back_idx_]) {
+        backbuf_[back_idx_] =
+            XCreatePixmap(dpy_, win_, static_cast<unsigned>(w),
+                          static_cast<unsigned>(h), static_cast<unsigned>(depth));
+    }
+    Pixmap target = backbuf_[back_idx_];
+    XPutImage(dpy_, target, gc_, image_, 0, 0, 0, 0,
+              static_cast<unsigned>(w), static_cast<unsigned>(h));
+    XCopyArea(dpy_, target, win_, gc_, 0, 0, static_cast<unsigned>(w),
+              static_cast<unsigned>(h), 0, 0);
     XFlush(dpy_);
+    /* Advance the ring for triple buffering (no-op for double, backs==1). */
+    back_idx_ = (backs > 1) ? ((back_idx_ + 1) % backs) : 0;
 }
 
 } // namespace
