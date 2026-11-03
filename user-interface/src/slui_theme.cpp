@@ -26,11 +26,9 @@ static void copy_family(SLUITheme* t, const char* name) {
 }
 
 /* ---- palette derivation from one base colour ---------------------------- */
-/* A base colour (the window floor) implies a whole family. We lighten it in
- * even perceptual steps for raised surfaces, pull a hairline border a bit
- * brighter, pick a warm complementary accent, and choose text colours that
- * clear WCAG AA against the floor. This is what makes #2B1608 -- or any base a
- * host configures -- re-theme the entire UI from a single value. */
+/* A custom base colour implies a whole neutral/cool family. Surfaces are
+ * derived from the chosen floor, while the accent remains steel-blue rather
+ * than shifting into brown/amber. */
 static Color decode(SLUIColor c) {
     return Color{static_cast<uint8_t>((c >> 24) & 0xFF),
                  static_cast<uint8_t>((c >> 16) & 0xFF),
@@ -66,17 +64,14 @@ static void derive_palette_from_base(SLUITheme* out, SLUIColor base) {
     /* Text: white if the floor is dark, near-black if it is light, so AA holds
      * for any configured base. */
     bool dark = luma(b) < 0.45;
-    out->fg = dark ? slui_rgb(0xFF, 0xF6, 0xEE) /* warm white */
-                   : slui_rgb(0x1A, 0x0E, 0x05);
-    out->fg_dim = dark ? slui_rgba(0xFF, 0xF6, 0xEE, 0xB3)
-                       : slui_rgba(0x1A, 0x0E, 0x05, 0xB3);
-    /* Accent: a warm amber that belongs to the brown family (an ember glow),
-     * with text chosen for contrast on it. */
-    out->accent = slui_rgb(0xE8, 0x9A, 0x3C);     /* warm amber */
-    out->accent_fg = slui_rgb(0x24, 0x12, 0x04);  /* dark on amber */
-    out->danger = slui_rgb(0xE5, 0x5B, 0x3C);     /* warm red-orange */
-    out->hover = slui_rgba(0xFF, 0xF2, 0xDC, 0x14);  /* warm additive tint */
-    out->active = slui_rgba(0xFF, 0xF2, 0xDC, 0x28);
+    out->fg = dark ? slui_rgb(0xF2, 0xF3, 0xF5) : slui_rgb(0x1D, 0x20, 0x25);
+    out->fg_dim = dark ? slui_rgba(0xF2, 0xF3, 0xF5, 0xB0)
+                       : slui_rgba(0x1D, 0x20, 0x25, 0xB0);
+    out->accent = slui_rgb(0x4F, 0x8C, 0xFF);     /* steel blue */
+    out->accent_fg = slui_rgb(0x0D, 0x15, 0x24);
+    out->danger = slui_rgb(0xD9, 0x53, 0x4F);     /* restrained red */
+    out->hover = slui_rgba(0xFF, 0xFF, 0xFF, 0x14);
+    out->active = slui_rgba(0xFF, 0xFF, 0xFF, 0x24);
 }
 
 void theme_fill_preset(SLUITheme* out, SLUIThemeId id) {
@@ -125,17 +120,104 @@ void theme_fill_preset(SLUITheme* out, SLUIThemeId id) {
         copy_family(out, "system");
         break;
 
+    case SLUI_THEME_WHITE:
+        /* Standard Pattern: WHITE, under the Coherent Dignity contrast matrix.
+         * A LIGHT family that bans pure #FFFFFF (ocular ghosting): the floor is
+         * a warm parchment near-white and text is a mid-dark neutral chosen to
+         * land inside the 4.5:1..7:1 comfort band rather than max contrast. */
+        out->id = SLUI_THEME_WHITE;
+        out->bg = slui_rgb(0xEC, 0xEC, 0xE8);        /* warm parchment floor    */
+        out->surface = slui_rgb(0xF2, 0xF2, 0xEF);   /* +~10% luminance surface */
+        out->surface_hi = slui_rgb(0xE2, 0xE2, 0xDD); /* raised / hovered       */
+        out->chrome = slui_rgb(0xE4, 0xE4, 0xDF);    /* light header strip      */
+        out->border = slui_rgb(0xCB, 0xCB, 0xC4);    /* muted hairline          */
+        out->fg = slui_rgb(0x30, 0x33, 0x38);        /* mid-dark text (~6:1)    */
+        out->fg_dim = slui_rgba(0x30, 0x33, 0x38, 0xB0);
+        out->accent = slui_rgb(0x2F, 0x63, 0xC8);    /* restrained blue         */
+        out->accent_fg = slui_rgb(0xF2, 0xF2, 0xEF);
+        out->danger = slui_rgb(0xB0, 0x55, 0x50);    /* desaturated error       */
+        out->hover = slui_rgba(0x00, 0x00, 0x00, 0x0E);
+        out->active = slui_rgba(0x00, 0x00, 0x00, 0x1A);
+        copy_family(out, "system");
+        break;
+
+    case SLUI_THEME_BLACK:
+        /* Standard Pattern: BLACK, under the contrast matrix. DEEP OBSIDIAN, not
+         * pure #000000: a low-stimulus near-black floor with text held in the
+         * comfort band (a warm off-white, not blinding #FFFFFF). */
+        out->id = SLUI_THEME_BLACK;
+        out->bg = slui_rgb(0x14, 0x15, 0x17);        /* deep obsidian floor     */
+        out->surface = slui_rgb(0x1D, 0x1E, 0x21);   /* +~10% luminance surface */
+        out->surface_hi = slui_rgb(0x27, 0x28, 0x2C); /* raised / hovered       */
+        out->chrome = slui_rgb(0x17, 0x18, 0x1B);    /* header strip            */
+        out->border = slui_rgb(0x32, 0x34, 0x39);    /* muted hairline          */
+        out->fg = slui_rgb(0xDE, 0xDF, 0xDB);        /* warm off-white (~comfort)*/
+        out->fg_dim = slui_rgba(0xDE, 0xDF, 0xDB, 0xA6);
+        out->accent = slui_rgb(0x5E, 0x93, 0xDC);    /* restrained steel-blue   */
+        out->accent_fg = slui_rgb(0x10, 0x12, 0x16);
+        out->danger = slui_rgb(0xC2, 0x5F, 0x5A);    /* desaturated error       */
+        out->hover = slui_rgba(0xFF, 0xFF, 0xFF, 0x10);
+        out->active = slui_rgba(0xFF, 0xFF, 0xFF, 0x20);
+        copy_family(out, "system");
+        break;
+
+    case SLUI_THEME_BLUE:
+        /* Standard Pattern: BLUE. Blue-tinted dark surfaces with light text and
+         * a brighter blue accent. */
+        out->id = SLUI_THEME_BLUE;
+        out->bg = slui_rgb(0x10, 0x1A, 0x2E);
+        out->surface = slui_rgb(0x17, 0x24, 0x3E);
+        out->surface_hi = slui_rgb(0x20, 0x31, 0x52);
+        out->chrome = slui_rgb(0x0C, 0x14, 0x24);
+        out->border = slui_rgb(0x2C, 0x41, 0x68);
+        out->fg = slui_rgb(0xDD, 0xE4, 0xF2);        /* comfort-band off-white  */
+        out->fg_dim = slui_rgba(0xDD, 0xE4, 0xF2, 0xAA);
+        out->accent = slui_rgb(0x4F, 0x8C, 0xF0);
+        out->accent_fg = slui_rgb(0x08, 0x12, 0x24);
+        out->danger = slui_rgb(0xC2, 0x60, 0x5A);    /* desaturated error       */
+        out->hover = slui_rgba(0xFF, 0xFF, 0xFF, 0x10);
+        out->active = slui_rgba(0xFF, 0xFF, 0xFF, 0x20);
+        copy_family(out, "system");
+        break;
+
+    case SLUI_THEME_GRAY:
+        /* Standard Pattern: GRAY. Neutral mid-gray surfaces, light text, cool
+         * accent -- a quiet, professional neutral. */
+        out->id = SLUI_THEME_GRAY;
+        out->bg = slui_rgb(0x3A, 0x3D, 0x42);
+        out->surface = slui_rgb(0x45, 0x48, 0x4E);
+        out->surface_hi = slui_rgb(0x52, 0x56, 0x5D);
+        out->chrome = slui_rgb(0x30, 0x33, 0x38);
+        out->border = slui_rgb(0x5A, 0x5E, 0x66);
+        out->fg = slui_rgb(0xE6, 0xE7, 0xEA);        /* comfort-band off-white  */
+        out->fg_dim = slui_rgba(0xE6, 0xE7, 0xEA, 0xA8);
+        out->accent = slui_rgb(0x7F, 0xAA, 0xEC);
+        out->accent_fg = slui_rgb(0x0D, 0x14, 0x20);
+        out->danger = slui_rgb(0xC6, 0x62, 0x5C);    /* desaturated error       */
+        out->hover = slui_rgba(0xFF, 0xFF, 0xFF, 0x10);
+        out->active = slui_rgba(0xFF, 0xFF, 0xFF, 0x20);
+        copy_family(out, "system");
+        break;
+
     case SLUI_THEME_SLEELA_BASE:
     case SLUI_THEME_CUSTOM:
     default:
-        /* THE DEFAULT. Sleela's base colour is a deep warm brown, #2B1608 --
-         * a dark toasted umber. The whole palette is DERIVED from it: raised
-         * surfaces are even warm lightenings of the floor, the chrome sits just
-         * below it, the border is a warm hairline, the accent is an ember amber,
-         * and text is a warm white that clears WCAG AA on the floor. Change the
-         * one base value (code or config) and the family re-tunes around it. */
-        out->id = SLUI_THEME_SLEELA_BASE;
-        derive_palette_from_base(out, SLUI_BASE_COLOR_DEFAULT);
+        /* Default: quiet graphite surfaces, crisp neutral text and one steel-
+         * blue accent. Keep this palette in step with /lib/gui's chrome tokens.
+         * The DEFAULT is intentionally not derived from a warm/brown base. */
+        out->id = (id == SLUI_THEME_CUSTOM) ? SLUI_THEME_CUSTOM : SLUI_THEME_SLEELA_BASE;
+        out->bg = slui_rgb(0x1D, 0x20, 0x25);
+        out->surface = slui_rgb(0x2B, 0x2F, 0x32);
+        out->surface_hi = slui_rgb(0x38, 0x3C, 0x47);
+        out->chrome = slui_rgb(0x15, 0x18, 0x1D);
+        out->border = slui_rgb(0x45, 0x49, 0x51);
+        out->fg = slui_rgb(0xF2, 0xF3, 0xF5);
+        out->fg_dim = slui_rgba(0xF2, 0xF3, 0xF5, 0xB0);
+        out->accent = slui_rgb(0x4F, 0x8C, 0xFF);
+        out->accent_fg = slui_rgb(0x0D, 0x15, 0x24);
+        out->danger = slui_rgb(0xD9, 0x53, 0x4F);
+        out->hover = slui_rgba(0xFF, 0xFF, 0xFF, 0x14);
+        out->active = slui_rgba(0xFF, 0xFF, 0xFF, 0x24);
         copy_family(out, "system");
         break;
     }
@@ -205,11 +287,24 @@ extern "C" SLUIStatus slui_theme_load_config(SLUITheme* out, const char* path) {
         };
         trim(key);
         trim(val);
-        if (key == "base_color") {
+        if (key == "theme") {
+            std::string name = val;
+            for (char& ch : name) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            SLUIThemeId preset = SLUI_THEME_SLEELA_BASE;
+            bool known = true;
+            if (name == "default" || name == "sleela-base") preset = SLUI_THEME_SLEELA_BASE;
+            else if (name == "white") preset = SLUI_THEME_WHITE;
+            else if (name == "blue") preset = SLUI_THEME_BLUE;
+            else if (name == "black") preset = SLUI_THEME_BLACK;
+            else if (name == "slick-black") preset = SLUI_THEME_SLICK_BLACK;
+            else if (name == "gray" || name == "grey" || name == "graphite") preset = SLUI_THEME_GRAY;
+            else known = false;
+            if (known) slui::theme_fill_preset(out, preset);
+        } else if (key == "base_color") {
             SLUIColor c;
             if (slui::parse_hex_color(val, &c)) {
                 slui::derive_palette_from_base(out, c);
-                out->id = SLUI_THEME_SLEELA_BASE;
+                out->id = SLUI_THEME_CUSTOM;
             }
         } else if (key == "accent") {
             SLUIColor c;
