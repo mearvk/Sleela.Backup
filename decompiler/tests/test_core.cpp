@@ -1,12 +1,17 @@
 #include "sleela/decompiler/decompiler.hpp"
 #include "sleela/decompiler/errors.hpp"
 #include "sleela/decompiler/output.hpp"
+#include "sleela/decompiler/slir.hpp"
+#include "sleela/decompiler/vm.hpp"
+#include "sleela/decompiler/destination.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <fstream>
 static void put16(std::vector<std::uint8_t>& b,std::size_t p,std::uint16_t v){b[p]=std::uint8_t(v);b[p+1]=std::uint8_t(v>>8);}
+static void put32(std::vector<std::uint8_t>& b,std::size_t p,std::uint32_t v){for(int i=0;i<4;++i)b[p+i]=std::uint8_t(v>>(8*i));}
 static void put64(std::vector<std::uint8_t>& b,std::size_t p,std::uint64_t v){for(int i=0;i<8;++i)b[p+i]=std::uint8_t(v>>(8*i));}
 int main(){
     {
@@ -27,5 +32,314 @@ int main(){
         auto ins=sleela::decompiler::Decoder{}.decode(a,0x100,sizeof(code));assert(ins.size()==4);assert(ins[0].is_call&&ins[0].branch_targets[0]==0x106);assert(ins[1].is_branch&&ins[1].is_conditional&&ins[1].branch_targets[0]==0x109);assert(ins[2].is_call&&ins[2].is_indirect&&ins[2].operands[0].kind==sleela::decompiler::Operand::Kind::Register);assert(ins[3].is_return);
         auto cfg=sleela::decompiler::Analyzer{}.build_cfg(ins);assert(cfg.blocks.size()>=3);assert(!cfg.edges.empty());auto funcs=sleela::decompiler::Analyzer{}.recover_function_candidates(a,cfg);assert(!funcs.empty());
     }
+    // PE/COFF: real import-directory recovery (DLL dependency + imported function name).
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> pe(0x400,0);
+        pe[0]='M';pe[1]='Z'; put32(pe,0x3c,0x80);              // e_lfanew -> PE header at 0x80
+        const std::size_t h=0x80; pe[h]='P';pe[h+1]='E';pe[h+2]=0;pe[h+3]=0;
+        put16(pe,h+4,0x8664);                                   // machine x86-64
+        put16(pe,h+6,1);                                        // 1 section
+        put16(pe,h+20,0xF0);                                    // SizeOfOptionalHeader
+        put16(pe,h+22,0x0002);                                  // characteristics: EXECUTABLE_IMAGE
+        const std::size_t opt=h+24; put16(pe,opt,0x20b);        // PE32+ magic
+        put64(pe,opt+24,0x140000000ull);                        // ImageBase
+        put32(pe,opt+108,16);                                   // NumberOfRvaAndSizes
+        const std::size_t dirs=opt+112;
+        // Section ".idata" maps RVA 0x1000 -> file 0x200.
+        const std::size_t st=opt+0xF0; const char* sn=".idata";
+        for(int i=0;i<6;++i)pe[st+i]=std::uint8_t(sn[i]);
+        put32(pe,st+8,0x200);put32(pe,st+12,0x1000);put32(pe,st+16,0x200);put32(pe,st+20,0x200);
+        // Import directory at RVA 0x1000 (file 0x200): one descriptor + terminator.
+        put32(pe,dirs+1*8,0x1000);put32(pe,dirs+1*8+4,40);      // data directory [1] = IMPORT
+        const std::size_t id=0x200;
+        put32(pe,id+0,0x1040);                                   // OriginalFirstThunk RVA 0x1040 (file 0x240)
+        put32(pe,id+12,0x1060);                                  // Name RVA 0x1060 (file 0x260)
+        put32(pe,id+16,0x1040);                                  // FirstThunk
+        // terminator descriptor is the zeroed 20 bytes that follow
+        put64(pe,0x240,0x1050);                                  // thunk -> hint/name RVA 0x1050 (file 0x250), then 0 terminator
+        const char* fn="CreateFileW"; for(std::size_t i=0;i<11;++i)pe[0x250+2+i]=std::uint8_t(fn[i]);
+        const char* dll="KERNEL32.dll"; for(std::size_t i=0;i<12;++i)pe[0x260+i]=std::uint8_t(dll[i]);
+        auto a=Artifact::from_bytes(pe,"sample.exe");
+        assert(a.format()==Format::PE);
+        assert(a.architecture()==Architecture::X86_64);
+        assert(a.interfaces().sections.size()==1);
+        bool saw_dll=false,saw_fn=false;
+        for(const auto& im:a.interfaces().imports){if(im.library=="KERNEL32.dll")saw_dll=true;if(im.name=="CreateFileW")saw_fn=true;}
+        assert(saw_dll&&saw_fn);
+    }
+
+    // Mach-O: thin 64-bit object header is recognized and classified.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> mo(0x80,0);
+        mo[0]=0xcf;mo[1]=0xfa;mo[2]=0xed;mo[3]=0xfe;                 // MH_MAGIC_64 (little-endian)
+        put32(mo,4,0x01000007);                                      // cputype x86_64
+        put32(mo,12,2);                                              // filetype MH_EXECUTE
+        put32(mo,16,0);                                             // ncmds 0 (header-only fixture)
+        auto a=Artifact::from_bytes(mo,"sample.macho");
+        assert(a.format()==Format::MachO);
+        assert(a.architecture()==Architecture::X86_64);
+        assert(a.artifact_class()==ArtifactClass::Executable);
+    }
+
+    // ARM (A32): real control-flow decode (BL, B, BX lr=return) and CFG construction.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=1;elf[5]=1;elf[6]=1;   // 32-bit ELF
+        put16(elf,16,2);put16(elf,18,40);                                          // ET_EXEC, EM_ARM
+        put32(elf,28,0);put32(elf,32,0);put16(elf,40,32);put16(elf,42,56);put16(elf,44,0);
+        auto w=[&](std::size_t off,std::uint32_t v){for(int k=0;k<4;++k)elf[off+k]=std::uint8_t(v>>(8*k));};
+        w(0x100,0xeb000000);   // bl  (pc+8 + 0)
+        w(0x104,0xea000001);   // b   (pc+8 + 4)
+        w(0x108,0xe12fff1e);   // bx lr  -> return
+        auto a=Artifact::from_bytes(elf,"fixture.arm");
+        assert(a.architecture()==Architecture::ARM);
+        auto ins=Decoder{}.decode(a,0x100,12);
+        assert(ins.size()==3);
+        assert(ins[0].is_call&&ins[0].mnemonic=="bl");
+        assert(ins[1].is_branch&&ins[1].mnemonic=="b");
+        assert(ins[2].is_return&&ins[2].mnemonic=="bx");
+        auto cfg=Analyzer{}.build_cfg(ins);
+        assert(!cfg.blocks.empty());
+    }
+
+    // ARM Thumb (T32): variable-width control-flow decode, bytes from llvm-mc (thumbv7).
+    // Layout: bl(4) b.w(4) beq(2) b(2) cbz(2) bx-lr(2) nop(2) nop(2) = 8 instructions.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=1;elf[5]=1;elf[6]=1;   // 32-bit ELF
+        put16(elf,16,2);put16(elf,18,40);                                          // ET_EXEC, EM_ARM
+        put16(elf,40,32);put16(elf,42,56);put16(elf,44,0);
+        const std::uint8_t code[]={0x00,0xf0,0x07,0xf8, 0x00,0xf0,0x05,0xb8, 0x03,0xd0, 0x02,0xe0, 0x08,0xb1, 0x70,0x47, 0x00,0xbf, 0x00,0xbf};
+        std::copy(std::begin(code),std::end(code),elf.begin()+0x100);
+        auto a=Artifact::from_bytes(elf,"fixture.thumb");
+        assert(a.architecture()==Architecture::ARM);
+        auto ins=Decoder{}.decode(a,0x100,sizeof(code),DecodeMode::ArmThumb);
+        assert(ins.size()==8);                                   // widths resolved correctly
+        assert(ins[0].mnemonic=="bl"&&ins[0].is_call&&ins[0].bytes.size()==4);
+        assert(ins[1].mnemonic=="b.w"&&ins[1].is_branch&&ins[1].bytes.size()==4);
+        assert(ins[2].mnemonic=="b"&&ins[2].is_conditional&&ins[2].bytes.size()==2);
+        assert(ins[3].mnemonic=="b"&&ins[3].is_branch&&!ins[3].is_conditional);
+        assert(ins[4].mnemonic=="cbz"&&ins[4].is_conditional);
+        assert(ins[5].mnemonic=="bx"&&ins[5].is_return);
+        assert(ins[6].mnemonic=="nop"&&ins[7].mnemonic=="nop");
+        // All five branch/call instructions should resolve to the same target (0x112).
+        assert(ins[0].branch_targets[0]==0x112);
+        assert(ins[1].branch_targets[0]==0x112);
+        assert(ins[2].branch_targets[0]==0x112);
+        assert(ins[3].branch_targets[0]==0x112);
+        assert(ins[4].branch_targets[0]==0x112);
+        auto cfg=Analyzer{}.build_cfg(ins);
+        assert(!cfg.blocks.empty());
+        // POP {..,pc} must classify as a return and not be shadowed by the PUSH mask.
+        // push {r4,lr}=10 b5 | pop {r4,pc}=10 bd | pop {r4,r5}=30 bc  (llvm-mc thumbv7)
+        std::vector<std::uint8_t> pp(0x140,0);
+        pp[0]=0x7f;pp[1]='E';pp[2]='L';pp[3]='F';pp[4]=1;pp[5]=1;pp[6]=1;put16(pp,16,2);put16(pp,18,40);
+        const std::uint8_t ppc[]={0x10,0xb5, 0x10,0xbd, 0x30,0xbc};
+        std::copy(std::begin(ppc),std::end(ppc),pp.begin()+0x100);
+        auto pa=Artifact::from_bytes(pp,"fixture.thumbpp");
+        auto pi=Decoder{}.decode(pa,0x100,sizeof(ppc),DecodeMode::ArmThumb);
+        assert(pi.size()==3);
+        assert(pi[0].mnemonic=="push"&&!pi[0].is_return);
+        assert(pi[1].mnemonic=="pop"&&pi[1].is_return);
+        assert(pi[2].mnemonic=="pop"&&!pi[2].is_return);
+    }
+
+    // Operand-level recovery: the rendered .text must carry both operands in Intel order.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=2;elf[5]=1;elf[6]=1;
+        put16(elf,16,2);put16(elf,18,62);put64(elf,24,0x100);put16(elf,52,64);put16(elf,54,56);put16(elf,56,0);
+        // mov rbp,rsp (48 89 e5) | sub rsp,0x10 (48 83 ec 10) | mov [rbp-4],0x2a (c7 45 fc ..) | lea rax,[rbp-8] (48 8d 45 f8)
+        const std::uint8_t code[]={0x48,0x89,0xe5, 0x48,0x83,0xec,0x10, 0xc7,0x45,0xfc,0x2a,0x00,0x00,0x00, 0x48,0x8d,0x45,0xf8};
+        std::copy(std::begin(code),std::end(code),elf.begin()+0x100);
+        auto a=Artifact::from_bytes(elf,"fixture.ops");
+        auto ins=Decoder{}.decode(a,0x100,sizeof(code));
+        assert(ins.size()==4);
+        assert(ins[0].text=="mov rbp, rsp");
+        assert(ins[1].text=="sub rsp, 0x10");
+        assert(ins[2].text=="mov [rbp-0x4], 0x2a");   // signed displacement rendered as -0x4
+        assert(ins[3].text=="lea rax, [rbp-0x8]");
+    }
+
+    // Beautified emission: header carries an include guard and a documented prototype;
+    // source carries the provenance banner and an operand-level evidence line.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=2;elf[5]=1;elf[6]=1;
+        put16(elf,16,2);put16(elf,18,62);put64(elf,24,0x100);put16(elf,52,64);put16(elf,54,56);put16(elf,56,0);
+        const std::uint8_t code[]={0x48,0x89,0xe5,0xc3};   // mov rbp,rsp ; ret
+        std::copy(std::begin(code),std::end(code),elf.begin()+0x100);
+        auto a=Artifact::from_bytes(elf,"fixture.emit");
+        auto ins=Decoder{}.decode(a,0x100,sizeof(code));
+        auto cfg=Analyzer{}.build_cfg(ins);
+        auto funcs=Analyzer{}.recover_function_candidates(a,cfg);
+        DecompilationOptions opt{SourceLanguage::CPlusPlus,"unit"};
+        const std::string hdr=SourceEmitter::emit_header(a,funcs,opt);
+        assert(hdr.find("#ifndef SLECOMPILER_UNIT_H")!=std::string::npos);
+        assert(hdr.find("#define SLECOMPILER_UNIT_H")!=std::string::npos);
+        assert(hdr.find("#endif /* SLECOMPILER_UNIT_H */")!=std::string::npos);
+        assert(hdr.find("namespace slecompiler")!=std::string::npos);
+        const std::string src=SourceEmitter::emit(a,ins,cfg,funcs,opt);
+        assert(src.find("Generated by Slecompiler")!=std::string::npos);
+        assert(src.find("mov rbp, rsp")!=std::string::npos);   // operand-level evidence present
+        assert(src.find("@brief Recovered native function")!=std::string::npos);
+    }
+
+    // SLIR lifting: instructions lift to architecture-neutral operations with statement text.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=2;elf[5]=1;elf[6]=1;
+        put16(elf,16,2);put16(elf,18,62);put64(elf,24,0x100);put16(elf,52,64);put16(elf,54,56);put16(elf,56,0);
+        // mov rbp,rsp | sub rsp,0x10 | cmp [rbp-4],0x7f | ret
+        const std::uint8_t code[]={0x48,0x89,0xe5, 0x48,0x83,0xec,0x10, 0x83,0x7d,0xfc,0x7f, 0xc3};
+        std::copy(std::begin(code),std::end(code),elf.begin()+0x100);
+        auto a=Artifact::from_bytes(elf,"fixture.lift");
+        auto ins=Decoder{}.decode(a,0x100,sizeof(code));
+        auto cfg=Analyzer{}.build_cfg(ins);
+        auto funcs=Analyzer{}.recover_function_candidates(a,cfg);
+        auto mod=Lifter{}.lift(a,ins,cfg,funcs);
+        assert(!mod.functions.empty());
+        const auto& ops=mod.functions.front().blocks.front().operations;
+        assert(ops.size()==4);
+        assert(ops[0].opcode==OpCode::Move && ops[0].text=="rbp = rsp;");
+        assert(ops[1].opcode==OpCode::Sub  && ops[1].text=="rsp -= 0x10;");
+        assert(ops[2].opcode==OpCode::Compare);
+        assert(ops[3].opcode==OpCode::Return && ops[3].text=="return;");
+        // The source emitter renders the lifted statements into the function body.
+        DecompilationOptions opt{SourceLanguage::CPlusPlus,"lift"};
+        const std::string src=SourceEmitter::emit(a,ins,cfg,funcs,mod,opt);
+        assert(src.find("rbp = rsp;")!=std::string::npos);
+        assert(src.find("rsp -= 0x10;")!=std::string::npos);
+    }
+
+    // SLIR lift is VM-executable: a hand-built constant-add module runs and yields 42.
+    {
+        using namespace sleela::decompiler;
+        Module m; m.name="vm-check"; m.architecture=Architecture::X86_64;
+        Function fn; fn.name="add"; fn.address=0x1000;
+        SlirBlock b; b.id=0;
+        Operation c0; c0.opcode=OpCode::Const; c0.immediate=40; c0.outputs.push_back({0,"u64","a"});
+        Operation c1; c1.opcode=OpCode::Const; c1.immediate=2;  c1.outputs.push_back({1,"u64","b"});
+        Operation ad; ad.opcode=OpCode::Add; ad.inputs={{0,"u64","a"},{1,"u64","b"}}; ad.outputs.push_back({2,"u64","r"});
+        Operation rt; rt.opcode=OpCode::Return;
+        b.operations={c0,c1,ad,rt}; fn.blocks.push_back(b); m.functions.push_back(fn);
+        Vm vm({4096,32,true}); vm.load(m);
+        assert(vm.run());
+        assert(vm.register_value(2)==42);
+    }
+
+    // Destination adapter: URI parsing for all schemes, DNS/IPv4/IPv6, ports, credentials.
+    {
+        using namespace sleela::decompiler;
+        Destination d; std::string err;
+        // Bare local path and file: scheme.
+        assert(parse_destination("/tmp/out.cpp", d, err) && d.kind==DestinationKind::File && d.path=="/tmp/out.cpp");
+        assert(parse_destination("file:/var/x.c", d, err) && d.kind==DestinationKind::File && d.path=="/var/x.c");
+        // FTP with credentials, DNS host, explicit port.
+        assert(parse_destination("ftp://user:pass@ftp.example.org:2121/incoming/r.cpp", d, err));
+        assert(d.kind==DestinationKind::FtpStore && d.host=="ftp.example.org" && d.port==2121);
+        assert(d.username=="user" && d.password=="pass" && d.path=="/incoming/r.cpp");
+        // HTTP POST, IPv4 literal, default port (0 => transport default 80).
+        assert(parse_destination("http://192.0.2.10/upload/r.c", d, err));
+        assert(d.kind==DestinationKind::HttpPost && d.host=="192.0.2.10" && d.port==0 && d.path=="/upload/r.c");
+        // Explicit POST and PUT schemes.
+        assert(parse_destination("http+put://host.example:8080/a", d, err) && d.kind==DestinationKind::HttpPut && d.port==8080);
+        assert(parse_destination("http+post://host.example/a", d, err) && d.kind==DestinationKind::HttpPost);
+        // IPv6 literal in brackets, with port; IP preference set to IPv6.
+        assert(parse_destination("http://[2001:db8::1]:8443/p", d, err));
+        assert(d.host=="2001:db8::1" && d.port==8443 && d.ip_preference==IpPreference::IPv6);
+        // IPv6 literal without explicit port.
+        assert(parse_destination("sftp://[2001:db8::2]/remote/r.c", d, err));
+        assert(d.kind==DestinationKind::Sftp && d.host=="2001:db8::2" && d.port==0);
+        // SFTP with user, DNS host.
+        assert(parse_destination("sftp://deploy@build.example.net/out/r.cpp", d, err));
+        assert(d.username=="deploy" && d.host=="build.example.net" && d.path=="/out/r.cpp");
+        // Unsupported scheme fails cleanly.
+        assert(!parse_destination("gopher://host/x", d, err) && !err.empty());
+        // kind names
+        assert(std::string(destination_kind_name(DestinationKind::FtpStore))=="ftp");
+        assert(std::string(destination_kind_name(DestinationKind::HttpPost))=="http-post");
+        assert(std::string(destination_kind_name(DestinationKind::Sftp))=="sftp");
+    }
+
+    // Destination adapter: local File and Directory delivery actually write bytes.
+    {
+        using namespace sleela::decompiler;
+        Destination f; std::string err;
+        assert(parse_destination("file:/tmp/slecompiler_unit_out.txt", f, err));
+        auto r = deliver(f, "hello-slir");
+        assert(r.ok && r.bytes_sent==10);
+        std::ifstream in("/tmp/slecompiler_unit_out.txt", std::ios::binary);
+        std::string got((std::istreambuf_iterator<char>(in)), {});
+        assert(got=="hello-slir");
+    }
+
+    // x86-64 extended opcodes: REX.W prefix, ModR/M mov, leave, int3, ret.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=2;elf[5]=1;elf[6]=1;
+        put16(elf,16,2);put16(elf,18,62);put64(elf,24,0x100);put16(elf,52,64);put16(elf,54,56);put16(elf,56,0);
+        // 48 89 e5  mov rbp,rsp (REX.W + mov r/m,r)  |  c9 leave  |  cc int3  |  c3 ret
+        const std::uint8_t code[]={0x48,0x89,0xe5, 0xc9, 0xcc, 0xc3};
+        std::copy(std::begin(code),std::end(code),elf.begin()+0x100);
+        auto a=Artifact::from_bytes(elf,"fixture.x64");
+        auto ins=Decoder{}.decode(a,0x100,sizeof(code));
+        assert(ins.size()==4);                           // prefix folds into the mov
+        assert(ins[0].mnemonic=="mov"&&ins[0].bytes.size()==3);
+        assert(ins[1].mnemonic=="leave");
+        assert(ins[2].mnemonic=="int3");
+        assert(ins[3].mnemonic=="ret"&&ins[3].is_return);
+    }
+
+    // x86-64 immediate-group ALU + mov-imm, bytes from llvm-mc (x86_64).
+    // sub rsp,0x10 (48 83 ec 10) | cmp [rbp-4],0x7f (83 7d fc 7f) | mov [rbp-8],0xdeadbeef (c7 45 f8 ..)
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=2;elf[5]=1;elf[6]=1;
+        put16(elf,16,2);put16(elf,18,62);put64(elf,24,0x100);put16(elf,52,64);put16(elf,54,56);put16(elf,56,0);
+        const std::uint8_t code[]={0x48,0x83,0xec,0x10, 0x83,0x7d,0xfc,0x7f, 0xc7,0x45,0xf8,0xef,0xbe,0xad,0xde};
+        std::copy(std::begin(code),std::end(code),elf.begin()+0x100);
+        auto a=Artifact::from_bytes(elf,"fixture.imm");
+        auto ins=Decoder{}.decode(a,0x100,sizeof(code));
+        assert(ins.size()==3);                                   // all three lengths resolved exactly
+        assert(ins[0].mnemonic=="sub"&&ins[0].bytes.size()==4);
+        assert(ins[1].mnemonic=="cmp"&&ins[1].bytes.size()==4);
+        assert(ins[2].mnemonic=="mov"&&ins[2].bytes.size()==7);
+        assert(ins[2].operands.size()>=2&&ins[2].operands.back().value==std::int64_t(0xdeadbeef));
+    }
+
+    // ARM64: real A64 control-flow decode (BL, B.cond, CBZ, RET) and CFG construction.
+    {
+        using namespace sleela::decompiler;
+        std::vector<std::uint8_t> elf(0x140,0);
+        elf[0]=0x7f;elf[1]='E';elf[2]='L';elf[3]='F';elf[4]=2;elf[5]=1;elf[6]=1;
+        put16(elf,16,2);put16(elf,18,183);                          // ET_EXEC, EM_AARCH64
+        put64(elf,24,0x100);put64(elf,32,0);put64(elf,40,0);put16(elf,52,64);put16(elf,54,56);put16(elf,56,0);
+        auto w=[&](std::size_t off,std::uint32_t v){elf[off]=std::uint8_t(v);elf[off+1]=std::uint8_t(v>>8);elf[off+2]=std::uint8_t(v>>16);elf[off+3]=std::uint8_t(v>>24);};
+        w(0x100,0x94000002);                                        // bl  +8
+        w(0x104,0x54000040);                                        // b.cond +8
+        w(0x108,0xb4000040);                                        // cbz  +8
+        w(0x10c,0xd65f03c0);                                        // ret
+        auto a=Artifact::from_bytes(elf,"fixture.arm64");
+        assert(a.architecture()==Architecture::ARM64);
+        auto ins=Decoder{}.decode(a,0x100,16);
+        assert(ins.size()==4);
+        assert(ins[0].is_call&&ins[0].mnemonic=="bl"&&ins[0].branch_targets[0]==0x108);
+        assert(ins[1].is_branch&&ins[1].is_conditional&&ins[1].mnemonic=="b.cond");
+        assert(ins[2].is_branch&&ins[2].is_conditional&&ins[2].mnemonic=="cbz");
+        assert(ins[3].is_return);
+        auto cfg=Analyzer{}.build_cfg(ins);
+        assert(!cfg.blocks.empty());
+    }
+
     return 0;
 }
