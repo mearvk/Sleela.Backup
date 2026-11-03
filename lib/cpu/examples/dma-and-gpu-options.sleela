@@ -1,0 +1,93 @@
+<< lib/cpu/examples/dma-and-gpu-options.sleela
+   SLeeLa example: enable the direct-DMA and native-GPU options and use them.
+   
+   Both are opt-in. Here they are requested at the Creator level, flow down
+   through the Secondary VM to the hosted CPU, and the program uses them: a DMA
+   block move without the CPU copying word by word, and a GPU kernel dispatch. >>
+#sleela 2.5
+material;
+class DmaAndGpuOptionsExample {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10479;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-09";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 7;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  int moved;
+  int gpuOut;
+
+  void main() {
+    SL6502CPU cpu = new SL6502CPU();
+    cpu.configure();
+
+    < Request both acceleration options on the build via the Creator. >
+    SleelaVMCreator creator = new SleelaVMCreator();
+    creator.configure();
+    < direct memory access >
+    creator.requestDMA();
+    < native GPU access >
+    creator.requestGPU();
+    creator.selectGeneration(5);
+    creator.create();
+    creator.installExecutor(cpu);
+
+    < Direct DMA: seed a few words, then move a block without the CPU looping. >
+    SLDMAController dma = cpu.dmaEngine();
+    cpu.writeMem(0, 11); cpu.writeMem(1, 22); cpu.writeMem(2, 33); cpu.writeMem(3, 44);
+    < src=0 dst=100 len=4 >
+    moved = dma.transfer(0, 0, 100, 4, dma.MODE_MEM_TO_MEM);
+    print("DMA moved " + moved + " words; mem[100]=" + cpu.readMem(100) +
+          " mem[103]=" + cpu.readMem(103));
+
+    < Native GPU access: build and dispatch a tiny compute kernel (2 + 3). >
+    SLGPUDevice gpu = cpu.gpuDevice();
+    print("GPU: " + gpu.name() + ", " + gpu.totalLanes() + " lanes, native=" + gpu.nativeAccess());
+    < OP_CONST 2 >
+    gpu.emitKernel(1, 2);
+    < OP_CONST 3 >
+    gpu.emitKernel(1, 3);
+    < OP_ADD >
+    gpu.emitKernel(8, 0);
+    < OP_PRINT >
+    gpu.emitKernel(27, 0);
+    < OP_HALT >
+    gpu.emitKernel(48, 0);
+    gpuOut = gpu.dispatch(gpu.totalLanes(), 100);
+    print("GPU kernel result -> " + gpuOut);
+  }
+}
