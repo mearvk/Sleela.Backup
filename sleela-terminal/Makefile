@@ -30,17 +30,21 @@ GUI   := $(BUILD)/SleelaTerminal
 GTK4_VTE_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(GTK4_VTE_PKGS) 2>/dev/null)
 GTK4_VTE_LIBS   := $(shell $(PKG_CONFIG) --libs $(GTK4_VTE_PKGS) 2>/dev/null)
 
-.PHONY: all smoke test m5-smoke gui sanitize fuzz install install-strip uninstall clean
+.PHONY: all cli all-gui smoke test m5-smoke gui install install-gui install-all install-strip uninstall clean sanitize fuzz
 
-all: $(SLSH) $(SMOKE) $(GUI)
+all: all-gui
+
+cli: $(SLSH) $(SMOKE)
+
+all-gui: cli $(GUI)
 
 $(SLSH): $(CLI_SRC) $(HEADERS) | $(BUILD)
-	$(CXX) $(CXXFLAGS) $(CLI_SRC) -o $@
+	$(CXX) $(CXXFLAGS) -pthread $(CLI_SRC) -o $@
 
 $(SMOKE): $(SMOKE_SRC) $(HEADERS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(SMOKE_SRC) -o $@
 
-$(GUI): $(GUI_SRC) $(SLSH) | $(BUILD)
+$(GUI): $(GUI_SRC) file-list-renderer.hpp $(SLSH) | $(BUILD)
 	@test -n "$(GTK4_VTE_CFLAGS)" && test -n "$(GTK4_VTE_LIBS)" || { echo "Missing GTK4/VTE development packages. Install gtk4 and vte-2.91-gtk4 development packages." >&2; exit 1; }
 	$(CXX) $(CXXFLAGS) $(GTK4_VTE_CFLAGS) $(GUI_SRC) -o $@ $(GTK4_VTE_LIBS)
 
@@ -58,15 +62,28 @@ m5-smoke: $(SLSH)
 
 test: smoke m5-smoke
 
-install: $(SLSH) $(GUI)
+# Validate DESTDIR staging, executable permissions, and the installed CLI.
+install-smoke: $(SLSH)
+	sh ./install-smoke.sh
+
+install: $(SLSH)
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)
-	$(INSTALL) -d $(DESTDIR)$(DESKTOPDIR)
 	$(INSTALL) -m 0755 $(SLSH) $(DESTDIR)$(BINDIR)/slsh
+
+install-gui: install $(GUI)
+	$(INSTALL) -d $(DESTDIR)$(BINDIR)
+	$(INSTALL) -d $(DESTDIR)$(BINDIR)/assets
+	$(INSTALL) -d $(DESTDIR)$(DESKTOPDIR)
 	$(INSTALL) -m 0755 $(GUI) $(DESTDIR)$(BINDIR)/SleelaTerminal
+	$(INSTALL) -m 0644 assets/* $(DESTDIR)$(BINDIR)/assets/
 	$(INSTALL) -m 0644 SleelaTerminal.desktop $(DESTDIR)$(DESKTOPDIR)/SleelaTerminal.desktop
 
-install-strip: CXXFLAGS += -s
-install-strip: clean install
+install-all: install install-gui
+
+# Keep clean/rebuild/install ordered even when make is invoked with -j.
+install-strip:
+	$(MAKE) clean
+	$(MAKE) CXXFLAGS="$(CXXFLAGS) -s" install
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/slsh
@@ -79,7 +96,7 @@ clean:
 # Security validation builds. These intentionally use debug-friendly flags.
 SANITIZE_FLAGS := -std=c++17 -O1 -g -Wall -Wextra -fno-omit-frame-pointer -fsanitize=address,undefined
 sanitize: | $(BUILD)
-	$(CXX) $(SANITIZE_FLAGS) $(CLI_SRC) -o $(BUILD)/slsh-sanitize
+	$(CXX) $(SANITIZE_FLAGS) -pthread $(CLI_SRC) -o $(BUILD)/slsh-sanitize
 	$(CXX) $(SANITIZE_FLAGS) $(SMOKE_SRC) -o $(BUILD)/smoke-sanitize
 	ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 $(BUILD)/smoke-sanitize
 
