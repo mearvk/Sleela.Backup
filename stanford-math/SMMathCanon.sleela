@@ -1,0 +1,221 @@
+<< stanford-math/SMMathCanon.sleela
+   SLeeLa Standard Library Definition.
+   Definition: The canon of foundational mathematics equations/identities/
+   theorems every graduate curriculum rests on. Each entry records a real
+   name, symbolic form, discoverer, and year faithful to the public record;
+   where attribution is genuinely diffuse it is marked honestly. >>
+#sleela 2.1
+< Executive+ class: a standards/products artifact, full metadata record. >
+class SMMathCanon {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 9210;
+  String metaAuthor = "the mathematical public record";
+  String metaDate = "2026-10-25";
+  String metaCopyright = "results in the public domain";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-25";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 10;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < ---- Scientific record (purpose / method / gains / bedrock) ---- >
+  << Spec-sanctioned extension (SLEELA.syntax §15: ordinary fields + accessors):
+     what the canon is for, the method it follows, what its editors gain, and
+     the bedrock it rests on. See SMProvenance for the literature callouts. >>
+  String metaPurpose = "A curated index of foundational mathematics equations and their rightful discoverers.";
+  String metaScientificMethod = "Tertiary cataloguing: record established results traceable to primary/secondary literature; originate nothing.";
+  String metaAuthorialGains = "Editorial credit for the catalogue only; the theorems are public-domain mathematics owned by no one.";
+  String metaBedrock = "The historical and peer-reviewed mathematical record (see SMProvenance).";
+  String metaIntegrityGoal = "Record each great theorem under the name history gives it -- credit the discoverer, claim nothing.";
+  String getPurpose() { return metaPurpose; }
+  void setPurpose(String v) { metaPurpose = v; }
+  String getScientificMethod() { return metaScientificMethod; }
+  void setScientificMethod(String v) { metaScientificMethod = v; }
+  String getAuthorialGains() { return metaAuthorialGains; }
+  void setAuthorialGains(String v) { metaAuthorialGains = v; }
+  String getBedrock() { return metaBedrock; }
+  void setBedrock(String v) { metaBedrock = v; }
+  String getIntegrityGoal() { return metaIntegrityGoal; }
+  void setIntegrityGoal(String v) { metaIntegrityGoal = v; }
+
+  < ---- The mathematics canon (public record) ---- >
+  SMEquation[] eqs;
+  int filled;
+
+  void build() {
+    eqs = new SMEquation[130];
+    filled = 0;
+
+    add("Pythagorean theorem", "a^2 + b^2 = c^2", "geometry", "Pythagoras (attrib.)", "c. 530 BC");
+    add("Euler's identity", "e^(i*pi) + 1 = 0", "analysis", "Leonhard Euler", "1748");
+    add("Euler's formula", "e^(i*x) = cos(x) + i*sin(x)", "analysis", "Leonhard Euler", "1748");
+    add("Fundamental theorem of calculus", "integral_a^b f'(x) dx = f(b) - f(a)", "calculus", "Newton & Leibniz", "c. 1670");
+    add("Binomial theorem", "(x+y)^n = sum_{k=0}^n C(n,k) x^(n-k) y^k", "algebra", "generalized by Newton", "1665");
+    add("Quadratic formula", "x = (-b +/- sqrt(b^2 - 4ac)) / (2a)", "algebra", "ancient; modern form diffuse", "unknown");
+    add("Taylor series", "f(x) = sum_{n>=0} f^(n)(a)/n! * (x-a)^n", "analysis", "Brook Taylor", "1715");
+    add("Fourier series", "f(x) = a0/2 + sum (a_n cos(n x) + b_n sin(n x))", "analysis", "Joseph Fourier", "1807");
+    add("Cauchy-Schwarz inequality", "|<u,v>| <= ||u|| * ||v||", "analysis", "Cauchy; Bunyakovsky; Schwarz", "1821");
+    add("Triangle inequality", "||u + v|| <= ||u|| + ||v||", "analysis", "classical", "unknown");
+    add("Gauss (divergence) theorem", "integral_V (div F) dV = surface_integral F . dS", "vector calculus", "Gauss; Ostrogradsky", "1813");
+    add("Green's theorem", "closed_integral (P dx + Q dy) = integral_D (dQ/dx - dP/dy) dA", "vector calculus", "George Green", "1828");
+    add("Stokes' theorem", "integral_S (curl F) . dS = closed_integral_C F . dr", "vector calculus", "Kelvin; Stokes", "1854");
+    add("De Moivre's theorem", "(cos x + i sin x)^n = cos(n x) + i sin(n x)", "complex analysis", "Abraham de Moivre", "1707");
+    add("Cauchy integral formula", "f(a) = (1/(2*pi*i)) closed_integral f(z)/(z-a) dz", "complex analysis", "Augustin-Louis Cauchy", "1831");
+    add("Residue theorem", "closed_integral f(z) dz = 2*pi*i * sum Res(f, a_k)", "complex analysis", "Augustin-Louis Cauchy", "1831");
+    add("Riemann zeta functional equation", "zeta(s) = 2^s pi^(s-1) sin(pi s/2) Gamma(1-s) zeta(1-s)", "number theory", "Bernhard Riemann", "1859");
+    add("Euler product", "zeta(s) = product_p 1/(1 - p^(-s))", "number theory", "Leonhard Euler", "1737");
+    add("Prime number theorem", "pi(x) ~ x / ln(x)", "number theory", "Hadamard; de la Vallee Poussin", "1896");
+    add("Bayes' theorem", "P(A|B) = P(B|A) P(A) / P(B)", "probability", "Thomas Bayes", "1763");
+    add("Gaussian (normal) density", "f(x) = (1/(sigma sqrt(2 pi))) e^(-(x-mu)^2/(2 sigma^2))", "probability", "Gauss; de Moivre", "1809");
+    add("Central limit theorem", "sqrt(n)(Xbar - mu) -> N(0, sigma^2) in distribution", "probability", "Laplace; Lyapunov; Lindeberg", "1810");
+    add("Stirling's approximation", "n! ~ sqrt(2 pi n) (n/e)^n", "analysis", "James Stirling; de Moivre", "1730");
+    add("Gamma function", "Gamma(n) = integral_0^inf t^(n-1) e^(-t) dt", "analysis", "Leonhard Euler", "1729");
+    add("Basel problem", "sum_{n>=1} 1/n^2 = pi^2 / 6", "analysis", "Leonhard Euler", "1734");
+    add("Harmonic/log limit (Euler-Mascheroni)", "lim (sum_{k=1}^n 1/k - ln n) = gamma", "analysis", "Euler; Mascheroni", "1734");
+    add("Fibonacci / golden ratio", "phi = (1 + sqrt(5)) / 2", "number theory", "classical; Fibonacci", "1202");
+    add("Law of cosines", "c^2 = a^2 + b^2 - 2ab cos(C)", "geometry", "classical (Euclid II)", "c. 300 BC");
+    add("Heron's formula", "Area = sqrt(s(s-a)(s-b)(s-c)), s=(a+b+c)/2", "geometry", "Heron of Alexandria", "c. 60 AD");
+    add("Euler's polyhedron formula", "V - E + F = 2", "topology", "Leonhard Euler", "1752");
+    add("Determinant of 2x2", "det([[a,b],[c,d]]) = ad - bc", "linear algebra", "classical", "unknown");
+    add("Eigenvalue equation", "A v = lambda v", "linear algebra", "Cauchy; Hilbert (spectral)", "1829");
+    add("Green-Tao theorem", "primes contain arbitrarily long arithmetic progressions", "number theory", "Ben Green & Terence Tao", "2004");
+    add("Bayes-rule odds form", "posterior odds = likelihood ratio * prior odds", "probability", "Thomas Bayes", "1763");
+    add("L'Hopital's rule", "lim f/g = lim f'/g'  (0/0 or inf/inf)", "calculus", "l'Hopital; Bernoulli", "1696");
+    add("Integration by parts", "integral u dv = u v - integral v du", "calculus", "Brook Taylor (attrib.)", "1715");
+    add("Chain rule", "d/dx f(g(x)) = f'(g(x)) g'(x)", "calculus", "Leibniz (notation)", "1676");
+    add("Jensen's inequality", "f(E[X]) <= E[f(X)]  (f convex)", "analysis", "Johan Jensen", "1906");
+    add("AM-GM inequality", "(x1+...+xn)/n >= (x1...xn)^(1/n)", "analysis", "Cauchy (proof)", "1821");
+    add("Sum of first n integers", "sum_{k=1}^n k = n(n+1)/2", "algebra", "classical; Gauss (attrib.)", "unknown");
+    add("Geometric series", "sum_{k=0}^inf r^k = 1/(1-r),  |r| < 1", "analysis", "classical", "unknown");
+    add("Euler's totient product", "phi(n) = n product_{p|n} (1 - 1/p)", "number theory", "Leonhard Euler", "1763");
+    add("Fermat's little theorem", "a^p = a (mod p),  p prime", "number theory", "Pierre de Fermat", "1640");
+    add("Cantor's diagonal cardinality", "|P(S)| > |S|  (2^aleph0 > aleph0)", "set theory", "Georg Cantor", "1891");
+    add("Laplace's equation", "laplacian(f) = 0", "partial differential equations", "Pierre-Simon Laplace", "1784");
+    add("Euler's theorem (totient)", "a^phi(n) = 1 (mod n),  gcd(a,n)=1", "number theory", "Leonhard Euler", "1763");
+    add("Quadratic reciprocity", "(p/q)(q/p) = (-1)^(((p-1)/2)((q-1)/2))", "number theory", "Carl Friedrich Gauss", "1801");
+    add("Cramer's rule", "x_i = det(A_i) / det(A)", "linear algebra", "Gabriel Cramer", "1750");
+    add("Wallis product", "pi/2 = product_{n>=1} (2n)(2n)/((2n-1)(2n+1))", "analysis", "John Wallis", "1656");
+    add("Lagrange mean value theorem", "f'(c) = (f(b) - f(a)) / (b - a)", "calculus", "Joseph-Louis Lagrange", "1797");
+    add("Curl of a gradient", "curl(grad f) = 0", "vector calculus", "classical", "unknown");
+    add("Intermediate value theorem", "f(a) < y < f(b) => exists c in (a,b): f(c) = y", "analysis", "Bernard Bolzano", "1817");
+    add("Wilson's theorem", "(p-1)! = -1 (mod p),  p prime", "number theory", "Lagrange (proof); Wilson", "1771");
+    add("Chinese remainder theorem", "x = a_i (mod n_i) has unique soln mod product n_i", "number theory", "Sunzi (attrib.)", "c. 400 AD");
+    add("Vandermonde determinant", "det = product_{i<j} (x_j - x_i)", "linear algebra", "Alexandre-Theophile Vandermonde", "1772");
+    add("Cayley-Hamilton theorem", "p(A) = 0  (A satisfies its characteristic polynomial)", "linear algebra", "Cayley; Hamilton", "1858");
+    add("Gram-Schmidt orthogonalization", "u_k = v_k - sum_{j<k} proj_{u_j}(v_k)", "linear algebra", "Gram; Schmidt", "1907");
+    add("Parseval's identity", "sum |c_n|^2 = (1/(2 pi)) integral_{-pi}^{pi} |f(x)|^2 dx", "analysis", "Marc-Antoine Parseval", "1799");
+    add("Chebyshev's inequality", "P(|X - mu| >= k sigma) <= 1/k^2", "probability", "Pafnuty Chebyshev", "1867");
+    add("Fundamental theorem of algebra", "every degree-n polynomial has exactly n complex roots (with multiplicity)", "algebra", "Carl Friedrich Gauss", "1799");
+    add("Rolle's theorem", "f(a) = f(b) => exists c in (a,b): f'(c) = 0", "calculus", "Michel Rolle", "1691");
+    add("Cauchy-Riemann equations", "u_x = v_y,  u_y = -v_x", "complex analysis", "Cauchy; Riemann", "1851");
+    add("Argument principle", "(1/(2*pi*i)) closed_integral f'(z)/f(z) dz = Z - P", "complex analysis", "Augustin-Louis Cauchy", "1831");
+    add("Lagrange interpolation", "p(x) = sum_j y_j product_{m!=j} (x - x_m)/(x_j - x_m)", "numerical analysis", "Lagrange; Waring", "1795");
+    add("Newton's method", "x_{n+1} = x_n - f(x_n)/f'(x_n)", "numerical analysis", "Newton; Raphson", "1690");
+    add("Singular value decomposition", "A = U Sigma V^T", "linear algebra", "Beltrami; Jordan", "1873");
+    add("Bolzano-Weierstrass theorem", "every bounded sequence in R^n has a convergent subsequence", "analysis", "Bolzano; Weierstrass", "1817");
+    add("Banach fixed-point theorem", "a contraction on a complete metric space has a unique fixed point", "analysis", "Stefan Banach", "1922");
+    add("Holder's inequality", "sum |a_k b_k| <= (sum |a_k|^p)^(1/p) (sum |b_k|^q)^(1/q),  1/p + 1/q = 1", "analysis", "Otto Holder", "1889");
+    add("Minkowski's inequality", "||a + b||_p <= ||a||_p + ||b||_p", "analysis", "Hermann Minkowski", "1896");
+    add("Weak law of large numbers", "Xbar_n -> mu in probability as n -> inf", "probability", "Jacob Bernoulli", "1713");
+    add("Markov's inequality", "P(X >= a) <= E[X]/a,  X >= 0, a > 0", "probability", "Andrey Markov", "1884");
+    add("Mobius inversion", "g(n) = sum_{d|n} f(d)  <=>  f(n) = sum_{d|n} mu(n/d) g(d)", "number theory", "August Ferdinand Mobius", "1832");
+    add("Dirichlet's theorem (primes in AP)", "gcd(a,d)=1 => infinitely many primes of the form a + n*d", "number theory", "Peter Gustav Lejeune Dirichlet", "1837");
+    add("Catalan number formula", "C_n = (1/(n+1)) C(2n, n)", "combinatorics", "Euler; Catalan", "1838");
+    add("Lagrange multipliers", "grad f = lambda grad g", "optimization", "Joseph-Louis Lagrange", "1788");
+    add("Euler-Lagrange equation", "d/dt (dL/dq') - dL/dq = 0", "calculus of variations", "Euler; Lagrange", "1755");
+    add("Divergence of a curl", "div(curl F) = 0", "vector calculus", "classical", "unknown");
+    add("Gradient theorem (line integrals)", "integral_C grad f . dr = f(b) - f(a)", "vector calculus", "classical", "unknown");
+    add("Leibniz integral rule", "d/dx integral_{a(x)}^{b(x)} f dt = f(b) b' - f(a) a' + integral f_x dt", "calculus", "Gottfried Leibniz", "1697");
+    add("Taylor's theorem with remainder", "f(x) = sum_{k=0}^{n} f^(k)(a)/k! (x-a)^k + R_n", "analysis", "Brook Taylor; Lagrange (remainder)", "1715");
+    add("Mean value theorem for integrals", "integral_a^b f dx = f(c)(b - a)", "calculus", "classical (Cauchy)", "1823");
+    add("Cauchy's integral theorem", "closed_integral f(z) dz = 0  (f holomorphic)", "complex analysis", "Augustin-Louis Cauchy", "1825");
+    add("Liouville's theorem (bounded entire)", "a bounded entire function is constant", "complex analysis", "Joseph Liouville", "1847");
+    add("Maximum modulus principle", "|f| attains its max on the boundary", "complex analysis", "Riemann; Schwarz", "1851");
+    add("Schwarz lemma", "|f(z)| <= |z| and |f'(0)| <= 1 for f: disk->disk, f(0)=0", "complex analysis", "Hermann Schwarz", "1869");
+    add("Morera's theorem", "closed_integral f = 0 for all triangles => f holomorphic", "complex analysis", "Giacinto Morera", "1886");
+    add("Rouche's theorem", "|g| < |f| on C => f and f+g have equally many zeros inside", "complex analysis", "Eugene Rouche", "1862");
+    add("Jordan curve theorem", "a simple closed curve splits the plane into inside and outside", "topology", "Camille Jordan", "1887");
+    add("Brouwer fixed-point theorem", "a continuous map of a closed ball to itself has a fixed point", "topology", "L. E. J. Brouwer", "1911");
+    add("Gauss-Bonnet theorem", "integral_M K dA + integral_{dM} k_g ds = 2 pi chi(M)", "differential geometry", "Gauss; Bonnet", "1848");
+    add("Noether's theorem", "every differentiable symmetry yields a conservation law", "mathematical physics", "Emmy Noether", "1918");
+    add("Implicit function theorem", "F(x,y)=0, F_y != 0 => y = g(x) locally", "analysis", "Dini; Cauchy", "1877");
+    add("Inverse function theorem", "f' invertible at a => f invertible near a", "analysis", "classical", "unknown");
+    add("Picard-Lindelof existence", "y' = f(x,y), f Lipschitz => unique local solution", "differential equations", "Picard; Lindelof", "1894");
+    add("Wronskian (linear independence)", "W(f,g) = f g' - f' g", "differential equations", "Jozef Wronski", "1812");
+    add("Bessel's equation", "x^2 y'' + x y' + (x^2 - n^2) y = 0", "special functions", "Friedrich Bessel", "1824");
+    add("Legendre's equation", "(1 - x^2) y'' - 2 x y' + l(l+1) y = 0", "special functions", "Adrien-Marie Legendre", "1782");
+    add("Hermite's equation", "y'' - 2 x y' + 2 n y = 0", "special functions", "Charles Hermite", "1864");
+    add("Laguerre's equation", "x y'' + (1 - x) y' + n y = 0", "special functions", "Edmond Laguerre", "1879");
+    add("Beta function", "B(x,y) = integral_0^1 t^(x-1)(1-t)^(y-1) dt = Gamma(x)Gamma(y)/Gamma(x+y)", "special functions", "Euler; Legendre", "1730");
+    add("Riemann sum (definite integral)", "integral_a^b f dx = lim sum f(x_i*) dx_i", "calculus", "Bernhard Riemann", "1854");
+    add("Weierstrass M-test", "sum M_n converges, |f_n| <= M_n => sum f_n converges uniformly", "analysis", "Karl Weierstrass", "1880");
+    add("Abel's summation / test", "convergence of sum a_n b_n via partial sums", "analysis", "Niels Henrik Abel", "1826");
+    add("Dirichlet's test for series", "a_n monotone ->0, partial sums of b_n bounded => sum a_n b_n converges", "analysis", "Peter Gustav Lejeune Dirichlet", "1862");
+    add("Holder continuity", "|f(x) - f(y)| <= C |x - y|^alpha", "analysis", "Otto Holder", "1882");
+    add("Poisson summation formula", "sum f(n) = sum F-hat(k)", "harmonic analysis", "Simeon Denis Poisson", "1827");
+    add("Parseval-Plancherel theorem", "integral |f|^2 dx = integral |F-hat|^2 dw", "harmonic analysis", "Michel Plancherel", "1910");
+    add("Convolution theorem", "F{f * g} = F{f} . F{g}", "harmonic analysis", "classical (Fourier)", "unknown");
+    add("Spectral theorem (symmetric matrix)", "A = Q Lambda Q^T,  A symmetric", "linear algebra", "Cauchy; Hilbert", "1829");
+    add("LU decomposition", "A = L U", "numerical linear algebra", "Alan Turing (modern); Gauss", "1948");
+    add("QR decomposition", "A = Q R,  Q orthogonal, R upper-triangular", "numerical linear algebra", "classical (Gram-Schmidt)", "1907");
+    add("Cholesky decomposition", "A = L L^T,  A symmetric positive-definite", "numerical linear algebra", "Andre-Louis Cholesky", "1910");
+    add("Rayleigh quotient", "R(A,x) = (x^T A x) / (x^T x)", "linear algebra", "Lord Rayleigh", "1877");
+    add("Perron-Frobenius theorem", "a positive matrix has a unique largest positive eigenvalue", "linear algebra", "Perron; Frobenius", "1907");
+    add("Sylvester's law of inertia", "congruent forms share the signature (p, q, z)", "linear algebra", "James Joseph Sylvester", "1852");
+    add("Hadamard's inequality", "|det A| <= product of column norms", "linear algebra", "Jacques Hadamard", "1893");
+    add("Cramer-Rao bound", "Var(theta-hat) >= 1 / I(theta)", "mathematical statistics", "Cramer; Rao", "1945");
+    add("Maximum likelihood estimator", "theta-hat = argmax L(theta; x)", "mathematical statistics", "Ronald A. Fisher", "1922");
+    add("Poisson distribution", "P(k) = lambda^k e^(-lambda) / k!", "probability", "Simeon Denis Poisson", "1837");
+    add("Binomial distribution", "P(k) = C(n,k) p^k (1-p)^(n-k)", "probability", "Jacob Bernoulli", "1713");
+    add("Markov chain stationary distribution", "pi P = pi,  sum pi_i = 1", "probability", "Andrey Markov", "1906");
+    add("Borel-Cantelli lemma", "sum P(A_n) < inf => P(A_n i.o.) = 0", "probability", "Borel; Cantelli", "1909");
+    add("Jensen's gap / convex duality", "f convex => f(E[X]) <= E[f(X)] with Legendre dual", "convex analysis", "Legendre; Fenchel", "1949");
+    add("Simpson's rule (quadrature)", "integral_a^b f dx = (h/3)[f0 + 4 f1 + f2 + ...]", "numerical analysis", "Thomas Simpson", "1743");
+    add("Runge-Kutta (RK4) step", "y_{n+1} = y_n + (h/6)(k1 + 2 k2 + 2 k3 + k4)", "numerical analysis", "Runge; Kutta", "1901");
+  }
+
+  void add(String name, String form, String field, String who, String year) {
+    SMEquation e = new SMEquation();
+    e.define(name, form, field, who, year);
+    eqs[filled] = e;
+    filled = filled + 1;
+  }
+
+  int count() { return filled; }
+
+  String lineAt(int i) {
+    SMEquation e = eqs[i];
+    return e.line();
+  }
+}
