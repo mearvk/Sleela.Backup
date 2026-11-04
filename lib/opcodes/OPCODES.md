@@ -1,18 +1,20 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+The canonical VM ISA is 155 opcodes (codes 0–154), and the `lib/opcodes` wrapper family now provides one single-opcode class for **every** one of them (155 `SLOp*` classes, codes 0–154). This page documents that full wrapper set.
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-# SLeeLa `/lib/opcodes` — One Class Per Opcode
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
+
+# SLeeLa `/lib/opcodes` — Core Opcode Wrapper Subset
 
 **Family:** `lib/opcodes`
 **Revision:** 0.1
 **Canonical ISA:** `lib/vm/InstructionSet.sleela` / `lib/vm/OPCODE-MAP.md`
 **Native bridge:** `native/include/sleela_opcode.h`, `native/src/sleela_opcode.cpp`
 
-The `/lib/opcodes` family expresses the SLeeLa virtual-machine instruction set
-as **one SLeeLa source class per opcode**. Each class carries exactly one opcode
-and nothing else, so the object inventory of the ISA is directly measurable and
-every instruction has a first-class, nameable identity in SLeeLa source.
+The `/lib/opcodes` family expresses the **full** SLeeLa virtual-machine
+instruction set as one SLeeLa source class per opcode. It covers codes 0–154 —
+the complete canonical ISA defined by `lib/vm/InstructionSet.sleela` (155
+opcodes). Each class in this package carries exactly one opcode and nothing else.
 
 ## What is here
 
@@ -20,15 +22,22 @@ every instruction has a first-class, nameable identity in SLeeLa source.
 |------:|---------|
 | 1 | `SLOpcodeBase.sleela` — the shared single-opcode contract |
 | 1 | `SLOpcodeStream.sleela` — the verbatim, ordered opcode sequence driver |
-| 103 | `SLOp*.sleela` — one class per opcode, codes **0–102** |
+| 155 | `SLOp*.sleela` — one class per opcode, codes **0–154** (the full ISA) |
 | 1 | `OPCODES.md` — this document |
 | 8 | `governance/` — the Registrar · Listener · Event Observer series (see `governance/GOVERNANCE.md`) |
 | 6 | `running/` — grouping, conditional-reactive, and warming helpers (see `running/RUNNING.md`) |
 
 Codes **0–97** are the **base 98** opcodes (`OP_NOP` … `OP_AUDIO_PLATFORM`).
 Codes **98–102** are the five array-extension opcodes added for syntax 1.4
-(`OP_NEWARRAY`, `OP_ARRGET`, `OP_ARRSET`, `OP_ARRLEN`, `OP_ARRPUSH`). The package
-therefore ships **the 98 opcodes, and more** — the full canonical set.
+(`OP_NEWARRAY`, `OP_ARRGET`, `OP_ARRSET`, `OP_ARRLEN`, `OP_ARRPUSH`). Codes
+**103–154** complete the set: the operating-system system calls
+(103–123, `OP_OS_*`), the GC/system ops (124 `OP_GC_HINT`, 125 `OP_RAN_MEM`),
+the idea-canvas native-bridge ops (126–147, `OP_IC_*`), the VM-selection op
+(148, `OP_VM_SELECT`), the Modium file-resolution scan (149, `OP_MODIUM_SCAN`),
+and the tail ops `OP_UI_CALL` (150), `OP_SSEND` (151), `OP_CHECKCAST` (152),
+`OP_INSTANCEOF` (153), and `OP_DUP2` (154). The package therefore ships **a
+wrapper class for every opcode in the 155-opcode canonical ISA** (155 wrappers
+total), mirroring `lib/vm/InstructionSet.sleela` one-for-one.
 
 ## The single-opcode contract
 
@@ -97,7 +106,7 @@ Consistent with `lib/vm/OPCODE-MAP.md`, an **unknown opcode is rejected, never
 silently treated as a no-op**: `execute_one` returns `-1` and records
 `"unsupported opcode"`. `OP_HALT` also returns `-1` to stop the stream. The
 authoritative execution semantics remain in `/impl/core`; this bridge models the
-fetch/dispatch discipline and the mnemonic table (103 entries, codes 0–102).
+fetch/dispatch discipline and the mnemonic table (155 entries, codes 0–154).
 
 Build and self-test:
 
