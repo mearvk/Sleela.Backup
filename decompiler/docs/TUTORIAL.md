@@ -362,12 +362,12 @@ When a public API changes, update the corresponding exemplar and these documenta
 - `decompiler/API.md`;
 - `decompiler/docs/TUTORIAL.md`;
 - `decompiler/README.md`;
-- `api/decompiler/README.md`;
-- `api/decompiler/API.html` when the browser-facing API summary changes;
+- `api/sleela/2.1/decompiler/README.md`;
+- `api/sleela/2.1/decompiler/API.html` when the browser-facing API summary changes;
 - `decompiler/TERMINOLOGY.md` when a new product term is introduced.
 
 When a build interface changes, update the relevant platform script and `build/README.md` / `build/PRODUCTS.md` together.
 
 ## 19. Current implementation boundary
 
-The current foundation is intentionally incremental. ELF and GNU archive analysis is substantially developed; PE support and raw-artifact handling are part of the common model; native decoding remains conservative; and SLIR/VM support provides an architecture-neutral analysis boundary. The next layers should extend evidence and recovery without weakening the read-only, provenance-preserving model.
+The current foundation is intentionally incremental. ELF, PE/COFF, Mach-O (thin and FAT/universal), and GNU archive analysis each recover sections, symbols, imports, exports, and format-specific metadata; raw and firmware inputs are retained as provenance-bearing byte artifacts. Native decoding covers the control-flow-relevant instruction subset — plus common data-movement and arithmetic instructions with full operand-level recovery — on x86, x86-64, AArch64 (ARM64), and 32-bit ARM in both A32 and Thumb/T32 states, and is conservative elsewhere; SLIR/VM support provides an architecture-neutral analysis boundary. For ARM ELF images the decoder reads the `$a`/`$t`/`$d` mapping symbols from `.symtab` and auto-selects the A32/Thumb/data state per region in the default mode (`--arm`/`--thumb` force a single state). Each decoded instruction carries a fully rendered operand form, and `decompile` emits review-grade C/C++/Java/Sleela source plus a companion header (`--header`) with a provenance banner, per-function evidence tables, and documented prototypes. See `decompiler/README.md` for the per-format detected/parsed/disassembled coverage matrix. Recovered instructions are lifted into architecture-neutral SLIR (`Lifter::lift`): each native instruction becomes one SLIR operation (Move/Add/Sub/Compare/Branch/Call/Return/Load/Store, else Nop) carrying operand Values, the immediate, provenance, and a rendered neutral statement, and the lifted `Module` is directly executable by the SLIR VM. `decompile` now renders those lifted statements as the function body (above the evidence table) in all four target languages. The next layers should carry `$a`/`$t` region selection into function-level recovery, reconcile symbol virtual addresses with the file-offset sweep so symbol-named functions lift their bodies, add 8/16-bit x86 register naming for byte-form opcodes, and add SSA/dataflow typing over the lifted SLIR — all without weakening the read-only, provenance-preserving model.
