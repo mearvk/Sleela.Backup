@@ -1,11 +1,242 @@
 # SLeeLa /lib Library Index
 
-**Revision:** 0.48  
-**Packages:** 90  
-**SLeeLa source units:** 10907  
-**Module-facade symbols:** 62  
-**Total symbol records:** 10969  
+**Revision:** 0.58  
+**Packages:** 111  
+**SLeeLa source units:** 11886  
+**Module-facade symbols:** 77  
+**Total symbol records:** 11963  
 **Symbol manifest:** `LIBRARY.SYMBOLS.md`
+
+> Revision 0.58 adds **VMSharp™** under the `vm` package (`lib/vm/vmsharp/`): a
+> VM manifest that can start as a self-installer bootloader for either a
+> **Minimal Desktop** or an **OS install by user-designated download**, on
+> commodity desktop processors — 32-bit **x86** and 64-bit **x64**, whether
+> **AMD** or **Intel** (x64 → UEFI, x86 → BIOS/MBR; live CPU facts via the OSLS
+> `oslsGetCPUInfo` read-only call). Five source classes plus the package facade:
+> **`VMSharp`** (the composing manifest), **`VMSharpBootloader`** (architecture +
+> vendor admission), **`VMSharpInstallPlan`** (the two startup modes with a
+> fail-closed designation gate — a download/install never proceeds without an
+> explicit, recorded source and target), **`VMSharpLevy`** (the declared
+> USD 380 per-use/install figure directed to a United States national retirement
+> process — disclosed, never auto-collected), **`VMSharpIncludedApp`** (an app
+> the image carries as a pre-designated install), and a runnable
+> `examples/VMSharpDemo`. The first included app is the **Java National GUI
+> FrontEnd Aspect** (`github.com/mearvk/Java.National.GUI.FrontEnd.Aspect` @
+> `main`), included for **Graduated Presidents of the United States**: a Java
+> Swing app built with a JDK (`javac`→`out/`, run `java -cp out Main`) that runs
+> on the VMSharp Desktop; its quiet install auto-designates the source while the
+> install target still passes the fail-closed gate. The classes are declarative
+> models: no firmware is flashed, no disk is written, no funds move, nothing is
+> cloned/compiled/run here; a real bootable image and a real build are produced
+> only by the pinned OS Creator toolchain. VMSharp can also **reach a GitHub repo
+> over a networking stack, acquire it, and run the OS Creator** against it:
+> **`VMSharpNetworkStack`** (HTTPS/TCP reach + OSLS `oslsNetworkResolve`),
+> **`VMSharpRepoAcquisition`** (clone / tarball / zip with the exact command/URL
+> for each), and **`VMSharpOSCreatorRun`** (the first-brush orchestrator targeting
+> `github.com/mearvk/OS.Sensitivity.III` for install instructions/data/code, with
+> a fail-closed gate — the OS Creator runs only after the repo is reachable AND
+> acquired) plus `examples/VMSharpOSCreatorDemo`; these reach nothing, clone
+> nothing, and build nothing. The fine finish adds the **install screens**:
+> **`VMSharpInstallWizard`** (welcome → CPU-admission gate → mode-select →
+> desktop/OS.Sensitivity.III path screens → fee disclosure → fail-closed
+> confirm) and the selectable **`VMSharpInstallOption`** component, plus
+> `examples/VMSharpInstallWizardDemo`; the wizard renders text screens and
+> drives the plan objects, and confirmation is gated on an admitted CPU and a
+> ready plan (OS path: reachable AND acquired AND target designated). It also
+> adds **USB boot media**: **`VMSharpUsbMedia`** models `make` → `make install`
+> → firmware loads from USB → VMSharp starts in a configured option, with an
+> engineering-preference knob (`sequitur` | `iq` | `havingness`), plus
+> `examples/VMSharpUsbMediaDemo` and **real per-OS Makefiles** under
+> `lib/vm/vmsharp/usb/` (a brand-detecting dispatcher + `Makefile.linux`,
+> `Makefile.windows`, `Makefile.macos`). `make` stages the files; `make install`
+> is fail-closed — it refuses without an explicit `USB_DEVICE` and an
+> `I_UNDERSTAND_THIS_ERASES=yes` confirmation, never auto-selects a disk, and
+> stages to a git-ignored `build/` dir outside the inventory. No firmware binary
+> is fabricated (VMSharp is a model; the media carries files + a boot
+> descriptor). And **`VMSharpDiskLayout`** lets VMSharp **choose the root
+> filesystem** (EXT4 default, or `xfs`/`btrfs`/`zfs`/`f2fs`/`ntfs`/`apfs`;
+> unrootable choices refused, faithful to `SLFilesystemCatalog`) and produce the
+> **initial hard-drive manifest** (GPT: FAT32 ESP + root + swap) and the
+> `parted`/`mkfs` partition plan — fail-closed until a target disk is designated,
+> and `VMSharpOSCreatorRun.osCreatorReady()` now also requires the disk layout
+> ready; the install wizard gained a disk-layout screen. It reads no disk, writes
+> no partition table, and runs no mkfs. Authored
+> for the User MEARVK LLC
+> (Max Rupplin 2026; George Soros a Kindness 2507+), respectful of United States
+> law and of the persons and groupings of peoples it concerns. Every class
+> carries the Metadata Class metapattern. Counts reconciled by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`. See `lib/vm/vmsharp/`.
+
+> Revision 0.57 grows the registered **`osls_*`** VM surface from **12 to 25**
+> read-only operations (OP_OSLS_CALL IDs 0–24) — no new opcode (155 stays
+> frozen; the typed registry grew). The 13 added calls are all read-only or
+> pure computation and bind under the existing host-read capability:
+> `osls_get_memory_info`, `osls_get_available_memory`, `osls_get_disk_space`,
+> `osls_get_volume_info`, `osls_get_system_load`, `osls_get_capabilities`,
+> `osls_get_runtime_info`, `osls_get_native_error`, `osls_path_normalize`,
+> `osls_path_join`, `osls_path_resolve`, `osls_get_path_info`,
+> `osls_network_resolve`. `SLOsSupportOSLSElements` gains the 13 matching element
+> factories, `SLOsSupportNative` the 13 wrappers, and `SLOsSupportCatalog` now
+> separates `getRegisteredInspectionFunctions` (live) from
+> `getStateChangingPlannedFunctions` (28 file/socket/timer/process operations
+> that stay out of the read-only path by design, per DESIGNATE.md §9). Native
+> C: new `os-level-support/osls_extended2.c`; and the long-standing per-platform
+> unevenness in the original twelve is fixed — Windows network enumeration (IP
+> Helper), CPU vendor/model + cache-line on all three platforms, and the real
+> Windows timezone key name. No new `.sleela` files, so the counts above are
+> unchanged. See `os-level-support/DESIGNATE.md` §11 and
+> `lib/os-level-support/README.md`.
+
+> Revision 0.56 indexes the **`os-level-support`** package (`lib/os-level-support/`)
+> in `LIBRARY.SYMBOLS.md` for the first time — the 20 source classes plus two
+> runnable examples that mirror and bind the native OSLS C ABI. New in this
+> revision: **`SLOsRuntimeStatus`** (the in-process runtime status space,
+> `slosh_status` / `osls_runtime_status`), split out from **`SLOsSupportStatus`**
+> which now carries the core `osls_status` values it was conflating;
+> **`SLOsSupportTyped`** (a typed-result binding catalogue pairing each OSLS
+> record call with its `lib/systems` record shape); and
+> **`SLOsSupportConsistencyExample`** (a runnable round-trip guard that asserts
+> the 12 OSLS element factories agree with the native registry, the status maps
+> round-trip, and the typed bindings name a known record class). Every
+> `lib/os-level-support` class now carries the Metadata Class metapattern; the
+> `*Source` facades delegate their grouping terms to the backend catalogues
+> instead of re-declaring them; `SLOsSupportNative` widens PID/epoch arguments to
+> `long` to match the `int64_t` C ABI; and the previously unrunnable example is
+> fixed (the reserved words `native` were renamed and multi-line `<` headers
+> converted to `<<`/`>>` blocks so the whole package loads and runs). The header
+> counts above are reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`. See `os-level-support/README.md` and
+> `lib/os-level-support/README.md`.
+
+> Revision 0.55 appends **`OP_OSLS_CALL` (155)** to the canonical ISA and
+> adds its `SLOpOslsCall` wrapper. The native VM dispatch now reaches the
+> registered `osls_*` ABI table through typed operation IDs 0–11, with bounded
+> JSON result marshalling. The opcode wrapper family now contains **156**
+> `SLOp*` classes for codes **0–155**, one-for-one with the native enum and
+> dispatch. The OSLS source facade and platform-specific source facades are
+> indexed alongside the wrapper. See `opcodes/OPCODES.md` and
+> `os-level-support/README.md`.
+
+> Revision 0.53 adds the new **`sleeladoc`** package (`lib/sleeladoc/`): the
+> SLeeLa-side **SleelaDoc extractor** — the Javadoc-tool analogue. It reads
+> structured doc-comments out of a `.sleela` Wrapper and renders a Markdown or
+> HTML API page, documenting *intent* (not just signatures). A SleelaDoc comment
+> is an ordinary angle-bracket comment whose sentinel token is `@doc` (or
+> `@page`), so it lexes today with no compiler change. Eight source Master
+> Classes plus the facade: **`SLSleelaDoc`** (the façade a caller drives —
+> `begin` → `feed` tokenized lines → `toMarkdown`/`toHtml`), **`SLDocScanner`**
+> (the token-stream front end that lifts doc blocks and `@tags` and attaches each
+> to the following declaration), **`SLDocRenderer`** (the Markdown/HTML back end),
+> and the model **`SLDocModel`** / **`SLDocMember`** / **`SLDocComment`** /
+> **`SLDocTag`**. Because the built-in String is opaque, the scanner reads
+> tokenized lines (the char-cell boundary used across `lib/text`/`lib/xml`); node
+> storage uses growable VM-managed object arrays. A runnable reference
+> (`sleeladoc-demo.sleela`) feeds a small documented class and prints the rendered
+> Markdown and HTML; `lib/sleeladoc/README.md` documents the surface, the
+> convention lives in `manifesto/SLEELADOC.md`, and the compiler's own
+> author-marked doc outputs (`--wiki` wikitext + the originated twin) are
+> documented in `manifesto/SLEELADOC.WIKI.md`. Every class carries the Metadata
+> Class metapattern.
+>
+> One new package (105 → **106**), one new facade (73 → **74**), eight new source
+> classes (11654 → **11662** sources; 11727 → **11736** total records). Counts
+> reconciled to the live `/lib` tree by `tools/generate-library-symbols.py` and
+> verified by `test-suites/test-library-inventory.sh`.
+
+> Revision 0.52 adds the new **`xml`** package (`lib/xml/`): a SLeeLa-side XML
+> **Document Object Model (DOM)**. Eight source Master Classes plus the package
+> facade. The DOM core — **`SLXmlDocument`** (the W3C `Document`: node factory
+> `createElement`/`createTextNode`/…, root management, `getElementById`,
+> `getElementsByTagName`, the XML declaration + serialization), **`SLXmlNode`**
+> (the central node: ordered children, named attributes, `textContent`,
+> `appendChild`/`removeChild`, depth/counts), **`SLXmlAttribute`** (a
+> name/value attribute with namespace prefix/local parts), and **`SLXmlNodeType`**
+> (the DOM `nodeType` vocabulary + walker predicates). The text boundary —
+> **`SLXmlSerializer`** (DOM → well-formed XML, compact or pretty, with XML 1.0
+> §2.4 character-data escaping) and **`SLXmlParser`** (a char-cell text → DOM
+> reader for the common subset plus a structural well-formedness check). And
+> **`SLXmlAspect`**, an executive-grade **aspect/quality register** that rates how
+> fully the library addresses each XML aspect (well-formedness, DOM, namespaces,
+> serialization, validity), each against its real governing W3C instrument, with
+> honest 0..10 scores (unimplemented validity scores low, never inflated).
+>
+> Node equality is a three-rung **tie of trust**: **identity** (`sameReference`,
+> native `==` on objects = same memory), **same subject** (`sameSubject`: same
+> nature/name/id/value, case-sensitive, children ignored), and **structure**
+> (`equals`/`sameStructure`: deep-equal subtrees — same subject, same attribute
+> set, same children in order). `tieStrength`/`tieName` report the rung; every
+> rung is reflexive, symmetric, and deterministic (idempotent). `SLXmlAttribute`
+> and `SLXmlDocument` carry the matching ladder. Node storage uses growable
+> VM-managed object arrays so a node's footprint tracks its real content. A
+> runnable reference (`xml-dom.sleela`) builds, queries, serializes, round-trips,
+> compares, and verifies the equality guarantees; `lib/xml/README.md` documents
+> the surface. Every class carries the Metadata Class metapattern.
+>
+> One new package (104 → **105**), one new facade (72 → **73**), eight new source
+> classes plus one upstream-reconciled source unit (11645 → **11654** sources;
+> 11717 → **11727** total records). Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.51 adds two companion `core` classes expressing the standing of a
+> work and its wins, both author-marked (syntax 2.4) and carrying the full
+> Metadata Class metapattern. **`SLAuthorship`** is the authorship *Method :
+> Class* — continuance (the work is carried forward), dignity (a modest,
+> protected standing; an empty claim honestly becomes `"unverified"`), and free
+> guidance (`imposes()` is false by contract). It carries any distinction as a
+> cited historiometric *estimate* with provenance, never an asserted score, and
+> ranks no person. **`SLVictory`** is the Victory Model: a *win* is a **check
+> that resolves to an exact item** (exact equality against a declared item),
+> measured against a named *calculus* (default: the U.S. reference standard,
+> citing NIST), in the direction *Humanities → Science* — "means are goals and
+> directions without worship elsewhere." Two new source classes; no new package
+> or facade. Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.50 defines the **`philosophers`** vocabulary categorically at the
+> IQ-201+ register. The twenty-one Guides are renamed and defined in seven
+> ternary categories — **Admission** (Approach, Notice, Warrant), **Inception**
+> (Patch, Seed, Frame), **Intent** (Aim, Course, Measure), **Vitality** (Health,
+> Vigor, Pattern), **Governance** (Guide, Ministry, Counsel), **Standing**
+> (Office, Saint, Favor), **Closure** (Impart, Conform, Approval) — in
+> `SLPhilosopherSeating` (`SEAT_*`, `CAT_*`, `category()`/`categoryName()`). A
+> new **`SLOrdain`** class adds **Ordain** as an *orthogonal* axis: the
+> ordinality itself (rank, category, nearness to the ordaining crown Approval),
+> which stands across all twenty-one rather than occupying a seat. The
+> categorical terms are related to the Source Diagram and the Language Syntax in
+> `lib/philosophers/PHILOSOPHERS.CATEGORICAL.md`, and the VIM/EMACS coloring
+> (`lib/linux-editors/`) is updated to the new Guide names plus a distinct
+> Ordain face. One new source class (`SLOrdain`); no new package or facade.
+> Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.49 adds the new **`philosophers`** package (`lib/philosophers/`):
+> a model of the **perfect Constructor** of procedural design and its Guide
+> chain, declared with the `::` growth separator, e.g.
+> `Constructor() :: Patch :: Constructor :: Aim :: Guide`. Six Master Classes —
+> `SLPhilosopherSeating` (the finite register: base 21 seatings plus a signed
+> band [-2, +6] → capacity [19, 27], the 21 named Approach → Approval),
+> `SLPhilosopherGuide` (one `::`-separated growth / Wisdom, carrying a Gold or
+> Green color impart for the VIM/EMACS coloring), `SLFavorMechanism` (catches
+> the Notice of Approach at call time and grants/withholds runnability by
+> quorum), `SLConstructorContract` (the instantiative moment of nature and
+> time; the whistle only ticks ahead, ≤ ~2 min, then the object lives free),
+> `SLPhilosopherChain` (the ordered Guides under the seating capacity), and
+> `SLPhilosopherConstructor` (the orchestrator) — plus a runnable
+> `philosophers-demo.sleela`. The companion editor coloring lives under
+> `lib/linux-editors/` (`vim/syntax/sleela-philosophers.vim`,
+> `vim/ftplugin/sleela-philosophers.vim`, `emacs/sleela-philosophers.el`),
+> rendering the `::` separator and each Guide Gold/Yellow (approving) or Green
+> (growing). This adds **one new package and one new facade** (100 → **101**
+> and 69 → **70**) and 7 new source classes. The header counts above were also
+> **reconciled to the live `/lib` tree** by `tools/generate-library-symbols.py`
+> (the prior 0.48 header had drifted behind the filesystem); the counts now
+> match `find lib -type f -name '*.sleela'` exactly and are verified by
+> `test-suites/test-library-inventory.sh`.
 
 > Revision 0.48 adds **per-airline brand sites** to the **`website`** package:
 > one subdirectory per known modern airline under `lib/website/` (e.g.
@@ -351,7 +582,7 @@
 > (C, C++, Java, Python, JavaScript, Rust, Go), each an independent front end
 > that lowers its own language toward the common SLeeLa IR; see
 > `lib/compiler/MULTI-LANGUAGE.FRAMEWORK.md`. This revision also folds in four
-> previously-uncounted units (`os/SLLinuxOS`, `os/SLMacOS`, `os/SLWindowsOS`,
+> previously-uncounted units (`operating-system/SLLinuxOS`, `operating-system/SLMacOS`, `operating-system/SLWindowsOS`,
 > `vm/SleelaVMSystemCallBridge`). Sixteen `.sleela` units in total: 10,330 ->
 > **10,346** total records (10,275 -> **10,291** source classes); package count
 > unchanged at 83. `LIBRARY.SYMBOLS.md` was regenerated from the live tree
