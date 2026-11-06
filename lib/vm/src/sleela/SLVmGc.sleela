@@ -1,0 +1,138 @@
+<< lib/vm/src/sleela/SLVmGc.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLVmGc — the OOD equivalent of the native GC-quality
+     layer (virtual-machine/vm-version/005/vm_gc.{h,c}, v005). From deltas of
+     the collector's stats (allocations vs. reclamation vs. collections) it
+     derives a condition (HEALTHY/BUSY/PRESSURE/THRASH), gives young-collection
+     pacing advice, and edge-triggers a typed result through SLVmResult on
+     worsening (plus a recovery notice). It complements GarbageCollector.sleela
+     (the stat record) by adding the quality judgement over it.
+   
+   Mirrors: enum VmGcCondition, struct VmGcSnapshot, vm_gc_observe/condition/
+     should_collect_young/report.
+   
+   Family: vm. Composes SLVmResult, SLVmReport; reads the collector stats a
+     GarbageCollector record carries. >>
+#sleela 2.5
+material;
+class SLVmGc {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11285;
+  String metaAuthor = "unknown";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "unknown";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int HEALTHY  = 0;
+  static final int BUSY     = 1;
+  static final int PRESSURE = 2;
+  static final int THRASH   = 3;
+
+  < reclaim/alloc below this = pressure (default 25) >
+  int minReclaimPct;
+  < collections per 1000 allocs for thrash (default 50) >
+  int thrashPerK;
+
+  < previous snapshot (for deltas) >
+  int prevAlloc; int prevReclaim; int prevColl;
+  int havePrev;
+  int cond;
+  < edge-trigger latch >
+  int reported;
+  int collectYoung;
+
+  void init() {
+    minReclaimPct = 25; thrashPerK = 50;
+    prevAlloc = 0; prevReclaim = 0; prevColl = 0;
+    havePrev = 0; cond = HEALTHY; reported = HEALTHY; collectYoung = 0;
+  }
+
+  void setThresholds(int minReclaim, int thrash) {
+    if (minReclaim < 0) { minReclaim = 0; }
+    if (minReclaim > 100) { minReclaim = 100; }
+    if (thrash < 0) { thrash = 0; }
+    minReclaimPct = minReclaim; thrashPerK = thrash;
+  }
+
+  int classify(int dAlloc, int dReclaim, int dColl) {
+    if (dAlloc == 0) { return HEALTHY; }
+    int reclaimPct = (dReclaim * 100) / dAlloc;
+    int collPerK = (dColl * 1000) / dAlloc;
+    if (collPerK >= thrashPerK && reclaimPct < minReclaimPct) { return THRASH; }
+    if (reclaimPct < minReclaimPct) { return PRESSURE; }
+    if (dColl > 0) { return BUSY; }
+    return HEALTHY;
+  }
+
+  < observe fresh cumulative stats; returns the condition. >
+  int observe(int allocated, int reclaimed, int collections, SLVmResult res, SLVmReport rep) {
+    if (havePrev == 0) {
+      prevAlloc = allocated; prevReclaim = reclaimed; prevColl = collections;
+      havePrev = 1; cond = HEALTHY; return cond;
+    }
+    int dA = allocated - prevAlloc;    if (dA < 0) { dA = 0; }
+    int dR = reclaimed - prevReclaim;  if (dR < 0) { dR = 0; }
+    int dC = collections - prevColl;   if (dC < 0) { dC = 0; }
+    int c = classify(dA, dR, dC);
+    collectYoung = (dA > 0 && c == PRESSURE) ? 1 : 0;
+
+    if (c > reported) {
+      if (res != null) {
+        int ecode = (c == THRASH) ? res.E_LIMIT : res.E_EXHAUSTED;
+        res.fail(ecode, "gc", conditionName(c) + ": reclaim/alloc under threshold");
+        res.report(rep);
+      }
+      reported = c;
+    } else if (c == HEALTHY && reported != HEALTHY) {
+      if (rep != null) { rep.notice("gc", "pressure cleared -- reclamation keeping up"); }
+      reported = HEALTHY;
+    }
+
+    prevAlloc = allocated; prevReclaim = reclaimed; prevColl = collections;
+    cond = c;
+    return c;
+  }
+
+  boolean shouldCollectYoung() { return collectYoung == 1; }
+
+  String conditionName(int c) {
+    if (c == BUSY)     { return "BUSY"; }
+    if (c == PRESSURE) { return "PRESSURE"; }
+    if (c == THRASH)   { return "THRASH"; }
+    return "HEALTHY";
+  }
+}

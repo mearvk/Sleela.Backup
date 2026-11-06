@@ -20,7 +20,15 @@
 #include "sleela_bestof.h"
 #include "sleela_audio_mixer.h"
 #include "sleela_os.h"
+#include "../../os-level-support/osls_vm_bridge.h"
 #include "sleela_memmgr.h"
+#include "sleela_idea_canvas.h"
+#include "sleela_ui_vm.h"
+#include "sleela_ui_ids.h"
+
+#ifndef SL_IDEA_CANVAS_MAX
+#define SL_IDEA_CANVAS_MAX 16   /* bounded VM-local realtime-canvas table */
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -52,9 +60,22 @@ typedef struct SLThread {
     int entry_func;
     SLValue result;
     char err[256];
+    int underflow;   /* set by POP() on stack underflow; checked each instruction */
+    uint32_t safepoint_tick; /* counts instructions; the GC safepoint is polled
+                              * once per SL_GC_SAFEPOINT_STRIDE instructions
+                              * rather than on every one, so a tight numeric loop
+                              * does not pay a mutex per opcode. */
     pthread_t handle;
     int started;
 } SLThread;
+
+/* How often run_thread polls the GC safepoint. Collection still only *acts* at
+ * the heap byte threshold; polling 1-in-N instructions removes the per-opcode
+ * thread-mutex from the hot path. Between polls the heap can grow by at most
+ * this many instructions' worth of allocation, which the allocator's own byte
+ * limit still bounds (it fails closed). Allocation-heavy opcodes also poll
+ * directly, so a burst of large allocations is never deferred by the stride. */
+#define SL_GC_SAFEPOINT_STRIDE 1024u
 
 typedef struct {
     pthread_mutex_t mtx;
@@ -82,6 +103,7 @@ typedef struct {
 typedef struct {
     char* name;
     int nfields;
+    int parent_type;
     char* fields[SL_MAX_STRUCT_FIELDS];
 } SLStructType;
 typedef struct {
@@ -125,6 +147,7 @@ struct SLVM {
     int entry;
     SLValue last_result;
     char err[256];
+    uint64_t osls_capabilities;
 
     pthread_mutex_t intern_mtx;
     pthread_mutex_t global_mtx;
@@ -142,8 +165,11 @@ struct SLVM {
     SLMunction* munction[SL_MUNCTION_MAX];
     pthread_mutex_t bestof_mtx;
     SLBestOf* bestof[SL_BESTOF_MAX];
-    SLStructType struct_types[SL_MAX_STRUCT_TYPES];
+    pthread_mutex_t idea_canvas_mtx;
+    void* idea_canvas[SL_IDEA_CANVAS_MAX];   /* Idea System(TM) realtime canvases */
+    SLStructType* struct_types;  /* grown base-2 from SL_STRUCT_TYPES_INIT, capped at SL_MAX_STRUCT_TYPES */
     int nstruct_types;
+    int struct_typecap;          /* current allocated capacity of struct_types */
     SLStructInstance* structs;   /* SL_MAX_STRUCTS instances, lazily allocated */
     int nstruct_live;
 
@@ -179,6 +205,9 @@ static void set_err(SLVM* vm, const char* msg) {
 
 SLValue slval_null(void) { SLValue v; v.type = SL_NULL; v.as.i = 0; return v; }
 SLValue slval_int(int64_t x) { SLValue v; v.type = SL_INT; v.as.i = x; return v; }
+SLValue slval_int128(sl_int128_t x) { SLValue v; v.type = SL_INT128; v.as.i128 = x; return v; }
+/* Read any integer value (SL_INT or SL_INT128) as a 128-bit operand. */
+static sl_int128_t as_i128(SLValue v) { return v.type == SL_INT128 ? v.as.i128 : (sl_int128_t)v.as.i; }
 SLValue slval_double(double x) { SLValue v; v.type = SL_DOUBLE; v.as.d = x; return v; }
 SLValue slval_bool(int x) { SLValue v; v.type = SL_BOOL; v.as.b = x ? 1 : 0; return v; }
 
@@ -287,17 +316,78 @@ int slvm_declare_global(SLVM* vm, const char* name) {
     return vm->nglobal++;
 }
 
+/* Group a non-negative long with thousands separators into `out` (1234567 ->
+ * "1,234,567") for the VM's own diagnostic lines. System-side presentation
+ * only; the user print(...) path (value_to_text) does NOT use this. */
+static const char* sl_group_ll(long long v, char* out, size_t cap) {
+    char tmp[32]; long long a = v < 0 ? -v : v;
+    int n = snprintf(tmp, sizeof tmp, "%lld", a);
+    size_t o = 0;
+    if (v < 0 && o + 1 < cap) out[o++] = '-';
+    for (int i = 0; i < n; ++i) {
+        if (i > 0 && (n - i) % 3 == 0 && o + 1 < cap) out[o++] = ',';
+        if (o + 1 < cap) out[o++] = tmp[i];
+    }
+    out[o < cap ? o : cap - 1] = 0;
+    return out;
+}
+
 int slvm_declare_struct(SLVM* vm, const char* name, const char* const* field_names, int nfields) {
     if (!vm || !name || nfields < 0 || nfields > SL_MAX_STRUCT_FIELDS) return -1;
-    if (vm->nstruct_types >= SL_MAX_STRUCT_TYPES) return -1;
+    /* Diagnostic trace (env SLEELA_TRACE_LAYOUTS=1): report the live table state
+     * on every registration. Catches a corrupt nstruct_types/struct_typecap --
+     * e.g. a stale sleela_core.o whose slvm_new left them uninitialized -- by
+     * showing the actual counts at the exact call that fails. Written to BOTH
+     * stderr and stdout and flushed, so it cannot be swallowed by redirection. */
+    int sl_trace = (getenv("SLEELA_TRACE_LAYOUTS") != NULL);
+    if (sl_trace) {
+        char gnt[32], gtc[32], gmx[32];
+        fprintf(stderr, "[trace-declare_struct] name='%s' nstruct_types=%s struct_typecap=%s MAX=%s\n",
+                name, sl_group_ll(vm->nstruct_types, gnt, sizeof gnt),
+                sl_group_ll(vm->struct_typecap, gtc, sizeof gtc),
+                sl_group_ll(SL_MAX_STRUCT_TYPES, gmx, sizeof gmx));
+        fflush(stderr);
+    }
     for (int i = 0; i < vm->nstruct_types; i++)
         if (strcmp(vm->struct_types[i].name, name) == 0) return i; /* idempotent */
+    /* Grow the layout table on demand: 256 -> 512 -> ... -> 65536 (base-2),
+     * never past the SL_MAX_STRUCT_TYPES hard ceiling. New slots are zeroed so
+     * a partially-filled table never carries stale name/field pointers. */
+    if (vm->nstruct_types >= vm->struct_typecap) {
+        if (vm->struct_typecap >= SL_MAX_STRUCT_TYPES) {
+            /* ALWAYS report the refusal (not gated): a layout-table overflow
+             * must never be silent, so this prints even without the trace env. */
+            char gnt[32], gtc[32], gmx[32];
+            fprintf(stderr, "[sleela-vm] layout-table REFUSED '%s': nstruct_types=%s struct_typecap=%s MAX=%s "
+                            "(if this fires at a tiny count, the running VM core is stale/mismatched)\n",
+                    name, sl_group_ll(vm->nstruct_types, gnt, sizeof gnt),
+                    sl_group_ll(vm->struct_typecap, gtc, sizeof gtc),
+                    sl_group_ll(SL_MAX_STRUCT_TYPES, gmx, sizeof gmx));
+            fflush(stderr);
+            return -1; /* at the ceiling */
+        }
+        int newcap = vm->struct_typecap ? vm->struct_typecap * 2 : SL_STRUCT_TYPES_INIT;
+        if (newcap > SL_MAX_STRUCT_TYPES) newcap = SL_MAX_STRUCT_TYPES;
+        SLStructType* grown = (SLStructType*)realloc(vm->struct_types, (size_t)newcap * sizeof(SLStructType));
+        if (!grown) return -1; /* out of memory: fail closed, keep the old table */
+        memset(grown + vm->struct_typecap, 0, (size_t)(newcap - vm->struct_typecap) * sizeof(SLStructType));
+        vm->struct_types = grown;
+        vm->struct_typecap = newcap;
+    }
     int idx = vm->nstruct_types++;
     SLStructType* st = &vm->struct_types[idx];
     st->name = strdup(name);
     st->nfields = nfields;
+    st->parent_type = -1;
     for (int i = 0; i < nfields; i++) st->fields[i] = strdup(field_names[i] ? field_names[i] : "");
     return idx;
+}
+
+int slvm_set_struct_parent(SLVM* vm, int type_index, int parent_type_index) {
+    if (!vm || type_index < 0 || type_index >= vm->nstruct_types) return -1;
+    if (parent_type_index < -1 || parent_type_index >= vm->nstruct_types || parent_type_index == type_index) return -1;
+    vm->struct_types[type_index].parent_type = parent_type_index;
+    return 0;
 }
 
 int slvm_begin_func(SLVM* vm, const char* name, int nargs, int nlocals) {
@@ -331,6 +421,12 @@ void slvm_set_audio_native_renderer(SLVM* vm, SLAudioNativeRenderFn fn, void* us
     pthread_mutex_unlock((pthread_mutex_t*)&vm->audio_mtx);
 }
 
+int slvm_set_osls_capabilities(SLVM* vm, uint64_t capabilities) {
+    if (!vm || (capabilities & ~OSLS_VM_CAP_HOST_READ) != 0) return -1;
+    vm->osls_capabilities = capabilities;
+    return 0;
+}
+
 int slvm_memory_safe_mode(const SLVM* vm) {
     /* Sleela source never receives native pointers. Globals, locals, files,
      * sockets, threads, reaches, probes, and struct instances are VM-owned
@@ -346,6 +442,7 @@ SLVM* slvm_new(void) {
     vm->cur_func = -1;
     vm->entry = -1;
     vm->last_result = slval_null();
+    vm->osls_capabilities = OSLS_VM_CAP_HOST_READ;
     pthread_mutex_init(&vm->intern_mtx, NULL);
     pthread_mutex_init(&vm->global_mtx, NULL);
     pthread_mutex_init(&vm->print_mtx, NULL);
@@ -357,6 +454,7 @@ SLVM* slvm_new(void) {
     pthread_mutex_init(&vm->synchro_mtx, NULL);
     pthread_mutex_init(&vm->munction_mtx, NULL);
     pthread_mutex_init(&vm->bestof_mtx, NULL);
+    pthread_mutex_init(&vm->idea_canvas_mtx, NULL);
     pthread_mutex_init(&vm->audio_mtx, NULL);
     pthread_mutex_init(&vm->os_mtx, NULL);
     for (int i = 0; i < SL_MAX_OS_PROCESSES; i++) vm->os_proc[i] = SLOS_INVALID_PROCESS;
@@ -421,6 +519,10 @@ void slvm_free(SLVM* vm) {
         if (vm->bestof[i]) { slbestof_close(vm->bestof[i]); vm->bestof[i] = NULL; }
     }
     pthread_mutex_destroy(&vm->bestof_mtx);
+    for (int i = 0; i < SL_IDEA_CANVAS_MAX; i++) {
+        if (vm->idea_canvas[i]) { sl_idea_canvas_destroy(vm->idea_canvas[i]); vm->idea_canvas[i] = NULL; }
+    }
+    pthread_mutex_destroy(&vm->idea_canvas_mtx);
     /* Release any still-live spawned child processes (reap without blocking). */
     for (int i = 0; i < SL_MAX_OS_PROCESSES; i++) {
         if (vm->os_proc[i] != SLOS_INVALID_PROCESS) { slos_release(vm->os_proc[i]); vm->os_proc[i] = SLOS_INVALID_PROCESS; }
@@ -430,6 +532,7 @@ void slvm_free(SLVM* vm) {
         free(vm->struct_types[i].name);
         for (int j = 0; j < vm->struct_types[i].nfields; j++) free(vm->struct_types[i].fields[j]);
     }
+    free(vm->struct_types);   /* the growable layout table itself */
     free(vm->structs);
     pthread_mutex_destroy(&vm->struct_mtx);
     if (vm->arrays) {
@@ -457,6 +560,7 @@ void slvm_free(SLVM* vm) {
 
 static double as_num(SLValue v) {
     if (v.type == SL_INT) return (double)v.as.i;
+    if (v.type == SL_INT128) return (double)v.as.i128;
     if (v.type == SL_DOUBLE) return v.as.d;
     if (v.type == SL_BOOL) return v.as.b;
     return 0.0;
@@ -464,11 +568,17 @@ static double as_num(SLValue v) {
 static int is_truthy(SLValue v) {
     if (v.type == SL_NULL) return 0;
     if (v.type == SL_INT) return v.as.i != 0;
+    if (v.type == SL_INT128) return v.as.i128 != 0;
     if (v.type == SL_DOUBLE) return v.as.d != 0.0;
     if (v.type == SL_BOOL) return v.as.b != 0;
     return 1;
 }
 static int both_int(SLValue a, SLValue b) { return a.type == SL_INT && b.type == SL_INT; }
+/* True when both operands are some integer (SL_INT or SL_INT128). */
+static int both_any_int(SLValue a, SLValue b) {
+    return (a.type == SL_INT || a.type == SL_INT128) && (b.type == SL_INT || b.type == SL_INT128);
+}
+static int any_i128(SLValue a, SLValue b) { return a.type == SL_INT128 || b.type == SL_INT128; }
 
 static int socket_alloc(SLVM* vm, SLNetHandle handle) {
     pthread_mutex_lock(&vm->sock_mtx);
@@ -534,6 +644,24 @@ static void bestof_release(SLVM* vm, int h) {
     if (b) slbestof_close(b);
 }
 
+/* ---- Idea System(TM) realtime canvas table (VM-owned, bounded) ----------- */
+static int ic_alloc(SLVM* vm, void* c) {
+    pthread_mutex_lock(&vm->idea_canvas_mtx);
+    for (int i = 0; i < SL_IDEA_CANVAS_MAX; i++) if (!vm->idea_canvas[i]) {
+        vm->idea_canvas[i] = c; pthread_mutex_unlock(&vm->idea_canvas_mtx); return i;
+    }
+    pthread_mutex_unlock(&vm->idea_canvas_mtx); return -1;
+}
+static void* ic_get(SLVM* vm, int h) {
+    if (h < 0 || h >= SL_IDEA_CANVAS_MAX) return NULL;
+    pthread_mutex_lock(&vm->idea_canvas_mtx); void* c = vm->idea_canvas[h]; pthread_mutex_unlock(&vm->idea_canvas_mtx); return c;
+}
+static void ic_release(SLVM* vm, int h) {
+    if (h < 0 || h >= SL_IDEA_CANVAS_MAX) return;
+    pthread_mutex_lock(&vm->idea_canvas_mtx); void* c = vm->idea_canvas[h]; vm->idea_canvas[h] = NULL; pthread_mutex_unlock(&vm->idea_canvas_mtx);
+    if (c) sl_idea_canvas_destroy(c);
+}
+
 static int file_alloc(SLVM* vm, SLIOHandle fd) {
     pthread_mutex_lock(&vm->file_mtx);
     for (int i = 0; i < SL_MAX_FILES; i++) if (!vm->files[i].active) {
@@ -556,25 +684,41 @@ static SLGCObject *array_gc_object(SLVM *vm, int h) {
     if (!vm || !vm->arrays || h < 0 || h >= SL_MAX_ARRAYS) return NULL;
     return vm->arrays[h].gc_object;
 }
+static void gc_mark_value(SLVM *vm, GarbageCollector *gc, SLValue v);
+
+static SLGCObject *gc_object_for_value(SLVM *vm, SLValue v) {
+    if (!vm) return NULL;
+    if (v.type == SL_STRUCT && struct_valid_handle(vm, v.as.h))
+        return struct_gc_object(vm, v.as.h);
+    if (v.type == SL_ARRAY && array_valid_handle(vm, v.as.h))
+        return array_gc_object(vm, v.as.h);
+    return NULL;
+}
+
+/* Child traversal is delegated to the collector's mark worklist rather than
+ * recursively traversing the graph on the C call stack. This keeps deep and
+ * cyclic object graphs safe and lets the collector detect worklist failures. */
+static void gc_trace_struct(SLGCObject *object, void *context) {
+    SLVM *vm = (SLVM *)context;
+    SLStructInstance *si = object ? (SLStructInstance *)object->payload : NULL;
+    if (!vm || !si || !si->active) return;
+    for (int i = 0; i < SL_MAX_STRUCT_FIELDS; ++i)
+        if (si->fields[i].type == SL_STRUCT || si->fields[i].type == SL_ARRAY)
+            gc_mark_value(vm, &vm->gc, si->fields[i]);
+}
+
+static void gc_trace_array(SLGCObject *object, void *context) {
+    SLVM *vm = (SLVM *)context;
+    SLArrayInstance *ai = object ? (SLArrayInstance *)object->payload : NULL;
+    if (!vm || !ai || !ai->active) return;
+    for (int i = 0; i < ai->len; ++i)
+        if (ai->elems && (ai->elems[i].type == SL_STRUCT || ai->elems[i].type == SL_ARRAY))
+            gc_mark_value(vm, &vm->gc, ai->elems[i]);
+}
+
 static void gc_mark_value(SLVM *vm, GarbageCollector *gc, SLValue v) {
-    if (!vm || !gc) return;
-    if (v.type == SL_STRUCT && struct_valid_handle(vm, v.as.h)) {
-        SLGCObject *o = struct_gc_object(vm, v.as.h);
-        if (!o || o->marked) return;
-        gc_mark(gc, o);
-        SLStructInstance *si = &vm->structs[v.as.h];
-        for (int i = 0; i < SL_MAX_STRUCT_FIELDS; ++i)
-            if (si->fields[i].type == SL_STRUCT || si->fields[i].type == SL_ARRAY)
-                gc_mark_value(vm, gc, si->fields[i]);
-    } else if (v.type == SL_ARRAY && array_valid_handle(vm, v.as.h)) {
-        SLGCObject *o = array_gc_object(vm, v.as.h);
-        if (!o || o->marked) return;
-        gc_mark(gc, o);
-        SLArrayInstance *ai = &vm->arrays[v.as.h];
-        for (int i = 0; i < ai->len; ++i)
-            if (ai->elems && (ai->elems[i].type == SL_STRUCT || ai->elems[i].type == SL_ARRAY))
-                gc_mark_value(vm, gc, ai->elems[i]);
-    }
+    SLGCObject *object = gc_object_for_value(vm, v);
+    if (gc && object) gc_mark(gc, object);
 }
 typedef struct { SLVM *vm; SLThread *current; } SLGCRootContext;
 static void gc_mark_vm_roots(GarbageCollector *gc, void *context) {
@@ -633,7 +777,7 @@ static int struct_alloc(SLVM* vm, int type) {
         if (!vm->structs[i].active) {
             vm->structs[i].active = 1;
             vm->structs[i].type = type;
-            vm->structs[i].gc_object = gc_allocate_external(&vm->gc, &vm->structs[i], sizeof(vm->structs[i]), NULL, gc_struct_destroy, NULL);
+            vm->structs[i].gc_object = gc_allocate_external(&vm->gc, &vm->structs[i], sizeof(vm->structs[i]), gc_trace_struct, gc_struct_destroy, vm);
             if (!vm->structs[i].gc_object) { vm->structs[i].active = 0; pthread_mutex_unlock(&vm->struct_mtx); return -1; }
             for (int j = 0; j < nf; j++) vm->structs[i].fields[j] = slval_null();
             vm->nstruct_live++;
@@ -646,6 +790,14 @@ static int struct_alloc(SLVM* vm, int type) {
 }
 static int struct_valid_handle(SLVM* vm, int h) {
     return vm->structs && h >= 0 && h < SL_MAX_STRUCTS && vm->structs[h].active;
+}
+static int struct_type_is_a(SLVM* vm, int actual, int expected) {
+    if (!vm || expected < 0 || expected >= vm->nstruct_types) return 0;
+    for (int depth = 0; actual >= 0 && actual < vm->nstruct_types && depth < SL_MAX_STRUCT_TYPES; ++depth) {
+        if (actual == expected) return 1;
+        actual = vm->struct_types[actual].parent_type;
+    }
+    return 0;
 }
 
 /* ---- array instances: the same bounded-handle discipline as structs ------- */
@@ -673,7 +825,7 @@ static int array_alloc(SLVM* vm, int n) {
             vm->arrays[i].len = n;
             vm->arrays[i].cap = cap;
             vm->arrays[i].elems = elems;
-            vm->arrays[i].gc_object = gc_allocate_external(&vm->gc, &vm->arrays[i], sizeof(vm->arrays[i]), NULL, gc_array_destroy, NULL);
+            vm->arrays[i].gc_object = gc_allocate_external(&vm->gc, &vm->arrays[i], sizeof(vm->arrays[i]) + (size_t)cap * sizeof(*elems), gc_trace_array, gc_array_destroy, vm);
             if (!vm->arrays[i].gc_object) { free(elems); vm->arrays[i].active = 0; vm->arrays[i].elems = NULL; pthread_mutex_unlock(&vm->array_mtx); return -1; }
             for (int j = 0; j < n; j++) vm->arrays[i].elems[j] = slval_null();
             vm->narray_live++;
@@ -694,8 +846,18 @@ static int array_push(SLVM* vm, int h, SLValue val) {
         int ncap = ai->cap > 0 ? ai->cap * 2 : 8;
         if (ncap > SL_MAX_ARRAY_LEN) ncap = SL_MAX_ARRAY_LEN;
         if (ai->len >= ncap) { pthread_mutex_unlock(&vm->array_mtx); return -1; }
+        size_t old_bytes = sizeof(*ai) + (size_t)ai->cap * sizeof(SLValue);
+        size_t new_bytes = sizeof(*ai) + (size_t)ncap * sizeof(SLValue);
+        if (!gc_resize_object(&vm->gc, ai->gc_object, new_bytes)) {
+            pthread_mutex_unlock(&vm->array_mtx);
+            return -1;
+        }
         SLValue* ne = (SLValue*)realloc(ai->elems, (size_t)ncap * sizeof(SLValue));
-        if (!ne) { pthread_mutex_unlock(&vm->array_mtx); return -1; }
+        if (!ne) {
+            (void)gc_resize_object(&vm->gc, ai->gc_object, old_bytes);
+            pthread_mutex_unlock(&vm->array_mtx);
+            return -1;
+        }
         ai->elems = ne; ai->cap = ncap;
     }
     ai->elems[ai->len++] = val;
@@ -748,10 +910,33 @@ static int open_file_handle(SLVM* vm, const char* path, const char* mode) {
 
 /* Render one scalar SLValue into buf (used by print, string concat, and JSON
  * packing). Struct handles render as "TypeName#handle". */
+/* Render a signed 128-bit integer in base 10. %lld cannot print 128-bit, so we
+ * build the digits by repeated division on the unsigned magnitude. Works both
+ * for a real __int128 and for the 64-bit fallback typedef. */
+static void format_int128(sl_int128_t v, char* buf, size_t cap) {
+    if (cap == 0) return;
+    char tmp[48];
+    int neg = (v < 0);
+    /* Unsigned magnitude; the standard negate-min-value guard is handled by
+     * doing the math in the unsigned domain. */
+#if SLEELA_HAVE_INT128
+    unsigned __int128 mag = neg ? (unsigned __int128)(-(v + 1)) + 1u : (unsigned __int128)v;
+#else
+    uint64_t mag = neg ? (uint64_t)(-(v + 1)) + 1u : (uint64_t)v;
+#endif
+    int n = 0;
+    if (mag == 0) tmp[n++] = '0';
+    while (mag > 0 && n < (int)sizeof(tmp)) { tmp[n++] = (char)('0' + (int)(mag % 10)); mag /= 10; }
+    size_t pos = 0;
+    if (neg && pos < cap - 1) buf[pos++] = '-';
+    while (n > 0 && pos < cap - 1) buf[pos++] = tmp[--n];
+    buf[pos] = '\0';
+}
 static void value_to_text(SLVM* vm, SLValue v, char* buf, size_t cap) {
     switch (v.type) {
         case SL_NULL:   snprintf(buf, cap, "null"); break;
         case SL_INT:    snprintf(buf, cap, "%lld", (long long)v.as.i); break;
+        case SL_INT128: format_int128(v.as.i128, buf, cap); break;
         case SL_DOUBLE: snprintf(buf, cap, "%g", v.as.d); break;
         case SL_BOOL:   snprintf(buf, cap, "%s", v.as.b ? "true" : "false"); break;
         case SL_STR:    snprintf(buf, cap, "%s", slvm_str(vm, v.as.s)); break;
@@ -885,6 +1070,139 @@ static void log_unsupported_opcode(SLVM* vm, uint8_t opcode) {
     if (out != stderr) fclose(out);
 }
 
+/* ------------------------------------------------------------------------
+ * Native big-integer multiply kernel (base 1,000,000,000 limbs).
+ *
+ * Limbs are uint32_t in [0, 1e9), little-endian (index 0 least significant).
+ * sl_bigmul computes r = a * b. It uses schoolbook multiply below a threshold
+ * and Karatsuba recursion above it, so the cost grows as O(n^1.585) rather
+ * than O(n^2) -- the difference between a million-digit multiply taking
+ * seconds versus minutes. Intermediate products are accumulated in uint64_t
+ * (max limb product 1e18, well within 2^64) and carries are propagated in a
+ * final normalization pass. Returns the number of significant result limbs.
+ *
+ * This is deliberately buffer-only: it never touches the VM stack, the array
+ * mutex per element, or the per-instruction GC safepoint -- the whole multiply
+ * is one native call, which is the entire point of the OP_BIGMUL bridge.
+ * ---------------------------------------------------------------------- */
+#define SL_BIG_BASE 1000000000ULL
+#define SL_BIG_KARATSUBA_THRESHOLD 40
+
+/* Schoolbook: r[0..na+nb-1] = a[0..na-1] * b[0..nb-1], base 1e9. r must be
+ * zeroed by the caller and have room for na+nb limbs. */
+static void sl_bigmul_school(const uint32_t* a, int na,
+                             const uint32_t* b, int nb, uint32_t* r) {
+    for (int i = 0; i < na; i++) {
+        uint64_t carry = 0;
+        uint64_t ai = a[i];
+        for (int j = 0; j < nb; j++) {
+            uint64_t cur = (uint64_t)r[i + j] + ai * (uint64_t)b[j] + carry;
+            r[i + j] = (uint32_t)(cur % SL_BIG_BASE);
+            carry = cur / SL_BIG_BASE;
+        }
+        int k = i + nb;
+        while (carry) {
+            uint64_t cur = (uint64_t)r[k] + carry;
+            r[k] = (uint32_t)(cur % SL_BIG_BASE);
+            carry = cur / SL_BIG_BASE;
+            k++;
+        }
+    }
+}
+
+/* Add src[0..n-1] into dst[0..] at limb offset `off`, propagating carry. */
+static void sl_big_addto(uint32_t* dst, const uint32_t* src, int n, int off) {
+    uint64_t carry = 0;
+    int i = 0;
+    for (; i < n; i++) {
+        uint64_t cur = (uint64_t)dst[off + i] + src[i] + carry;
+        dst[off + i] = (uint32_t)(cur % SL_BIG_BASE);
+        carry = cur / SL_BIG_BASE;
+    }
+    int k = off + n;
+    while (carry) {
+        uint64_t cur = (uint64_t)dst[k] + carry;
+        dst[k] = (uint32_t)(cur % SL_BIG_BASE);
+        carry = cur / SL_BIG_BASE;
+        k++;
+    }
+}
+
+/* Karatsuba: r = a * b. r must be zeroed and have room for na+nb limbs.
+ * Allocates scratch; returns 0 on success, -1 on allocation failure. */
+static int sl_bigmul_kara(const uint32_t* a, int na,
+                          const uint32_t* b, int nb, uint32_t* r) {
+    if (na <= SL_BIG_KARATSUBA_THRESHOLD || nb <= SL_BIG_KARATSUBA_THRESHOLD) {
+        sl_bigmul_school(a, na, b, nb, r);
+        return 0;
+    }
+    int half = (na > nb ? na : nb) / 2;
+    if (half >= na) half = na - 1;
+    if (half >= nb) half = nb - 1;
+    if (half < 1) { sl_bigmul_school(a, na, b, nb, r); return 0; }
+
+    const uint32_t* a0 = a;         int n0 = half;
+    const uint32_t* a1 = a + half;  int n1 = na - half;
+    const uint32_t* b0 = b;         int m0 = (half < nb ? half : nb);
+    const uint32_t* b1 = b + half;  int m1 = nb - half;
+    if (m1 < 0) { m1 = 0; }
+
+    int z0len = n0 + m0;
+    int z2len = n1 + m1;
+    int rc = 0;
+    uint32_t* z0 = (uint32_t*)calloc((size_t)(z0len > 0 ? z0len : 1), sizeof(uint32_t));
+    uint32_t* z2 = (uint32_t*)calloc((size_t)(z2len > 0 ? z2len : 1), sizeof(uint32_t));
+    /* sums a0+a1 and b0+b1 (each at most half+1 limbs) */
+    int sa_len = (n0 > n1 ? n0 : n1) + 1;
+    int sb_len = (m0 > m1 ? m0 : m1) + 1;
+    uint32_t* sa = (uint32_t*)calloc((size_t)sa_len, sizeof(uint32_t));
+    uint32_t* sb = (uint32_t*)calloc((size_t)sb_len, sizeof(uint32_t));
+    int z1len = sa_len + sb_len;
+    uint32_t* z1 = (uint32_t*)calloc((size_t)z1len, sizeof(uint32_t));
+    if (!z0 || !z2 || !sa || !sb || !z1) { rc = -1; goto done; }
+
+    if (m0 > 0) { if (sl_bigmul_kara(a0, n0, b0, m0, z0)) { rc = -1; goto done; } }
+    if (m1 > 0) { if (sl_bigmul_kara(a1, n1, b1, m1, z2)) { rc = -1; goto done; } }
+
+    /* sa = a0 + a1 */
+    { uint64_t c = 0; for (int i = 0; i < sa_len; i++) {
+        uint64_t x = c; if (i < n0) x += a0[i]; if (i < n1) x += a1[i];
+        sa[i] = (uint32_t)(x % SL_BIG_BASE); c = x / SL_BIG_BASE; } }
+    /* sb = b0 + b1 */
+    { uint64_t c = 0; for (int i = 0; i < sb_len; i++) {
+        uint64_t x = c; if (i < m0) x += b0[i]; if (i < m1) x += b1[i];
+        sb[i] = (uint32_t)(x % SL_BIG_BASE); c = x / SL_BIG_BASE; } }
+
+    if (sl_bigmul_kara(sa, sa_len, sb, sb_len, z1)) { rc = -1; goto done; }
+    /* z1 = z1 - z0 - z2 (borrow subtraction; z1 >= z0 + z2 mathematically).
+     * A single limb subtracts BOTH z0[i] and z2[i], so the running borrow can
+     * exceed 1 (up to 2 per limb). Carry it as an integer count of bases, not a
+     * 0/1 flag, and normalize cur up by whole bases until it is nonnegative. */
+    { int64_t borrow = 0;
+      for (int i = 0; i < z1len; i++) {
+        int64_t cur = (int64_t)z1[i] - borrow;
+        if (i < z0len) cur -= (int64_t)z0[i];
+        if (i < z2len) cur -= (int64_t)z2[i];
+        borrow = 0;
+        while (cur < 0) { cur += (int64_t)SL_BIG_BASE; borrow++; }
+        z1[i] = (uint32_t)cur;
+      }
+    }
+    /* r = z0 + z1<<half + z2<<(2*half) */
+    sl_big_addto(r, z0, z0len, 0);
+    sl_big_addto(r, z1, z1len, half);
+    sl_big_addto(r, z2, z2len, 2 * half);
+done:
+    free(z0); free(z2); free(sa); free(sb); free(z1);
+    return rc;
+}
+
+/* Trim trailing zero limbs; always report at least 1 limb. */
+static int sl_big_significant(const uint32_t* r, int n) {
+    while (n > 1 && r[n - 1] == 0) n--;
+    return n;
+}
+
 static SLResult run_thread(SLThread* t);
 static void* thread_trampoline(void* arg) { run_thread((SLThread*)arg); return NULL; }
 
@@ -923,7 +1241,13 @@ void slvm_joinall(SLVM* vm) {
 
 #define TERR(msg) do { strncpy(t->err, (msg), sizeof(t->err)-1); t->err[sizeof(t->err)-1]=0; set_err(vm,(msg)); return SLR_ERROR; } while (0)
 #define PUSH(v) do { if (t->sp >= STACK_MAX) TERR("stack overflow"); t->stack[t->sp++] = (v); } while (0)
-#define POP() (t->stack[--t->sp])
+/* POP() fails closed on underflow. The front-end bytecode compiler is supposed
+ * to keep the operand stack balanced, but a codegen defect (e.g. an opcode path
+ * that pops more than it pushes) must surface as a clean VM diagnostic, not an
+ * out-of-bounds read of stack[-1]. On underflow we record a sticky flag and
+ * return a null value; the per-instruction guard below converts that flag into
+ * a TERR("stack underflow") before the corrupt result can be used. */
+#define POP() (t->sp > 0 ? t->stack[--t->sp] : (t->underflow = 1, slval_null()))
 
 static SLResult run_thread(SLThread* t) {
     SLVM* vm = t->vm; int fi = t->entry_func;
@@ -934,10 +1258,19 @@ static SLResult run_thread(SLThread* t) {
         for (int i = 0; i < ef->nlocals; i++) PUSH(slval_null());
     }
     int ip = ef->entry;
+    t->underflow = 0;
     for (;;) {
+        if (t->underflow) TERR("stack underflow");
         if (ip < 0 || ip >= vm->codelen) TERR("ip out of range");
         SLInstr in = vm->code[ip++];
-        slvm_gc_safepoint(vm, t, 4);
+        /* Poll the GC safepoint once per stride rather than every instruction,
+         * so a tight loop (e.g. filling a million-element array) does not pay a
+         * thread-mutex per opcode. Allocation opcodes poll directly (see below),
+         * so large allocations are never deferred past the heap threshold. */
+        if (++t->safepoint_tick >= SL_GC_SAFEPOINT_STRIDE) {
+            t->safepoint_tick = 0;
+            slvm_gc_safepoint(vm, t, 4);
+        }
         switch (in.op) {
         case OP_NOP: break;
         case OP_HALT: return SLR_HALT;
@@ -986,11 +1319,12 @@ static SLResult run_thread(SLThread* t) {
         } break;
         case OP_CONST: PUSH(vm->consts[in.a]); break;
         case OP_POP: (void)POP(); break;
-        case OP_DUP: { SLValue dupv = t->stack[t->sp-1]; PUSH(dupv); } break;
+        case OP_DUP: { if (t->sp < 1) TERR("stack underflow"); SLValue dupv = t->stack[t->sp-1]; PUSH(dupv); } break;
+        case OP_DUP2: { if (t->sp < 2) TERR("stack underflow"); SLValue av = t->stack[t->sp-2], bv = t->stack[t->sp-1]; PUSH(av); PUSH(bv); } break;
         case OP_LOADG: { pthread_mutex_lock(&vm->global_mtx); SLValue v=vm->globals[in.a]; pthread_mutex_unlock(&vm->global_mtx); PUSH(v); } break;
         case OP_STOREG: { SLValue v=POP(); pthread_mutex_lock(&vm->global_mtx); vm->globals[in.a]=v; pthread_mutex_unlock(&vm->global_mtx); } break;
-        case OP_LOADL: { SLFrame* f=&t->frames[t->fp-1]; PUSH(t->stack[f->base+in.a]); } break;
-        case OP_STOREL: { SLFrame* f=&t->frames[t->fp-1]; t->stack[f->base+in.a]=POP(); } break;
+        case OP_LOADL: { SLFrame* f=&t->frames[t->fp-1]; int s=f->base+in.a; if(s<0||s>=STACK_MAX) TERR("local slot out of range"); PUSH(t->stack[s]); } break;
+        case OP_STOREL: { SLFrame* f=&t->frames[t->fp-1]; int s=f->base+in.a; if(s<0||s>=STACK_MAX) TERR("local slot out of range"); t->stack[s]=POP(); } break;
         case OP_ADD: {
             SLValue b=POP(), a=POP();
             if (a.type==SL_STR || b.type==SL_STR) {
@@ -1007,19 +1341,20 @@ static SLResult run_thread(SLThread* t) {
                 value_to_text(vm,b,sb,cap);
                 snprintf(buf,cap*2,"%s%s",sa,sb); SLValue r; r.type=SL_STR; r.as.s=intern(vm,buf); PUSH(r);
                 free(sa); free(sb); free(buf);
-            } else if (both_int(a,b)) PUSH(slval_int(a.as.i+b.as.i)); else PUSH(slval_double(as_num(a)+as_num(b)));
+            } else if (any_i128(a,b) && both_any_int(a,b)) PUSH(slval_int128(as_i128(a)+as_i128(b)));
+              else if (both_int(a,b)) PUSH(slval_int(a.as.i+b.as.i)); else PUSH(slval_double(as_num(a)+as_num(b)));
         } break;
-        case OP_SUB: { SLValue b=POP(),a=POP(); if(both_int(a,b)) PUSH(slval_int(a.as.i-b.as.i)); else PUSH(slval_double(as_num(a)-as_num(b))); } break;
-        case OP_MUL: { SLValue b=POP(),a=POP(); if(both_int(a,b)) PUSH(slval_int(a.as.i*b.as.i)); else PUSH(slval_double(as_num(a)*as_num(b))); } break;
-        case OP_DIV: { SLValue b=POP(),a=POP(); if(both_int(a,b)){if(!b.as.i) TERR("integer divide by zero"); PUSH(slval_int(a.as.i/b.as.i));} else PUSH(slval_double(as_num(a)/as_num(b))); } break;
-        case OP_MOD: { SLValue b=POP(),a=POP(); if(both_int(a,b)){ if(!b.as.i) TERR("integer modulo by zero"); PUSH(slval_int(a.as.i%b.as.i)); } else { double db=as_num(b); if(db==0.0) TERR("modulo by zero"); PUSH(slval_double(fmod(as_num(a),db))); } } break;
-        case OP_NEG: { SLValue a=POP(); if(a.type==SL_INT) PUSH(slval_int(-a.as.i)); else PUSH(slval_double(-as_num(a))); } break;
-        case OP_EQ: { SLValue b=POP(),a=POP(); int e; if(a.type==SL_STRUCT||b.type==SL_STRUCT) e=(a.type==SL_STRUCT&&b.type==SL_STRUCT&&a.as.h==b.as.h); else if(a.type==SL_ARRAY||b.type==SL_ARRAY) e=(a.type==SL_ARRAY&&b.type==SL_ARRAY&&a.as.h==b.as.h); else if(a.type==SL_STR&&b.type==SL_STR) e=(a.as.s==b.as.s); else e=(as_num(a)==as_num(b)); PUSH(slval_bool(e)); } break;
-        case OP_NE: { SLValue b=POP(),a=POP(); int e; if(a.type==SL_STRUCT||b.type==SL_STRUCT) e=!(a.type==SL_STRUCT&&b.type==SL_STRUCT&&a.as.h==b.as.h); else if(a.type==SL_ARRAY||b.type==SL_ARRAY) e=!(a.type==SL_ARRAY&&b.type==SL_ARRAY&&a.as.h==b.as.h); else if(a.type==SL_STR&&b.type==SL_STR) e=(a.as.s!=b.as.s); else e=(as_num(a)!=as_num(b)); PUSH(slval_bool(e)); } break;
-        case OP_LT: { SLValue b=POP(),a=POP(); PUSH(slval_bool(as_num(a)<as_num(b))); } break;
-        case OP_LE: { SLValue b=POP(),a=POP(); PUSH(slval_bool(as_num(a)<=as_num(b))); } break;
-        case OP_GT: { SLValue b=POP(),a=POP(); PUSH(slval_bool(as_num(a)>as_num(b))); } break;
-        case OP_GE: { SLValue b=POP(),a=POP(); PUSH(slval_bool(as_num(a)>=as_num(b))); } break;
+        case OP_SUB: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)) PUSH(slval_int128(as_i128(a)-as_i128(b))); else if(both_int(a,b)) PUSH(slval_int(a.as.i-b.as.i)); else PUSH(slval_double(as_num(a)-as_num(b))); } break;
+        case OP_MUL: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)) PUSH(slval_int128(as_i128(a)*as_i128(b))); else if(both_int(a,b)) PUSH(slval_int(a.as.i*b.as.i)); else PUSH(slval_double(as_num(a)*as_num(b))); } break;
+        case OP_DIV: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)){ if(as_i128(b)==0) TERR("integer divide by zero"); PUSH(slval_int128(as_i128(a)/as_i128(b))); } else if(both_int(a,b)){if(!b.as.i) TERR("integer divide by zero"); PUSH(slval_int(a.as.i/b.as.i));} else PUSH(slval_double(as_num(a)/as_num(b))); } break;
+        case OP_MOD: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)){ if(as_i128(b)==0) TERR("integer modulo by zero"); PUSH(slval_int128(as_i128(a)%as_i128(b))); } else if(both_int(a,b)){ if(!b.as.i) TERR("integer modulo by zero"); PUSH(slval_int(a.as.i%b.as.i)); } else { double db=as_num(b); if(db==0.0) TERR("modulo by zero"); PUSH(slval_double(fmod(as_num(a),db))); } } break;
+        case OP_NEG: { SLValue a=POP(); if(a.type==SL_INT128) PUSH(slval_int128(-a.as.i128)); else if(a.type==SL_INT) PUSH(slval_int(-a.as.i)); else PUSH(slval_double(-as_num(a))); } break;
+        case OP_EQ: { SLValue b=POP(),a=POP(); int e; if(a.type==SL_NULL||b.type==SL_NULL) e=(a.type==SL_NULL&&b.type==SL_NULL); else if(a.type==SL_STRUCT||b.type==SL_STRUCT) e=(a.type==SL_STRUCT&&b.type==SL_STRUCT&&a.as.h==b.as.h); else if(a.type==SL_ARRAY||b.type==SL_ARRAY) e=(a.type==SL_ARRAY&&b.type==SL_ARRAY&&a.as.h==b.as.h); else if(a.type==SL_STR&&b.type==SL_STR) e=(a.as.s==b.as.s); else if(any_i128(a,b)&&both_any_int(a,b)) e=(as_i128(a)==as_i128(b)); else e=(as_num(a)==as_num(b)); PUSH(slval_bool(e)); } break;
+        case OP_NE: { SLValue b=POP(),a=POP(); int e; if(a.type==SL_NULL||b.type==SL_NULL) e=!(a.type==SL_NULL&&b.type==SL_NULL); else if(a.type==SL_STRUCT||b.type==SL_STRUCT) e=!(a.type==SL_STRUCT&&b.type==SL_STRUCT&&a.as.h==b.as.h); else if(a.type==SL_ARRAY||b.type==SL_ARRAY) e=!(a.type==SL_ARRAY&&b.type==SL_ARRAY&&a.as.h==b.as.h); else if(a.type==SL_STR&&b.type==SL_STR) e=(a.as.s!=b.as.s); else if(any_i128(a,b)&&both_any_int(a,b)) e=(as_i128(a)!=as_i128(b)); else e=(as_num(a)!=as_num(b)); PUSH(slval_bool(e)); } break;
+        case OP_LT: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)) PUSH(slval_bool(as_i128(a)<as_i128(b))); else PUSH(slval_bool(as_num(a)<as_num(b))); } break;
+        case OP_LE: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)) PUSH(slval_bool(as_i128(a)<=as_i128(b))); else PUSH(slval_bool(as_num(a)<=as_num(b))); } break;
+        case OP_GT: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)) PUSH(slval_bool(as_i128(a)>as_i128(b))); else PUSH(slval_bool(as_num(a)>as_num(b))); } break;
+        case OP_GE: { SLValue b=POP(),a=POP(); if(any_i128(a,b)&&both_any_int(a,b)) PUSH(slval_bool(as_i128(a)>=as_i128(b))); else PUSH(slval_bool(as_num(a)>=as_num(b))); } break;
         case OP_AND: { SLValue b=POP(),a=POP(); PUSH(slval_bool(is_truthy(a)&&is_truthy(b))); } break;
         case OP_OR: { SLValue b=POP(),a=POP(); PUSH(slval_bool(is_truthy(a)||is_truthy(b))); } break;
         case OP_NOT: { SLValue a=POP(); PUSH(slval_bool(!is_truthy(a))); } break;
@@ -1028,7 +1363,8 @@ static SLResult run_thread(SLThread* t) {
         case OP_CALL: {
             int cfi=in.a; if(cfi<0||cfi>=vm->nfunc) TERR("call to unknown function");
             SLFunc* f=&vm->funcs[cfi]; if(t->fp>=FRAMES_MAX) TERR("call depth exceeded");
-            int base=t->sp-f->nargs; SLFrame* nf=&t->frames[t->fp++]; nf->ret_ip=ip; nf->base=base; nf->nargs=f->nargs;
+            int base=t->sp-f->nargs; if(base<0) TERR("call: not enough arguments on stack");
+            SLFrame* nf=&t->frames[t->fp++]; nf->ret_ip=ip; nf->base=base; nf->nargs=f->nargs;
             for(int i=f->nargs;i<f->nlocals;i++){ PUSH(slval_null()); } ip=f->entry;
         } break;
         case OP_RET: {
@@ -1132,6 +1468,34 @@ static SLResult run_thread(SLThread* t) {
         case OP_MUN_SEND: {
             SLValue dv=POP(), hv=POP(); if(hv.type!=SL_INT||dv.type!=SL_STR) TERR("Munction send(datum) requires a reach handle and a String datum");
             SLMunction* m=munction_get(vm,(int)hv.as.i); if(m){const char* d=slvm_str(vm,dv.as.s); slmunction_send(m,d,strlen(d));} PUSH(hv);
+        } break;
+        /* OP_SSEND: the ::: structural-offload send. Operands were emitted
+         * source-then-receiver, so the receiver reach handle is on top. The VM
+         * frames the String source element-by-element (one UTF-8 code point per
+         * frame) into the receiver via the existing Munction SDPS transport --
+         * the structural iteration/framing is performed HERE, not by a source
+         * for-loop. Pushes the SOURCE back so the same String can keep flowing
+         * to further receivers (`x ::: a ::: b` fans x out to a then b). */
+        case OP_SSEND: {
+            SLValue rv=POP(), sv=POP();
+            if(rv.type!=SL_INT||sv.type!=SL_STR) TERR("::: structural send requires a String source and a receiver reach handle");
+            SLMunction* m=munction_get(vm,(int)rv.as.i);
+            if(m){
+                const char* s=slvm_str(vm,sv.as.s);
+                size_t i=0;
+                while(s[i]!='\0'){
+                    /* one UTF-8 code point = one structural element/frame */
+                    unsigned char c0=(unsigned char)s[i];
+                    size_t clen=1;
+                    if(c0>=0xF0) clen=4; else if(c0>=0xE0) clen=3; else if(c0>=0xC0) clen=2;
+                    size_t j=0; char elem[8];
+                    while(j<clen && s[i+j]!='\0'){ elem[j]=s[i+j]; j++; }
+                    elem[j]='\0';
+                    slmunction_send(m,elem,j);
+                    i+=j;
+                }
+            }
+            PUSH(sv);
         } break;
         case OP_MUN_THATCH: {
             SLValue sv=POP(), hv=POP(); if(hv.type!=SL_INT||sv.type!=SL_STR) TERR("Munction thatch(interims) requires a reach handle and a String spec");
@@ -1248,6 +1612,161 @@ static SLResult run_thread(SLThread* t) {
         case OP_BEST_CLOSE: {
             SLValue hv=POP(); if(hv.type!=SL_INT) TERR("bestOfClose(handle) requires a handle");
             bestof_release(vm,(int)hv.as.i); PUSH(slval_null());
+        } break;
+
+        /* ---- Idea System(TM) realtime canvas (native-CPU render+physics) --- */
+        case OP_IC_CREATE: {
+            SLValue rowsv=POP(), colsv=POP();
+            if(colsv.type!=SL_INT||rowsv.type!=SL_INT) TERR("ideaCanvasCreate(cols, rows) requires two integers");
+            void* c=sl_idea_canvas_create((int)colsv.as.i,(int)rowsv.as.i);
+            if(!c){PUSH(slval_int(-1));break;}
+            int h=ic_alloc(vm,c); if(h<0){sl_idea_canvas_destroy(c);PUSH(slval_int(-1));break;}
+            PUSH(slval_int(h));
+        } break;
+        case OP_IC_DESTROY: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasDestroy(handle) requires a handle");
+            ic_release(vm,(int)hv.as.i); PUSH(slval_null());
+        } break;
+        case OP_IC_COLS: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasCols(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_cols(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_ROWS: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasRows(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_rows(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_COUNT: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasCount(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_count(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_SETPARAMS: {
+            SLValue kv=POP(), hbv=POP(), fgv=POP(), dcv=POP(), hv=POP();
+            if(hv.type!=SL_INT) TERR("ideaCanvasSetParams(handle, decay, flowGain, hueBase, coupling) requires a handle and four numbers");
+            double dc=(dcv.type==SL_DOUBLE)?dcv.as.d:(double)dcv.as.i;
+            double fg=(fgv.type==SL_DOUBLE)?fgv.as.d:(double)fgv.as.i;
+            double hb=(hbv.type==SL_DOUBLE)?hbv.as.d:(double)hbv.as.i;
+            double k =(kv.type==SL_DOUBLE)?kv.as.d:(double)kv.as.i;
+            sl_idea_canvas_set_params(ic_get(vm,(int)hv.as.i),dc,fg,hb,k); PUSH(hv);
+        } break;
+        case OP_IC_EXCITE: {
+            SLValue av=POP(), rv=POP(), cv=POP(), hv=POP();
+            if(hv.type!=SL_INT||cv.type!=SL_INT||rv.type!=SL_INT) TERR("ideaCanvasExcite(handle, col, row, amount) requires handle, col, row integers and an amount");
+            double amt=(av.type==SL_DOUBLE)?av.as.d:(double)av.as.i;
+            PUSH(slval_int(sl_idea_canvas_excite(ic_get(vm,(int)hv.as.i),(int)cv.as.i,(int)rv.as.i,amt)));
+        } break;
+        case OP_IC_STEP: {
+            SLValue dtv=POP(), hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasStep(handle, dt) requires a handle and dt");
+            double dt=(dtv.type==SL_DOUBLE)?dtv.as.d:(double)dtv.as.i;
+            PUSH(slval_int(sl_idea_canvas_step(ic_get(vm,(int)hv.as.i),dt)));
+        } break;
+        case OP_IC_ADVANCE: {
+            SLValue dtv=POP(), hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasAdvance(handle, frameDt) requires a handle and frameDt");
+            double dt=(dtv.type==SL_DOUBLE)?dtv.as.d:(double)dtv.as.i;
+            PUSH(slval_int(sl_idea_canvas_advance(ic_get(vm,(int)hv.as.i),dt)));
+        } break;
+        case OP_IC_TIMESTEP: {
+            PUSH(slval_double(sl_idea_canvas_timestep()));
+        } break;
+        case OP_IC_INTENSITY: {
+            SLValue rv=POP(), cv=POP(), hv=POP();
+            if(hv.type!=SL_INT||cv.type!=SL_INT||rv.type!=SL_INT) TERR("ideaCanvasIntensityAt(handle, col, row) requires three integers");
+            PUSH(slval_double(sl_idea_canvas_intensity_at(ic_get(vm,(int)hv.as.i),(int)cv.as.i,(int)rv.as.i)));
+        } break;
+        case OP_IC_HASREND: {
+            PUSH(slval_int(sl_idea_canvas_has_renderer()));
+        } break;
+        case OP_IC_OPENWIN: {
+            SLValue tv=POP(), hgt=POP(), wdt=POP(), hv=POP();
+            if(hv.type!=SL_INT||wdt.type!=SL_INT||hgt.type!=SL_INT||tv.type!=SL_STR) TERR("ideaCanvasOpenWindow(handle, width, height, title) requires handle, width, height ints and a title String");
+            PUSH(slval_int(sl_idea_canvas_open_window(ic_get(vm,(int)hv.as.i),(int)wdt.as.i,(int)hgt.as.i,slvm_str(vm,tv.as.s))));
+        } break;
+        case OP_IC_SHOULDCLOSE: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasShouldClose(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_should_close(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_PRESENT: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasPresent(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_present(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_RUN: {
+            SLValue tv=POP(), hgt=POP(), wdt=POP(), hv=POP();
+            if(hv.type!=SL_INT||wdt.type!=SL_INT||hgt.type!=SL_INT||tv.type!=SL_STR) TERR("ideaCanvasRun(handle, width, height, title) requires handle, width, height ints and a title String");
+            PUSH(slval_int(sl_idea_canvas_run(ic_get(vm,(int)hv.as.i),(int)wdt.as.i,(int)hgt.as.i,slvm_str(vm,tv.as.s))));
+        } break;
+        case OP_IC_SETPOLICY: {
+            SLValue pv=POP(), hv=POP();
+            if(hv.type!=SL_INT||pv.type!=SL_INT) TERR("ideaCanvasSetBackendPolicy(handle, policy) requires a handle and a policy int (0 auto,1 cpu,2 gpu)");
+            sl_idea_canvas_set_policy(ic_get(vm,(int)hv.as.i),(int)pv.as.i); PUSH(hv);
+        } break;
+        case OP_IC_POLICY: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasPolicy(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_policy(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_BACKEND: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasActiveBackend(handle) requires a handle");
+            PUSH(slval_int(sl_idea_canvas_active_backend(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_GPUAVAIL: {
+            PUSH(slval_int(sl_idea_canvas_gpu_available()));
+        } break;
+        case OP_IC_MEASHZ: {
+            SLValue hv=POP(); if(hv.type!=SL_INT) TERR("ideaCanvasMeasuredHz(handle) requires a handle");
+            PUSH(slval_double(sl_idea_canvas_measured_hz(ic_get(vm,(int)hv.as.i))));
+        } break;
+        case OP_IC_MIGRATE: {
+            SLValue tv=POP(), hv=POP();
+            if(hv.type!=SL_INT||tv.type!=SL_INT) TERR("ideaCanvasMigrate(handle, target) requires a handle and target int (0 cpu,1 gpu)");
+            PUSH(slval_int(sl_idea_canvas_migrate(ic_get(vm,(int)hv.as.i),(int)tv.as.i)));
+        } break;
+
+        /* ---- VM selection service (SLVmRegistry seam) ----------------- */
+        case OP_VM_SELECT: {
+            /* pops a VM version number. This is the service-exit seam a Sleela
+             * VM selector (virtual-machine/vm-version/SLVmRegistry) uses to ask
+             * the host to build+boot the chosen version. Valid range is 1..11:
+             * the ten standard think-tank versions (1..10) and the eleven
+             * premium SLVM generations (1..11, the broader range), each a real
+             * runnable VM under sleela-virtual-machine/0NN that links the shared
+             * Core engine. The core validates the request and pushes a status
+             * (0 ok, -1 out of range); the actual build+boot is a host action
+             * signalled by this opcode (an unknown opcode is never a no-op). */
+            SLValue nv=POP();
+            if(nv.type!=SL_INT) TERR("vmSelect(number) requires an int version number");
+            int sel=(int)nv.as.i;
+            PUSH(slval_int((sel>=1 && sel<=11) ? 0 : -1));
+        } break;
+
+        /* ---- Modium file-resolution scan (SLVmModium seam) ----------- */
+        case OP_MODIUM_SCAN: {
+            /* pops a VM version number (1..10). The service-exit seam the Sleela
+             * SLVmModium uses to ask the host to scan that version's files
+             * (exist/placed/intact per its MODIUM.json). The core validates the
+             * request and pushes a status (0 ok, -1 out of range); the actual
+             * file scan + reconstitution from rebuild.sql is a host action
+             * signalled by this opcode. */
+            SLValue mv=POP();
+            if(mv.type!=SL_INT) TERR("modiumScan(number) requires an int version number");
+            int msel=(int)mv.as.i;
+            PUSH(slval_int((msel>=1 && msel<=10) ? 0 : -1));
+        } break;
+
+        /* ---- SleelaUI bridge: ui* built-ins -> native toolkit --------- */
+        case OP_UI_CALL: {
+            int ui_id = in.a;
+            int ui_n = sleela_ui_arity(ui_id);
+            if (ui_n < 0 || ui_n > 6) TERR("ui call: bad arity");
+            SLUIArg ui_args[6];
+            /* Args were pushed left-to-right, so pop into reverse slots. */
+            for (int k = ui_n - 1; k >= 0; --k) {
+                SLValue v = POP();
+                if (v.type == SL_STR)       { ui_args[k].kind = SLUI_ARG_STR;    ui_args[k].s = slvm_str(vm, v.as.s); ui_args[k].i = 0; ui_args[k].d = 0; }
+                else if (v.type == SL_DOUBLE){ ui_args[k].kind = SLUI_ARG_DOUBLE; ui_args[k].d = v.as.d; ui_args[k].i = 0; ui_args[k].s = NULL; }
+                else                         { ui_args[k].kind = SLUI_ARG_INT;    ui_args[k].i = (long)v.as.i; ui_args[k].d = 0; ui_args[k].s = NULL; }
+            }
+            SLUIArg ui_r = sleela_ui_dispatch(ui_id, ui_args, ui_n);
+            if (ui_r.kind == SLUI_ARG_STR) { SLValue o; o.type = SL_STR; o.as.s = intern(vm, ui_r.s ? ui_r.s : ""); PUSH(o); }
+            else if (ui_r.kind == SLUI_ARG_DOUBLE) { PUSH(slval_double(ui_r.d)); }
+            else { PUSH(slval_int(ui_r.i)); }
         } break;
 
         /* ---- SLVM Audio bridge --------------------------------------- */
@@ -1383,6 +1902,8 @@ static SLResult run_thread(SLThread* t) {
 
         /* ---- struct support ------------------------------------------- */
         case OP_NEWSTRUCT: {
+            t->safepoint_tick = 0;
+            slvm_gc_safepoint(vm, t, 4);
             int h=struct_alloc(vm,in.a);
             if(h<0) TERR("struct instantiation failed (unknown type or store exhausted)");
             PUSH(slval_struct(h));
@@ -1404,8 +1925,8 @@ static SLResult run_thread(SLThread* t) {
             SLStructInstance* si=&vm->structs[iv.as.h];
             if(in.a<0||in.a>=vm->struct_types[si->type].nfields){pthread_mutex_unlock(&vm->struct_mtx);TERR("field offset out of range");}
             SLValue old = si->fields[in.a];
-            if (old.type == SL_STRUCT || val.type == SL_STRUCT)
-                gc_write_barrier(&vm->gc, si->gc_object, struct_gc_object(vm, old.as.h), struct_gc_object(vm, val.as.h));
+            if (old.type == SL_STRUCT || old.type == SL_ARRAY || val.type == SL_STRUCT || val.type == SL_ARRAY)
+                gc_write_barrier(&vm->gc, si->gc_object, gc_object_for_value(vm, old), gc_object_for_value(vm, val));
             si->fields[in.a]=val;
             pthread_mutex_unlock(&vm->struct_mtx);
             PUSH(val);
@@ -1432,10 +1953,89 @@ static SLResult run_thread(SLThread* t) {
             pthread_mutex_unlock(&vm->struct_mtx);
             PUSH(slval_struct(h));
         } break;
+        case OP_CHECKCAST: {
+            SLValue value=POP();
+            if(in.a>=0) {
+                if(value.type==SL_NULL) { PUSH(value); break; }
+                if(value.type!=SL_STRUCT || !struct_valid_handle(vm,value.as.h))
+                    TERR("checked cast failed: value is not a valid class/struct instance");
+                pthread_mutex_lock(&vm->struct_mtx);
+                int actualType=vm->structs[value.as.h].type;
+                int matches=struct_type_is_a(vm,actualType,in.a);
+                pthread_mutex_unlock(&vm->struct_mtx);
+                if(!matches) TERR("checked cast failed: runtime class/struct type does not match target");
+            } else {
+                int targetTag=-in.a-1;
+                if(targetTag<SL_NULL || targetTag>SL_INT128)
+                    TERR("invalid checked-cast type descriptor");
+                if(value.type==SL_NULL && (targetTag==SL_STR || targetTag==SL_ARRAY)) {
+                    PUSH(value); break;
+                }
+                /* int128 casts widen an integer to the 128-bit representation
+                 * (this is how `(int128)x` and int128-typed storage produce a
+                 * real 128-bit value), and allow the reverse narrowing. */
+                if(targetTag==SL_INT128 && (value.type==SL_INT||value.type==SL_INT128)) {
+                    PUSH(slval_int128(as_i128(value))); break;
+                }
+                if(targetTag==SL_INT && value.type==SL_INT128) {
+                    PUSH(slval_int((int64_t)value.as.i128)); break;
+                }
+                /* Java-style narrowing from double to an integer: `(int)d`
+                 * truncates toward zero (C's double->int64_t conversion has the
+                 * same rule). Without this a cast of a double to an int target
+                 * -- e.g. `(int) uiWidgetGetValue(slider)` feeding an int param,
+                 * or any `int n = (int) someDouble;` -- fell through to the
+                 * fail-closed tag check below and aborted with "runtime value
+                 * tag does not match target", even though double->int is a
+                 * well-defined narrowing. Mirror the int128 narrowing above. */
+                if(targetTag==SL_INT && value.type==SL_DOUBLE) {
+                    PUSH(slval_int((int64_t)value.as.d)); break;
+                }
+                if(targetTag==SL_INT128 && value.type==SL_DOUBLE) {
+                    PUSH(slval_int128((sl_int128_t)value.as.d)); break;
+                }
+                /* Java-style widening to double: an integer stored into, cast
+                 * to, or passed as a double becomes a double (so `double d = 3;`
+                 * then `d / 2` is 1.5, not integer 1). An already-double value
+                 * passes through; any other value (null etc.) is passed through
+                 * unchanged so a compiler-inserted double coercion can be applied
+                 * unconditionally at a double-typed store without regressing
+                 * non-numeric cases. */
+                if(targetTag==SL_DOUBLE) {
+                    if(value.type==SL_INT||value.type==SL_INT128) PUSH(slval_double(as_num(value)));
+                    else PUSH(value);
+                    break;
+                }
+                if((int)value.type!=targetTag)
+                    TERR("checked cast failed: runtime value tag does not match target");
+            }
+            PUSH(value);
+        } break;
+        case OP_INSTANCEOF: {
+            SLValue value=POP();
+            int matches=0;
+            if(in.a>=0) {
+                if(value.type==SL_STRUCT && struct_valid_handle(vm,value.as.h)) {
+                    pthread_mutex_lock(&vm->struct_mtx);
+                    matches=struct_type_is_a(vm,vm->structs[value.as.h].type,in.a);
+                    pthread_mutex_unlock(&vm->struct_mtx);
+                }
+            } else {
+                int targetTag=-in.a-1;
+                if(targetTag<SL_NULL || targetTag>SL_INT128)
+                    TERR("invalid instanceof type descriptor");
+                matches=((int)value.type==targetTag);
+            }
+            PUSH(slval_bool(matches));
+        } break;
         /* ---- arrays: dynamic, zero-indexed SLValue sequences ------------ */
         case OP_NEWARRAY: {
             SLValue nv=POP();
             if(nv.type!=SL_INT) TERR("array size must be an integer");
+            /* Allocation opcode: poll the GC directly so a burst of large
+             * allocations within one safepoint stride cannot outrun collection. */
+            t->safepoint_tick = 0;
+            slvm_gc_safepoint(vm, t, 4);
             int h=array_alloc(vm,(int)nv.as.i);
             if(h<0) TERR("array allocation failed (negative/too-large size or store exhausted)");
             PUSH(slval_array(h));
@@ -1579,6 +2179,123 @@ static SLResult run_thread(SLThread* t) {
             SLOSProcess p=os_proc_take(vm,(int)hv.as.i);
             if(p!=SLOS_INVALID_PROCESS) slos_release(p);
             PUSH(slval_null());
+        } break;
+
+        /* ---- OSLS typed native registry (append-only opcode 155) ---- */
+        case OP_OSLS_CALL: {
+            const osls_vm_binding *binding = osls_vm_binding_by_id(in.a);
+            osls_vm_value args[2];
+            osls_vm_result result;
+            size_t arg_count, i;
+            char *json;
+            int written;
+            if (!binding || !binding->invoke)
+                TERR("OSLS native symbol is not registered");
+            arg_count = binding->argument_count;
+            if (arg_count > sizeof(args) / sizeof(args[0]))
+                TERR("OSLS binding signature exceeds the VM marshalling limit");
+            for (i = arg_count; i > 0; --i) {
+                SLValue value = POP();
+                osls_vm_arg_type expected = binding->argument_types[i - 1];
+                if (expected == OSLS_VM_ARG_UTF8) {
+                    if (value.type != SL_STR)
+                        TERR("OSLS binding argument type mismatch: expected String");
+                    args[i - 1].type = OSLS_VM_ARG_UTF8;
+                    args[i - 1].value.utf8 = slvm_str(vm, value.as.s);
+                } else if (expected == OSLS_VM_ARG_I64) {
+                    if (value.type != SL_INT)
+                        TERR("OSLS binding argument type mismatch: expected integer");
+                    args[i - 1].type = OSLS_VM_ARG_I64;
+                    args[i - 1].value.i64 = value.as.i;
+                } else {
+                    TERR("OSLS binding contains an unsupported argument type");
+                }
+            }
+            json = (char *)malloc(65536);
+            if (!json) TERR("OSLS binding could not allocate its result buffer");
+            written = osls_vm_call_authorized(in.a, args, arg_count,
+                                               vm->osls_capabilities,
+                                               json, 65536, &result);
+            if (written < 0 || result.type != OSLS_VM_RESULT_JSON_UTF8 ||
+                result.utf8 != json || result.length != (size_t)written) {
+                free(json);
+                TERR("OSLS native invocation, capability check, or result marshalling failed");
+            }
+            {
+                SLValue out;
+                out.type = SL_STR;
+                out.as.s = intern(vm, result.utf8);
+                free(json);
+                PUSH(out);
+            }
+        } break;
+
+        case OP_BIGMUL: {
+            /* Pops result, b, a (result on top). Each is an int[] of base-1e9
+             * little-endian limbs. Multiplies a * b with the native Karatsuba
+             * kernel and writes the product into the result array (which must
+             * hold at least len(a)+len(b) limbs). Pushes the significant limb
+             * count of the product. */
+            SLValue rv = POP(), bv = POP(), av = POP();
+            if (av.type != SL_ARRAY || !array_valid_handle(vm, av.as.h) ||
+                bv.type != SL_ARRAY || !array_valid_handle(vm, bv.as.h) ||
+                rv.type != SL_ARRAY || !array_valid_handle(vm, rv.as.h))
+                TERR("bigmul requires three int[] array handles (a, b, result)");
+            uint32_t *abuf = NULL, *bbuf = NULL, *rbuf = NULL;
+            int na = 0, nb = 0, nr = 0, sig = 0, ok = 1;
+            pthread_mutex_lock(&vm->array_mtx);
+            {
+                SLArrayInstance *aa = &vm->arrays[av.as.h];
+                SLArrayInstance *ab = &vm->arrays[bv.as.h];
+                SLArrayInstance *ar = &vm->arrays[rv.as.h];
+                na = aa->len; nb = ab->len; nr = ar->len;
+                if (na < 1 || nb < 1) { ok = 0; }
+                else if (nr < na + nb) { ok = 2; }   /* result too small */
+                else {
+                    abuf = (uint32_t*)malloc((size_t)na * sizeof(uint32_t));
+                    bbuf = (uint32_t*)malloc((size_t)nb * sizeof(uint32_t));
+                    rbuf = (uint32_t*)calloc((size_t)(na + nb), sizeof(uint32_t));
+                    if (!abuf || !bbuf || !rbuf) { ok = 3; }
+                    else {
+                        for (int i = 0; i < na; i++) {
+                            SLValue e = aa->elems[i];
+                            int64_t x = (e.type == SL_INT) ? e.as.i :
+                                        (e.type == SL_INT128) ? (int64_t)e.as.i128 : 0;
+                            if (e.type != SL_INT && e.type != SL_INT128) ok = 4;
+                            if (x < 0 || x >= (int64_t)SL_BIG_BASE) ok = 5;
+                            abuf[i] = (x >= 0 && x < (int64_t)SL_BIG_BASE) ? (uint32_t)x : 0;
+                        }
+                        for (int i = 0; i < nb; i++) {
+                            SLValue e = ab->elems[i];
+                            int64_t x = (e.type == SL_INT) ? e.as.i :
+                                        (e.type == SL_INT128) ? (int64_t)e.as.i128 : 0;
+                            if (e.type != SL_INT && e.type != SL_INT128) ok = 4;
+                            if (x < 0 || x >= (int64_t)SL_BIG_BASE) ok = 5;
+                            bbuf[i] = (x >= 0 && x < (int64_t)SL_BIG_BASE) ? (uint32_t)x : 0;
+                        }
+                    }
+                }
+            }
+            pthread_mutex_unlock(&vm->array_mtx);
+            if (ok == 0) { free(abuf); free(bbuf); free(rbuf); TERR("bigmul operands must each have at least one limb"); }
+            if (ok == 2) { free(abuf); free(bbuf); free(rbuf); TERR("bigmul result array is too small (need len(a)+len(b) limbs)"); }
+            if (ok == 3) { free(abuf); free(bbuf); free(rbuf); TERR("bigmul could not allocate its limb buffers"); }
+            if (ok == 4) { free(abuf); free(bbuf); free(rbuf); TERR("bigmul limbs must be integers"); }
+            if (ok == 5) { free(abuf); free(bbuf); free(rbuf); TERR("bigmul limbs must be in [0, 1000000000)"); }
+            if (sl_bigmul_kara(abuf, na, bbuf, nb, rbuf) != 0) {
+                free(abuf); free(bbuf); free(rbuf);
+                TERR("bigmul native kernel ran out of memory");
+            }
+            sig = sl_big_significant(rbuf, na + nb);
+            pthread_mutex_lock(&vm->array_mtx);
+            {
+                SLArrayInstance *ar = &vm->arrays[rv.as.h];
+                int wn = (na + nb <= ar->len) ? (na + nb) : ar->len;
+                for (int i = 0; i < wn; i++) { ar->elems[i].type = SL_INT; ar->elems[i].as.i = (int64_t)rbuf[i]; }
+            }
+            pthread_mutex_unlock(&vm->array_mtx);
+            free(abuf); free(bbuf); free(rbuf);
+            PUSH(slval_int(sig));
         } break;
 
         default: log_unsupported_opcode(vm, in.op); TERR("unsupported opcode");
