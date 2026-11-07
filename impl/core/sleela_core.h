@@ -9,16 +9,28 @@
 #define SLEELA_VM_ABI_MINOR 1u
 #define SLEELA_ARTIFACT_FORMAT_VERSION 2u
 #include <stdint.h>
+#include "../../os-level-support/osls_vm_bridge.h"
 #include <stddef.h>
 #include "../../runtime/garbage_collector.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef enum { SL_NULL = 0, SL_INT, SL_DOUBLE, SL_BOOL, SL_STR, SL_STRUCT, SL_ARRAY } SLType;
+/* SL_INT128 is appended LAST so the pre-existing tag numbers are unchanged
+ * (bytecode/const-pool compatibility). It carries a true 128-bit signed value
+ * in the i128 union member where the toolchain provides __int128 (GCC/Clang);
+ * otherwise it degrades to the 64-bit path (see SLEELA_HAVE_INT128). */
+typedef enum { SL_NULL = 0, SL_INT, SL_DOUBLE, SL_BOOL, SL_STR, SL_STRUCT, SL_ARRAY, SL_INT128 } SLType;
+#if defined(__SIZEOF_INT128__)
+#  define SLEELA_HAVE_INT128 1
+typedef __int128 sl_int128_t;
+#else
+#  define SLEELA_HAVE_INT128 0
+typedef int64_t sl_int128_t; /* graceful fallback: 64-bit backing */
+#endif
 /* SL_STRUCT is a VM-local handle (index into the struct-instance store), the
  * same bounded-handle discipline used for sockets/files/threads. Sleela code
  * never sees a raw pointer; a struct value carries only its instance handle. */
-typedef struct { SLType type; union { int64_t i; double d; int b; int32_t s; int32_t h; } as; } SLValue;
+typedef struct { SLType type; union { int64_t i; double d; int b; int32_t s; int32_t h; sl_int128_t i128; } as; } SLValue;
 typedef enum {
     OP_NOP = 0, OP_CONST, OP_POP, OP_DUP, OP_LOADG, OP_STOREG, OP_LOADL, OP_STOREL,
     OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_NEG,
@@ -129,8 +141,145 @@ typedef enum {
      * (mem, gc, ...) stay free for class/variable names. `ran::mem` reads the
      * current live system memory in bytes as an int. Appended at the end of the
      * enum so existing serialized-artifact opcode numbers are unchanged. */
-    OP_RAN_MEM        /* pushes current live system memory in bytes (int)           */
+    OP_RAN_MEM,       /* pushes current live system memory in bytes (int)           */
+    /* Idea System(TM) realtime canvas (idea/realtime). The native-CPU
+     * rendering + physics module the VM can drive where it lacks it natively.
+     * A canvas is a VM-local handle into a bounded table. Appended at the end
+     * so existing serialized-artifact opcode numbers are unchanged. */
+    OP_IC_CREATE,     /* pops rows,cols; pushes canvas handle (-1 on failure)        */
+    OP_IC_DESTROY,    /* pops handle; releases the canvas; pushes null               */
+    OP_IC_COLS,       /* pops handle; pushes columns int                             */
+    OP_IC_ROWS,       /* pops handle; pushes rows int                                */
+    OP_IC_COUNT,      /* pops handle; pushes vertex count int                        */
+    OP_IC_SETPARAMS,  /* pops coupling,hueBase,flowGain,decay,handle; pushes handle  */
+    OP_IC_EXCITE,     /* pops amount,row,col,handle; pushes status int               */
+    OP_IC_STEP,       /* pops dt,handle; advances one step on native CPU; status int */
+    OP_IC_ADVANCE,    /* pops frameDt,handle; drains fixed steps; pushes step count  */
+    OP_IC_TIMESTEP,   /* pushes the fixed timestep seconds (double)                  */
+    OP_IC_INTENSITY,  /* pops row,col,handle; pushes intensity double                */
+    OP_IC_HASREND,    /* pushes 1 if the GL render layer is present, else 0          */
+    OP_IC_OPENWIN,    /* pops title,height,width,handle; pushes status int           */
+    OP_IC_SHOULDCLOSE,/* pops handle; pushes 1/0                                     */
+    OP_IC_PRESENT,    /* pops handle; presents one frame; pushes status int          */
+    OP_IC_RUN,        /* pops title,height,width,handle; runs loop; pushes status int*/
+    /* Backend selection + auto GPU offload (CPU<->GPU). */
+    OP_IC_SETPOLICY,  /* pops policy,handle; pushes handle (0 auto,1 cpu,2 gpu)      */
+    OP_IC_POLICY,     /* pops handle; pushes current policy int                      */
+    OP_IC_BACKEND,    /* pops handle; pushes active backend int (0 cpu,1 gpu)        */
+    OP_IC_GPUAVAIL,   /* pushes 1 if a GPU backend is available, else 0              */
+    OP_IC_MEASHZ,     /* pops handle; pushes measured sustained steps/sec (double)   */
+    OP_IC_MIGRATE     /* pops target,handle; migrates CPU<->GPU; pushes status int   */
+    ,
+    OP_VM_SELECT      /* pops vmNumber; selects+boots a registered VM version; pushes status */
+    ,
+    OP_MODIUM_SCAN    /* pops vmNumber; scans that VM version's files for resolution; pushes status */
+    ,
+    /* SleelaUI bridge: a = ui* function id (see sleela_ui_ids.h). Pops that
+     * function's arguments (arity from sleela_ui_arity) left-to-right and
+     * pushes its result, routing to the SleelaUI C ABI (real host window). */
+    OP_UI_CALL
+    ,
+    /* Structural-offload send (the ::: operator). Pops a receiver reach handle
+     * and a String source; the VM performs a structured, element-by-element
+     * transfer of the source's data into the receiver (framing/iteration done
+     * here, not by a source for-loop), then pushes the receiver handle so a
+     * ::: chain stays fluent. Models OP_MUN_SEND but frames each element as its
+     * own datum via the Munction transport. */
+    OP_SSEND
+    ,
+    /* Runtime type safety for Any values. Operand a is a nonnegative VM
+     * struct-type index, or -(SLType+1) for a primitive/String/array tag. */
+    OP_CHECKCAST,     /* pops value; checked conversion; pushes the same value */
+    OP_INSTANCEOF     /* pops value; pushes bool for the requested runtime type */
+    ,
+    /* Duplicate the top TWO stack entries: [.. a b] -> [.. a b a b]. Lets a
+     * compound array/element assignment reuse an already-evaluated (array,
+     * index) pair for the read-modify-write without re-evaluating either
+     * sub-expression (which would run side effects like a[i++] += 1 twice).
+     * Added at the end of the enum so existing opcode numbers are unchanged. */
+    OP_DUP2,
+    /* OSLS native ABI bridge. Operand a selects a typed, registered OSLS binding. */
+    OP_OSLS_CALL,
+    /* Native big-integer multiply over base-1e9 limb arrays. Pops three int[]
+     * array handles: result, then b, then a (so the stack order pushed is
+     * a, b, result). Each is a flat little-endian base-1,000,000,000 limb
+     * array (element 0 is least significant). The VM multiplies a * b with a
+     * native C kernel (Karatsuba above a threshold, schoolbook below) directly
+     * over the raw limb buffers -- one opcode, no per-limb bytecode loop -- and
+     * writes the product limbs into the result array (which must be at least
+     * len(a)+len(b) long). Pushes the int count of significant result limbs.
+     * This is the VM bridge SLBigInteger was designed to call. */
+    OP_BIGMUL,
+    /* Block the current thread for a number of MILLISECONDS popped from the
+     * stack (an integer). 0 or negative is a no-op. Pushes nothing. Backs the
+     * sleep(ms) builtin and the per-iteration delay of the @loopDelay /
+     * @loopBudget loop-timing annotations. Append-only; see OP__COUNT note. */
+    OP_SLEEP,
+    /* Native big-integer add over base-1e9 limb arrays. Pops three int[] handles
+     * (a, b, result; result on top). Computes a + b limb-wise with carry over
+     * the raw buffers in one opcode and writes the sum into result (which must
+     * be at least max(len(a),len(b))+1 long). Pushes the significant result-limb
+     * count. Companion to OP_BIGMUL. */
+    OP_BIGADD,
+    /* Native big-integer divide/remainder of a limb array by a SMALL integer
+     * divisor (1..1e9-1). Pops: result int[], then the int divisor, then the
+     * dividend int[] (dividend deepest). Computes quotient = dividend / divisor
+     * limb-wise (most-significant-first long division in base 1e9), writes the
+     * quotient limbs into result (same length as dividend suffices), and pushes
+     * the integer REMAINDER (0..divisor-1). This small-divisor form is what
+     * base conversion and the Chudnovsky final scaling need. */
+    OP_BIGDIVMOD,
+    /* Native big-integer subtract over base-1e9 limb arrays. Pops result, b, a
+     * (result on top); computes a - b assuming a >= b, writes the difference
+     * into result (needs len(a) limbs), pushes the significant result-limb
+     * count. The binary-splitting Chudnovsky recursion needs this. */
+    OP_BIGSUB,
+    /* Native big-integer divide of one big by another big. Pops: remOut int[],
+     * then quoOut int[], then den int[], then num int[] (num deepest). Writes
+     * quotient into quoOut (needs len(num) limbs) and remainder into remOut
+     * (needs len(den) limbs); pushes the significant quotient-limb count. This
+     * is the single large final division Chudnovsky's scaling needs. */
+    OP_BIGDIV,
+    /* Native big-integer floor square root over base-1e9 limbs. Pops result,
+     * a (result on top); writes floor(sqrt(a)) into result (needs
+     * (len(a)+1)/2 + 1 limbs), pushes the significant result-limb count. Used
+     * for sqrt(10005) in the Chudnovsky constant. */
+    OP_BIGISQRT,
+    /* Sentinel: one past the last real opcode. Artifact validation uses this so
+     * every defined opcode is accepted and adding a new opcode above never
+     * requires updating the validator's upper bound again. KEEP LAST. */
+    OP__COUNT
 } SLOp;
+
+#if defined(__cplusplus)
+static_assert(OP_OS_PLATFORM == 103, "legacy OS opcode range must begin at 103");
+static_assert(OP_OS_PCLOSE == 123, "legacy OS opcode range must end at 123");
+static_assert(OP_GC_HINT == 124, "legacy opcode 124 must remain OP_GC_HINT");
+static_assert(OP_DUP2 == 154, "the pre-OSLS ISA must remain 155 opcodes (0..154)");
+static_assert(OP_OSLS_CALL == 155, "OSLS must be the first append-only opcode");
+static_assert(OP_BIGMUL == 156, "OP_BIGMUL is append-only opcode 156");
+static_assert(OP_SLEEP == 157, "OP_SLEEP is append-only opcode 157");
+static_assert(OP_BIGADD == 158, "OP_BIGADD is append-only opcode 158");
+static_assert(OP_BIGDIVMOD == 159, "OP_BIGDIVMOD is append-only opcode 159");
+static_assert(OP_BIGSUB == 160, "OP_BIGSUB is append-only opcode 160");
+static_assert(OP_BIGDIV == 161, "OP_BIGDIV is append-only opcode 161");
+static_assert(OP_BIGISQRT == 162, "OP_BIGISQRT is append-only opcode 162");
+static_assert(OP__COUNT == 163, "the extended ISA must contain 163 opcodes");
+#else
+_Static_assert(OP_OS_PLATFORM == 103, "legacy OS opcode range must begin at 103");
+_Static_assert(OP_OS_PCLOSE == 123, "legacy OS opcode range must end at 123");
+_Static_assert(OP_GC_HINT == 124, "legacy opcode 124 must remain OP_GC_HINT");
+_Static_assert(OP_DUP2 == 154, "the pre-OSLS ISA must remain 155 opcodes (0..154)");
+_Static_assert(OP_OSLS_CALL == 155, "OSLS must be the first append-only opcode");
+_Static_assert(OP_BIGMUL == 156, "OP_BIGMUL is append-only opcode 156");
+_Static_assert(OP_SLEEP == 157, "OP_SLEEP is append-only opcode 157");
+_Static_assert(OP_BIGADD == 158, "OP_BIGADD is append-only opcode 158");
+_Static_assert(OP_BIGDIVMOD == 159, "OP_BIGDIVMOD is append-only opcode 159");
+_Static_assert(OP_BIGSUB == 160, "OP_BIGSUB is append-only opcode 160");
+_Static_assert(OP_BIGDIV == 161, "OP_BIGDIV is append-only opcode 161");
+_Static_assert(OP_BIGISQRT == 162, "OP_BIGISQRT is append-only opcode 162");
+_Static_assert(OP__COUNT == 163, "the extended ISA must contain 163 opcodes");
+#endif
 /* GC-hint aggressiveness bands for OP_GC_HINT (operand a). */
 #define SL_GC_HINT_MAX  100   /* clamp ceiling for the 0..100 aggressiveness scale */
 #define SL_GC_HINT_FULL 100   /* at this level the hint requests a full collection */
@@ -155,12 +304,31 @@ typedef enum {
 #define SL_MAX_LOCKS 32
 #define SL_MAX_SOCKETS 128
 #define SL_MAX_FILES 256
-#define SL_MAX_STRUCT_TYPES 256   /* distinct struct declarations per program  */
+/* Distinct struct/class layouts per program. The table starts small
+ * (SL_STRUCT_TYPES_INIT) and grows in base-2 steps -- 256 -> 512 -> 1024 ->
+ * 2048 -> 4096 -> ... -> 32768 -> 65536 -- on demand, so a small program keeps
+ * a small VM footprint while a large one (e.g. a rich GUI resolved against a
+ * very large /lib, whose transitive class closure easily passes the old fixed
+ * 256) still compiles. SL_MAX_STRUCT_TYPES is the HARD ceiling (fail-closed);
+ * a program that needs more than 65,536 distinct layouts is rejected cleanly. */
+#define SL_STRUCT_TYPES_INIT 256   /* initial layout-table capacity             */
+#define SL_MAX_STRUCT_TYPES 65536  /* hard ceiling on distinct layouts          */
 #define SL_MAX_STRUCT_FIELDS 64   /* named fields per struct type              */
 #define SL_MAX_STRUCTS 4096       /* live struct instances per VM              */
 #define SL_MAX_STRTEXT 65536      /* max bytes for a built/concatenated String */
 #define SL_MAX_ARRAYS 4096        /* live array instances per VM               */
-#define SL_MAX_ARRAY_LEN 1048576  /* maximum elements in a single array        */
+/* Maximum elements in a single array. Raised 2^20 -> 2^24 -> 2^25 so a single
+ * flat array can hold the state a multi-million-digit computation needs -- e.g.
+ * the Rabinowitz-Wagon Pi spigot uses floor(10*digits/3)+1 cells, so 7,000,000
+ * decimal digits need ~23,333,334 cells, which fits under 2^25 (33,554,432) but
+ * not under the old 2^24. Big-integer limb arrays benefit too (a 10,000,000-
+ * digit value is ~1,111,112 base-1e9 limbs; its product ~2,222,223). Each
+ * element is a boxed SLValue (32 bytes), so one full 33,554,432-element array
+ * is ~1 GiB; the GC byte limit (runtime/garbage_collector.c, default raised to
+ * 1 GiB, overridable via SLEELA_GC_LIMIT_BYTES) and the optional memory manager
+ * (SLEELA_MEMORY_MANAGER, up to 2 GiB) together bound how much can be live at
+ * once -- both fail closed on exhaustion. */
+#define SL_MAX_ARRAY_LEN 33554432 /* maximum elements in a single array (2^25)  */
 typedef enum { SLR_OK = 0, SLR_ERROR, SLR_HALT } SLResult;
 typedef struct SLVM SLVM;
 typedef int (*SLAudioNativeRenderFn)(
@@ -178,6 +346,9 @@ SLVM* slvm_new(void);
 /* True when Sleela source values use the bounded VM-owned memory/handle model. */
 int slvm_memory_safe_mode(const SLVM* vm);
 void slvm_set_audio_native_renderer(SLVM* vm, SLAudioNativeRenderFn fn, void* user);
+/* Set the host capabilities available to OSLS bindings before execution.
+ * The default is read-only host inspection; pass 0 to deny OSLS access. */
+int slvm_set_osls_capabilities(SLVM* vm, uint64_t capabilities);
 void slvm_free(SLVM* vm);
 SLResult slcore_exchange(SLVM* vm, SLExchangeOp op, SLExchangeArg* arg);
 int slvm_add_const_int(SLVM* vm, int64_t v);
@@ -189,6 +360,7 @@ int slvm_declare_global(SLVM* vm, const char* name);
  * used by OP_NEWSTRUCT / OP_STRUCTUNPACK, or -1 on error. Field order defines
  * the offsets used by OP_GETFIELD / OP_SETFIELD. */
 int slvm_declare_struct(SLVM* vm, const char* name, const char* const* field_names, int nfields);
+int slvm_set_struct_parent(SLVM* vm, int type_index, int parent_type_index);
 int slvm_begin_func(SLVM* vm, const char* name, int nargs, int nlocals);
 void slvm_end_func(SLVM* vm);
 int slvm_emit(SLVM* vm, SLOp op, int32_t a);
@@ -201,6 +373,7 @@ SLValue slvm_result(SLVM* vm);
 void slvm_joinall(SLVM* vm);
 SLValue slval_null(void);
 SLValue slval_int(int64_t v);
+SLValue slval_int128(sl_int128_t v);
 SLValue slval_double(double v);
 SLValue slval_bool(int v);
 const char* slvm_str(SLVM* vm, int32_t id);

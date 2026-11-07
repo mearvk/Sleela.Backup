@@ -1,0 +1,184 @@
+<< stanford-math/SMPhysicsCanon.sleela
+   SLeeLa Standard Library Definition.
+   Definition: The canon of foundational physics equations spanning classical
+   mechanics, electromagnetism, relativity, and quantum theory. Each entry
+   records a real name, symbolic form, discoverer, and year faithful to the
+   public record. >>
+#sleela 2.1
+< Executive+ class: a standards/products artifact, full metadata record. >
+class SMPhysicsCanon {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 9220;
+  String metaAuthor = "the physical public record";
+  String metaDate = "2026-10-25";
+  String metaCopyright = "results in the public domain / peer-reviewed record";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-25";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 10;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < ---- Scientific record (purpose / method / gains / bedrock) ---- >
+  << Spec-sanctioned extension (SLEELA.syntax §15: ordinary fields + accessors):
+     what the canon is for, the method it follows, what its editors gain, and
+     the bedrock it rests on. See SMProvenance for the literature callouts. >>
+  String metaPurpose = "A curated index of foundational physics equations and their rightful discoverers.";
+  String metaScientificMethod = "Tertiary cataloguing: record empirically-grounded, published laws; originate nothing.";
+  String metaAuthorialGains = "Editorial credit for the catalogue only; the physical laws belong to the public scientific record.";
+  String metaBedrock = "The experimental and peer-reviewed physics record (see SMProvenance).";
+  String metaIntegrityGoal = "Record each great law as experiment and history confirm it -- credit the discoverer, claim nothing.";
+  String getPurpose() { return metaPurpose; }
+  void setPurpose(String v) { metaPurpose = v; }
+  String getScientificMethod() { return metaScientificMethod; }
+  void setScientificMethod(String v) { metaScientificMethod = v; }
+  String getAuthorialGains() { return metaAuthorialGains; }
+  void setAuthorialGains(String v) { metaAuthorialGains = v; }
+  String getBedrock() { return metaBedrock; }
+  void setBedrock(String v) { metaBedrock = v; }
+  String getIntegrityGoal() { return metaIntegrityGoal; }
+  void setIntegrityGoal(String v) { metaIntegrityGoal = v; }
+
+  < ---- The physics canon (public record) ---- >
+  SMEquation[] eqs;
+  int filled;
+
+  void build() {
+    eqs = new SMEquation[100];
+    filled = 0;
+
+    add("Newton's second law", "F = m*a  (F = dp/dt)", "classical mechanics", "Isaac Newton", "1687");
+    add("Newton's law of gravitation", "F = G m1 m2 / r^2", "classical mechanics", "Isaac Newton", "1687");
+    add("Work-energy / kinetic energy", "KE = (1/2) m v^2", "classical mechanics", "classical (Leibniz, Coriolis)", "1829");
+    add("Conservation of momentum", "sum p_i = constant (closed system)", "classical mechanics", "Newton; Descartes", "1687");
+    add("Hooke's law", "F = -k x", "classical mechanics", "Robert Hooke", "1678");
+    add("Lagrangian equation of motion", "d/dt (dL/d qdot) - dL/dq = 0", "analytical mechanics", "Joseph-Louis Lagrange", "1788");
+    add("Hamilton's equations", "qdot = dH/dp,  pdot = -dH/dq", "analytical mechanics", "William Rowan Hamilton", "1833");
+    add("Universal gravitation potential", "U = -G m1 m2 / r", "classical mechanics", "Isaac Newton", "1687");
+    add("Coulomb's law", "F = k_e q1 q2 / r^2", "electromagnetism", "Charles-Augustin de Coulomb", "1785");
+    add("Gauss's law (electric)", "div E = rho / epsilon0", "electromagnetism", "Carl Friedrich Gauss / Maxwell", "1835");
+    add("Gauss's law (magnetic)", "div B = 0", "electromagnetism", "James Clerk Maxwell", "1865");
+    add("Faraday's law of induction", "curl E = -dB/dt", "electromagnetism", "Michael Faraday / Maxwell", "1831");
+    add("Ampere-Maxwell law", "curl B = mu0 J + mu0 epsilon0 dE/dt", "electromagnetism", "Ampere / James Clerk Maxwell", "1865");
+    add("Lorentz force", "F = q(E + v x B)", "electromagnetism", "Hendrik Lorentz", "1895");
+    add("Electromagnetic wave speed", "c = 1 / sqrt(mu0 epsilon0)", "electromagnetism", "James Clerk Maxwell", "1865");
+    add("Poynting vector", "S = (1/mu0) E x B", "electromagnetism", "John Henry Poynting", "1884");
+    add("Mass-energy equivalence", "E = m c^2", "special relativity", "Albert Einstein", "1905");
+    add("Energy-momentum relation", "E^2 = (p c)^2 + (m c^2)^2", "special relativity", "Albert Einstein", "1905");
+    add("Lorentz factor", "gamma = 1 / sqrt(1 - v^2/c^2)", "special relativity", "Hendrik Lorentz", "1904");
+    add("Time dilation", "dt = gamma * dtau", "special relativity", "Albert Einstein", "1905");
+    add("Einstein field equations", "G_mu_nu + Lambda g_mu_nu = (8 pi G / c^4) T_mu_nu", "general relativity", "Albert Einstein", "1915");
+    add("Schwarzschild radius", "r_s = 2 G M / c^2", "general relativity", "Karl Schwarzschild", "1916");
+    add("Planck relation", "E = h * nu", "quantum mechanics", "Max Planck", "1900");
+    add("Planck's law (spectral)", "B(nu,T) = (2 h nu^3/c^2) / (e^(h nu/kT) - 1)", "quantum mechanics", "Max Planck", "1900");
+    add("de Broglie wavelength", "lambda = h / p", "quantum mechanics", "Louis de Broglie", "1924");
+    add("Time-dependent Schrodinger equation", "i hbar dPsi/dt = H Psi", "quantum mechanics", "Erwin Schrodinger", "1926");
+    add("Time-independent Schrodinger equation", "H psi = E psi", "quantum mechanics", "Erwin Schrodinger", "1926");
+    add("Heisenberg uncertainty principle", "dx * dp >= hbar / 2", "quantum mechanics", "Werner Heisenberg", "1927");
+    add("Dirac equation", "(i hbar gamma^mu d_mu - m c) psi = 0", "quantum field theory", "Paul Dirac", "1928");
+    add("Canonical commutation relation", "[x, p] = i hbar", "quantum mechanics", "Born; Heisenberg; Jordan", "1925");
+    add("Bohr model energy levels", "E_n = -13.6 eV / n^2", "atomic physics", "Niels Bohr", "1913");
+    add("Rydberg formula", "1/lambda = R (1/n1^2 - 1/n2^2)", "atomic physics", "Johannes Rydberg", "1888");
+    add("Photoelectric equation", "K_max = h nu - phi", "quantum mechanics", "Albert Einstein", "1905");
+    add("Navier-Stokes (incompressible)", "rho(dv/dt + v.grad v) = -grad p + mu laplacian v + f", "fluid dynamics", "Navier; Stokes", "1845");
+    add("Wave equation", "d^2u/dt^2 = c^2 laplacian u", "classical field theory", "Jean le Rond d'Alembert", "1746");
+    add("Bernoulli's principle", "p + (1/2) rho v^2 + rho g h = constant", "fluid dynamics", "Daniel Bernoulli", "1738");
+    add("Newton's first law (inertia)", "v = constant when sum F = 0", "classical mechanics", "Isaac Newton", "1687");
+    add("Newton's third law", "F_12 = -F_21", "classical mechanics", "Isaac Newton", "1687");
+    add("Gravitational potential energy", "U = m g h  (near surface)", "classical mechanics", "classical", "unknown");
+    add("Simple harmonic motion", "x(t) = A cos(omega t + phi)", "classical mechanics", "classical", "unknown");
+    add("Centripetal acceleration", "a_c = v^2 / r", "classical mechanics", "Christiaan Huygens", "1659");
+    add("Doppler effect", "f' = f (c +/- v_o) / (c -/+ v_s)", "waves", "Christian Doppler", "1842");
+    add("Snell's law", "n1 sin(theta1) = n2 sin(theta2)", "optics", "Snellius; Descartes", "1621");
+    add("Ohm's law", "V = I R", "electromagnetism", "Georg Ohm", "1827");
+    add("Compton scattering", "d_lambda = (h / (m_e c))(1 - cos theta)", "quantum mechanics", "Arthur Compton", "1923");
+    add("Wien's displacement law", "lambda_max T = b", "quantum mechanics", "Wilhelm Wien", "1893");
+    add("Kepler's first law", "planets move on ellipses with the Sun at one focus", "celestial mechanics", "Johannes Kepler", "1609");
+    add("Kepler's second law", "the radius vector sweeps equal areas in equal times", "celestial mechanics", "Johannes Kepler", "1609");
+    add("Kepler's third law", "T^2 = (4 pi^2 / (G M)) a^3", "celestial mechanics", "Johannes Kepler", "1619");
+    add("Poisson's equation (electrostatics)", "laplacian(phi) = -rho / epsilon0", "electromagnetism", "Simeon Denis Poisson", "1813");
+    add("Continuity equation (mass)", "d(rho)/dt + div(rho v) = 0", "fluid dynamics", "Leonhard Euler", "1757");
+    add("Euler's equations (inviscid flow)", "rho (dv/dt + (v.grad) v) = -grad p", "fluid dynamics", "Leonhard Euler", "1757");
+    add("Reynolds number", "Re = rho v L / mu", "fluid dynamics", "Osborne Reynolds", "1883");
+    add("Biot-Savart law", "dB = (mu0 / (4 pi)) I dl x r-hat / r^2", "electromagnetism", "Biot; Savart", "1820");
+    add("Lenz's law", "induced EMF opposes the change in flux", "electromagnetism", "Heinrich Lenz", "1834");
+    add("Larmor power (accelerated charge)", "P = (q^2 a^2) / (6 pi epsilon0 c^3)", "electromagnetism", "Joseph Larmor", "1897");
+    add("Poynting theorem (energy flow)", "dU/dt + div S = -J.E", "electromagnetism", "John Henry Poynting", "1884");
+    add("Lorentz transformation", "t' = gamma(t - v x / c^2),  x' = gamma(x - v t)", "special relativity", "Hendrik Lorentz", "1904");
+    add("Relativistic momentum", "p = gamma m v", "special relativity", "Albert Einstein", "1905");
+    add("Relativistic energy", "E = gamma m c^2", "special relativity", "Albert Einstein", "1905");
+    add("Relativistic velocity addition", "w = (u + v)/(1 + u v / c^2)", "special relativity", "Albert Einstein", "1905");
+    add("Klein-Gordon equation", "(box + (m c / hbar)^2) psi = 0", "quantum field theory", "Klein; Gordon", "1926");
+    add("Yukawa potential", "V(r) = -g^2 e^(-m r) / r", "nuclear physics", "Hideki Yukawa", "1935");
+    add("Fermi-Dirac distribution", "n(E) = 1 / (e^((E - mu)/(k_B T)) + 1)", "statistical physics", "Fermi; Dirac", "1926");
+    add("Bose-Einstein distribution", "n(E) = 1 / (e^((E - mu)/(k_B T)) - 1)", "statistical physics", "Bose; Einstein", "1924");
+    add("Rayleigh-Jeans law", "B(lambda,T) = 2 c k_B T / lambda^4", "statistical physics", "Rayleigh; Jeans", "1905");
+    add("Bragg's law", "n lambda = 2 d sin(theta)", "condensed matter", "W. H. Bragg & W. L. Bragg", "1913");
+    add("Malus's law", "I = I0 cos^2(theta)", "optics", "Etienne-Louis Malus", "1809");
+    add("Beer-Lambert law", "I = I0 e^(-alpha x)", "optics", "Beer; Lambert; Bouguer", "1852");
+    add("Fresnel reflection (normal incidence)", "R = ((n1 - n2)/(n1 + n2))^2", "optics", "Augustin-Jean Fresnel", "1823");
+    add("Thin lens equation", "1/f = 1/do + 1/di", "optics", "classical", "unknown");
+    add("Rayleigh resolution criterion", "theta = 1.22 lambda / D", "optics", "Lord Rayleigh", "1879");
+    add("Hall effect voltage", "V_H = I B / (n q t)", "condensed matter", "Edwin Hall", "1879");
+    add("Drude conductivity", "sigma = n e^2 tau / m", "condensed matter", "Paul Drude", "1900");
+    add("Debye heat capacity (low-T)", "C_V = (12 pi^4 / 5) N k_B (T / Theta_D)^3", "condensed matter", "Peter Debye", "1912");
+    add("London penetration depth", "lambda_L = sqrt(m / (mu0 n_s e^2))", "superconductivity", "Fritz & Heinz London", "1935");
+    add("Josephson relation", "I = I_c sin(phi),  dphi/dt = 2 e V / hbar", "superconductivity", "Brian Josephson", "1962");
+    add("Casimir force (parallel plates)", "F/A = -pi^2 hbar c / (240 d^4)", "quantum electrodynamics", "Hendrik Casimir", "1948");
+    add("Stefan-Boltzmann (radiated power)", "P = sigma A epsilon T^4", "thermal radiation", "Stefan; Boltzmann", "1879");
+    add("Escape velocity", "v_e = sqrt(2 G M / r)", "celestial mechanics", "classical (Newtonian)", "unknown");
+    add("Rocket equation (Tsiolkovsky)", "delta v = v_e ln(m0 / m1)", "astronautics", "Konstantin Tsiolkovsky", "1903");
+    add("Torque", "tau = r x F", "classical mechanics", "classical (Archimedes/Euler)", "unknown");
+    add("Angular momentum", "L = r x p = I omega", "classical mechanics", "Euler", "1775");
+    add("Moment of inertia", "I = sum m_i r_i^2", "classical mechanics", "Leonhard Euler", "1765");
+    add("Rotational kinetic energy", "KE_rot = (1/2) I omega^2", "classical mechanics", "Euler", "1765");
+    add("Poiseuille's law (pipe flow)", "Q = pi r^4 dP / (8 mu L)", "fluid dynamics", "Hagen; Poiseuille", "1840");
+    add("Stokes' drag law", "F = 6 pi mu r v", "fluid dynamics", "George Gabriel Stokes", "1851");
+    add("Pendulum period (small angle)", "T = 2 pi sqrt(L / g)", "classical mechanics", "classical (Huygens)", "1673");
+    add("Gravitational time dilation (weak field)", "dtau/dt = sqrt(1 - 2 G M / (r c^2))", "general relativity", "Albert Einstein", "1915");
+  }
+
+  void add(String name, String form, String field, String who, String year) {
+    SMEquation e = new SMEquation();
+    e.define(name, form, field, who, year);
+    eqs[filled] = e;
+    filled = filled + 1;
+  }
+
+  int count() { return filled; }
+
+  String lineAt(int i) {
+    SMEquation e = eqs[i];
+    return e.line();
+  }
+}
