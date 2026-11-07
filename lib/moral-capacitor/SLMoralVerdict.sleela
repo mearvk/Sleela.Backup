@@ -1,28 +1,73 @@
-/*
- * lib/moral-capacitor/SLMoralVerdict.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLMoralVerdict — the decision a Moral Capacitor(TM)
- *   returns for an operation. A verdict is PERMIT (charge met the threshold and
- *   no veto tripped), DEFER (partial charge: hold and request more justification
- *   or consent), or DENY (no charge, or a veto tripped). The verdict carries the
- *   stored charge, the threshold it was compared against, the deciding
- *   framework or red line, and a human-readable reason, so a caller can log
- *   exactly why an operation was allowed, held, or refused.
- *
- * Family: moral-capacitor. Returned by SLMoralCapacitor.evaluate.
- */
-#sleela 1.5
+<< lib/moral-capacitor/SLMoralVerdict.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMoralVerdict — the decision a Moral Capacitor(TM)
+     returns for an operation. A verdict is PERMIT (charge met the threshold and
+     no veto tripped), DEFER (partial charge: hold and request more justification
+     or consent), or DENY (no charge, or a veto tripped). The verdict carries the
+     stored charge, the threshold it was compared against, the deciding
+     framework or red line, and a human-readable reason, so a caller can log
+     exactly why an operation was allowed, held, or refused.
+   
+   Family: moral-capacitor. Returned by SLMoralCapacitor.evaluate. >>
+#sleela 2.5
+material;
 class SLMoralVerdict {
-  // Decision ordinals.
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10918;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-10";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Decision ordinals. >
   static final int PERMIT = 1;
   static final int DEFER  = 2;
   static final int DENY   = 3;
 
-  int decision;       // PERMIT / DEFER / DENY
-  int charge;         // stored moral charge at decision time
-  int threshold;      // the threshold compared against
-  String basis;       // deciding framework or tripped red line
-  String reason;      // human-readable explanation
+  < PERMIT / DEFER / DENY >
+  int decision;
+  < stored moral charge at decision time >
+  int charge;
+  < the threshold compared against >
+  int threshold;
+  < deciding framework or tripped red line >
+  String basis;
+  < human-readable explanation >
+  String reason;
   int configured;
 
   void configure(int d, int chargeLevel, int thresh, String decidingBasis, String why) {
@@ -46,7 +91,7 @@ class SLMoralVerdict {
     return "DENY";
   }
 
-  // A one-line summary for logs/ledger.
+  < A one-line summary for logs/ledger. >
   String summary() {
     return decisionName() + " (charge " + intToStr(charge) + "/" + intToStr(threshold)
          + "; " + basis + "): " + reason;
