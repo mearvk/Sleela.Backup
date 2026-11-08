@@ -1,111 +1,180 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+# Sleelavirin antivirus co-package build
+# Max Rupplin - MEARVK LLC - 2026
+#
+# Portable C11 core. No third-party engine is required for this local matcher.
+# External antivirus providers (for example ClamAV/AMSI) are separate adapters.
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+CC ?= cc
+CXX ?= c++
+AR ?= ar
+CPPFLAGS ?=
+CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
+CXXFLAGS ?= -O2 -Wall -Wextra -Wpedantic
+LDFLAGS ?=
 
+BUILD_DIR ?= build
+SRC_DIR := src
+TEST_DIR := tests
 
+SCAN_OBJ := $(BUILD_DIR)/sleelavirin_scan.o
+HEURISTIC_OBJ := $(BUILD_DIR)/sleelavirin_heuristic.o
+NATIVE_OBJ := $(BUILD_DIR)/sleelavirin_native.o
+AC_OBJ := $(BUILD_DIR)/sleelavirin_ac.o
+SIG_OBJ := $(BUILD_DIR)/sleelavirin_sig.o
+BRIDGE_OBJ := $(BUILD_DIR)/sleelavirin_bridge.o
+CPP_OBJ := $(BUILD_DIR)/sleelavirin_cpp.o
 
+# The C static library bundles the whole native engine: hash map + Trap-2
+# heuristics + SHA-256 + Aho-Corasick content matcher + signature loader +
+# the stable scan bridge.
+LIB_OBJS := $(SCAN_OBJ) $(HEURISTIC_OBJ) $(NATIVE_OBJ) $(AC_OBJ) $(SIG_OBJ) $(BRIDGE_OBJ)
+LIBRARY := $(BUILD_DIR)/libsleelavirin.a
+CPP_LIBRARY := $(BUILD_DIR)/libsleelavirin_cpp.a
 
+TEST_BIN := $(BUILD_DIR)/test_scan
+TEST_AC_BIN := $(BUILD_DIR)/test_ac
+TEST_BRIDGE_BIN := $(BUILD_DIR)/test_bridge
+TEST_CPP_BIN := $(BUILD_DIR)/test_cpp_scan
+NATIVE_MAIN_OBJ := $(BUILD_DIR)/sleelavirin_native_main.o
+NATIVE_BIN := $(BUILD_DIR)/sleelavirin-scan
 
+.PHONY: all library cpp-library native native-test content-test cpp-test clamav clamav-check clamav-update clamav-snapshot-check definitions-import definitions-check integrity-manifest integrity-check test check clean help
 
-# Sleelavirin™ Antivirus Co-Package
+all: library cpp-library $(TEST_BIN) $(TEST_AC_BIN) $(TEST_BRIDGE_BIN) $(TEST_CPP_BIN) native
 
-## Purpose
+library: $(LIBRARY)
 
-**Sleelavirin™** is the SLeeLa antivirus/security co-package for authors who want to ship security-aware deliverables alongside their primary package.
+$(BUILD_DIR):
+	mkdir -p "$@"
 
-An author may include an `/antivirus` directory in a package to declare one-off security concerns, scanning requirements, detection metadata, heuristic rules, verification material, and platform integration notes without making those concerns part of the application's ordinary runtime API.
+$(SCAN_OBJ): $(SRC_DIR)/sleelavirin_scan.c $(SRC_DIR)/sleelavirin_scan.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-Sleelavirin is a **security integration framework and package convention**, not a claim that every package contains a complete antivirus engine.
+$(HEURISTIC_OBJ): $(SRC_DIR)/sleelavirin_heuristic.c $(SRC_DIR)/sleelavirin_heuristic.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-## Design goals
+$(NATIVE_OBJ): $(SRC_DIR)/sleelavirin_native.c $(SRC_DIR)/sleelavirin_native.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-- Keep security material close to the deliverable it protects.
-- Support static scanning, signatures, hashes, reputation inputs, and heuristic analysis.
-- Permit integration with existing antivirus engines rather than requiring a replacement engine.
-- Record provenance, versions, confidence, and intended response for every detection rule.
-- Fail closed where a package explicitly requires verification before execution or installation.
-- Separate detection from remediation so package authors do not silently delete or quarantine user content.
-- Support Linux, Windows 10+, and macOS through platform adapters.
-- Provide a common SLeeLa representation for scan requests and verdicts.
+$(AC_OBJ): $(SRC_DIR)/sleelavirin_ac.c $(SRC_DIR)/sleelavirin_ac.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-## Reference integrations
+$(SIG_OBJ): $(SRC_DIR)/sleelavirin_sig.c $(SRC_DIR)/sleelavirin_sig.h $(SRC_DIR)/sleelavirin_ac.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-Sleelavirin can reference established antivirus interfaces and rule systems. For Windows, Microsoft documents AMSI as a vendor-agnostic application interface for file, memory, stream, and related antimalware scanning, including session correlation. https://learn.microsoft.com/en-us/windows/win32/amsi/antimalware-scan-interface-portal
+$(BRIDGE_OBJ): $(SRC_DIR)/sleelavirin_bridge.c $(SRC_DIR)/sleelavirin_bridge.h $(SRC_DIR)/sleelavirin_native.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-YARA provides a rule language for identifying and classifying files or other samples through strings, binary patterns, and boolean conditions. Sleelavirin may carry or reference YARA-compatible rules where licensing and deployment requirements permit. https://yara.readthedocs.io/
+$(CPP_OBJ): $(SRC_DIR)/sleelavirin_cpp.cpp $(SRC_DIR)/sleelavirin_cpp.hpp $(SRC_DIR)/sleelavirin_scan.h $(SRC_DIR)/sleelavirin_native.h | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -std=c++17 -I$(SRC_DIR) -c "$<" -o "$@"
 
-## Package boundary
+$(NATIVE_MAIN_OBJ): $(SRC_DIR)/sleelavirin_native_main.c $(SRC_DIR)/sleelavirin_native.h $(SRC_DIR)/sleelavirin_ac.h $(SRC_DIR)/sleelavirin_sig.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) -c "$<" -o "$@"
 
-A normal SLeeLa package may contain:
+# The native scanner links the full engine library so it can do both hash and
+# content (Aho-Corasick) scanning.
+$(NATIVE_BIN): $(NATIVE_MAIN_OBJ) $(LIBRARY)
+	$(CC) $(CFLAGS) $(NATIVE_MAIN_OBJ) $(LIBRARY) $(LDFLAGS) -o "$@"
 
-```
-package/
-├── src/
-├── api/
-├── tests/
-└── antivirus/
-    ├── README.md
-    ├── PACKAGE.md
-    ├── POLICY.md
-    ├── MANIFEST.md
-    ├── HEURISTICS.md
-    ├── SIGNATURES.md
-    ├── HASHES.md
-    ├── SCANNERS.md
-    ├── VERDICTS.md
-    ├── PROVENANCE.md
-    ├── platform/
-    ├── rules/
-    ├── signatures/
-    ├── manifests/
-    └── tests/
-```
+native: $(NATIVE_BIN)
 
-The antivirus co-package is optional. Its presence means the author has supplied security metadata or integrations; it does not by itself mean that a complete AV engine is bundled.
+$(LIBRARY): $(LIB_OBJS)
+	$(AR) rcs "$@" $^
 
-## Security lifecycle
+library: $(LIBRARY)
 
-```
-AUTHOR
-  ↓
-DECLARE
-  ↓
-HASH / SIGN / DESCRIBE
-  ↓
-STATIC SCAN
-  ↓
-HEURISTIC ANALYSIS
-  ↓
-OPTIONAL ENGINE INTEGRATION
-  ↓
-VERDICT
-  ↓
-POLICY DECISION
-  ↓
-INSTALL / EXECUTE / QUARANTINE / REJECT / REVIEW
-```
+$(CPP_LIBRARY): $(CPP_OBJ)
+	$(AR) rcs "$@" $^
 
-## Initial scope
+cpp-library: $(CPP_LIBRARY)
 
-The first Sleelavirin structural release covers:
+$(TEST_BIN): $(TEST_DIR)/test_scan.c $(LIBRARY) $(SRC_DIR)/sleelavirin_scan.h $(SRC_DIR)/sleelavirin_heuristic.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) "$<" $(LIBRARY) $(LDFLAGS) -o "$@"
 
-1. package security metadata;
-2. SHA-256 and future digest references;
-3. known signatures and detection identifiers;
-4. heuristic rules and rationale;
-5. scanner/provider declarations;
-6. platform adapters;
-7. verdict normalization;
-8. provenance and rule-version tracking;
-9. negative and benign test samples represented safely as metadata;
-10. documentation for integration with established AV systems.
+$(TEST_AC_BIN): $(TEST_DIR)/test_ac.c $(LIBRARY) $(SRC_DIR)/sleelavirin_ac.h $(SRC_DIR)/sleelavirin_sig.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) "$<" $(LIBRARY) $(LDFLAGS) -o "$@"
 
-## Non-goals
+$(TEST_BRIDGE_BIN): $(TEST_DIR)/test_bridge.c $(LIBRARY) $(SRC_DIR)/sleelavirin_bridge.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -I$(SRC_DIR) "$<" $(LIBRARY) $(LDFLAGS) -o "$@"
 
-Sleelavirin does not initially attempt to reproduce the internals of commercial antivirus products, distribute malware samples, bypass endpoint protections, or prescribe a single antivirus vendor.
+$(TEST_CPP_BIN): $(TEST_DIR)/test_cpp_scan.cpp $(CPP_LIBRARY) $(LIBRARY) $(SRC_DIR)/sleelavirin_cpp.hpp | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -std=c++17 -I$(SRC_DIR) "$<" $(CPP_LIBRARY) $(LIBRARY) $(LDFLAGS) -o "$@"
 
-## Status
+test check: all
+	"$(TEST_BIN)"
+	"$(TEST_AC_BIN)"
+	"$(TEST_BRIDGE_BIN)"
+	"$(TEST_CPP_BIN)"
+	$(MAKE) native-test
+	$(MAKE) content-test
+	python3 -m py_compile tools/sleelavirin_scan.py tools/sleelavirin_clamav.py tools/sleelavirin_import_clamav.py tools/sleelavirin_update_clamav.py tools/sleelavirin_verify_signature.py tools/sleelavirin_manifest.py tests/test_tools.py tests/test_update_clamav.py tests/test_verify_signature.py tests/test_scan_report.py tests/test_eicar_integration.py tests/test_manifest.py
+	python3 -m unittest discover -s tests -p 'test_*.py' -v
+	$(MAKE) definitions-check
 
-**Architectural / initial package structure.** Individual scanners, providers, and rule sets become **Implemented** only when their corresponding source and tests exist.
+native-test: $(NATIVE_BIN)
+	@set +e; output=$$("./$(NATIVE_BIN)" --database tests/native-sha256.txt tests/native_sample.txt); status=$$?; set -e; test "$$status" -eq 1; echo "$$output"; echo "$$output" | grep -q '^DETECTED tests/native_sample.txt : test-sample$$'
+	@set -e; output=$$("./$(NATIVE_BIN)" --database signatures/native-sha256.txt tests/native_sample.txt); status=$$?; test "$$status" -eq 0; echo "$$output"; echo "$$output" | grep -q '^NO_MATCH tests/native_sample.txt$$'
+	@echo "Native scanner signature/no-match tests: PASS"
 
-Max Rupplin — MEARVK LLC — 2026
+# Verify the Aho-Corasick content scanner end-to-end through the CLI.
+content-test: $(NATIVE_BIN)
+	@printf 'harmless EICAR-STANDARD-ANTIVIRUS\r\n tail' > "$(BUILD_DIR)/content_hit.tmp"
+	@set +e; output=$$("./$(NATIVE_BIN)" --content-db tests/content-signatures.slv "$(BUILD_DIR)/content_hit.tmp" 2>/dev/null); status=$$?; set -e; test "$$status" -eq 1; echo "$$output" | grep -q '^DETECTED .*content:EICAR-Test-Fragment'
+	@printf 'nothing notable here' > "$(BUILD_DIR)/content_clean.tmp"
+	@set -e; output=$$("./$(NATIVE_BIN)" --content-db tests/content-signatures.slv "$(BUILD_DIR)/content_clean.tmp" 2>/dev/null); status=$$?; test "$$status" -eq 0; echo "$$output" | grep -q '^NO_MATCH '
+	@rm -f "$(BUILD_DIR)/content_hit.tmp" "$(BUILD_DIR)/content_clean.tmp"
+	@echo "Native content-signature scanner tests: PASS"
+
+cpp-test: $(TEST_CPP_BIN)
+	"$(TEST_CPP_BIN)"
+
+clamav: clamav-check
+	python3 tools/sleelavirin_clamav.py --help >/dev/null
+
+clamav-update:
+	python3 tools/sleelavirin_update_clamav.py --root signatures/clamav-cache
+
+clamav-snapshot-check:
+	@test -n "$(SNAPSHOT)" || { echo "Usage: make clamav-snapshot-check SNAPSHOT=signatures/clamav-cache/snapshots/<id>" >&2; exit 2; }
+	python3 tools/sleelavirin_update_clamav.py --check "$(SNAPSHOT)"
+
+definitions-import:
+	@echo "Usage: python3 tools/sleelavirin_import_clamav.py --source DIR --output signatures/native-sha256.txt"
+	@echo "Only compatible extracted text .hsb SHA-256 records are imported."
+
+definitions-check:
+	python3 tools/sleelavirin_import_clamav.py --check signatures/native-sha256.txt
+
+integrity-manifest:
+	python3 tools/sleelavirin_manifest.py --root . --write build/INTEGRITY-MANIFEST.json
+
+integrity-check:
+	@test -n "$(MANIFEST)" || { echo "Usage: make integrity-check MANIFEST=PATH" >&2; exit 2; }
+	python3 tools/sleelavirin_manifest.py --root . --verify "$(MANIFEST)"
+
+clamav-check:
+	@command -v clamscan >/dev/null 2>&1 || { echo "ClamAV not found; install ClamAV and ensure clamscan is on PATH." >&2; exit 2; }
+	@clamscan --version
+
+clean:
+	rm -rf "$(BUILD_DIR)"
+
+help:
+	@echo "Sleelavirin antivirus co-package"
+	@echo "  make          Build the C library, C++ library, tests, and native scanner"
+	@echo "  make library  Build build/libsleelavirin.a (C engine: hash+heuristic+AC+bridge)"
+	@echo "  make cpp-library Build build/libsleelavirin_cpp.a (C++ wrapper)"
+	@echo "  make test     Build and run all C, C++, native, and Python tests"
+	@echo "  make native   Build build/sleelavirin-scan (hash + content scanner)"
+	@echo "                  Usage: sleelavirin-scan [--database H] [--content-db C] FILE..."
+	@echo "  make content-test Verify the Aho-Corasick content scanner via the CLI"
+	@echo "  make cpp-test Build and run the C++ library test"
+	@echo "  make definitions-check Validate the native SHA-256 index"
+	@echo "  make definitions-import Show compatible ClamAV import usage"
+	@echo "  make integrity-manifest Generate SHA-256 inventory at build/INTEGRITY-MANIFEST.json"
+	@echo "  make integrity-check MANIFEST=PATH Verify hashes and detect missing/extra files"
+	@echo "  make clamav-update Retrieve and validate official ClamAV databases"
+	@echo "  make clamav-snapshot-check SNAPSHOT=DIR Verify snapshot SHA-256 manifest"
+	@echo "  python3 tools/sleelavirin_verify_signature.py --help Verify signed release artifacts"
+	@echo "  make clean    Remove antivirus/build/"
+	@echo "  CC=clang make Use Clang instead of the default C compiler"
