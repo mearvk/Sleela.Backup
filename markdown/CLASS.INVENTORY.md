@@ -238,7 +238,7 @@ The COORENAGRAPH moral vocabulary is now represented as individual SLeeLa class 
 
 **COORENAGRAPH individual moral class count: 17.**
 
-Each class contains its term, grammatical category, and source-level definition. The adjective/noun distinction is retained in the class structure through `partOfSpeech()`.
+Each class contains its term, grammatical category, and source-level definition (`term()`, `partOfSpeech()`, `definition()`). The adjective/noun distinction is retained in the class structure through `partOfSpeech()`. Every class additionally carries word-specific COORENAGRAPH linguistic/graph members, each keyed to that class's own object: related `adverbs()`, `verbs()`, and `nouns()` forms (each paired with an `*Count()`), the `cosects()` of sibling concepts co-located in the graph, a single `dimension()` naming the moral axis the term occupies (e.g. `framework`, `virtue`, `vice`, `neutral`, `quality`, `disposition`, `process`, `system`), and the `interchanges()` near-synonyms available to interchange/edge relationships.
 
 
 ## 8. Module Coverage
@@ -408,9 +408,9 @@ sub-families, and the new `.sldocument` ordered-document format. All counts are
 
 | Group | `.sleela` files | Notes |
 |---|---:|---|
-| Opcode classes (`SLOp*`) | 103 | one per canonical opcode, codes 0–102; the base 98 are `OP_NOP`..`OP_AUDIO_PLATFORM` |
+| Opcode classes (`SLOp*`) | 156 | one per canonical opcode, codes 0–155 (the full ISA); the base 98 are `OP_NOP`..`OP_AUDIO_PLATFORM` |
 | `SLOpcodeBase`, `SLOpcodeStream` | 2 | single-opcode contract + verbatim ordered stream |
-| **`/lib/opcodes` top level** | **105** | see `lib/opcodes/OPCODES.md` |
+| **`/lib/opcodes` top level** | **157** | see `lib/opcodes/OPCODES.md` |
 
 ### `/lib/opcodes/governance` — Registrar · Listener · Event Observer
 
