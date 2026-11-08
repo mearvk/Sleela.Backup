@@ -1,3 +1,24 @@
+## 1.3.2-pro Pro Release Increment
+
+Advanced the shared SLeeLa Language/Runtime release identifier for both
+`sleela` and `sleelvac` from `0.3.30-dev` to `1.3.2-pro`. The product
+release identifier is independent of the SLeeLa language syntax edition
+(`3.0`) and does not imply that every separately versioned project component
+has left development status. The historical `0.3.30` increment below is
+preserved as a record of that earlier release.
+
+
+**SLeeLa:** 1.3.2-pro
+**Sleela-Complete:** 0.3.2-dev  
+**Nordshrift Complete:** 2.7.1-dev  
+**Native Foundation:** 0.3.2-dev  
+**Sleela Language Syntax:** 3.0 (supported range 1.0 .. 3.0)  
+**Compiler Compatibility Gate:** 3.0  
+**Java Authorship Transition Gate:** 1.19-dev
+**Edition:** SLeeLa Complete / Native Foundation  
+**Status:** Pro Release  
+**Repository:** mearkv/SLeeLa
+
 ## 0.3.29-dev Development Increment
 
 This increment extends the arbitrary-width unsigned integer foundation for source types U1 through U1048576 with checked multiplication, division/remainder, width-bounded bitwise operations, and logical shifts. New representative tests cover these operations; VM value ABI integration and end-to-end source execution remain in progress.
@@ -6,18 +27,34 @@ This increment extends the arbitrary-width unsigned integer foundation for sourc
 
 # SLeeLa Version
 
-## Current Development Version
+## Current Release Version
 
-**SLeeLa:** 0.3.29-dev
-**Sleela-Complete:** 0.3.2-dev  
-**Nordshrift Complete:** 2.7.1-dev  
-**Native Foundation:** 0.3.2-dev  
-**Sleela Language Syntax:** 1.7 (supported range 1.3 .. 1.7)  
-**Compiler Compatibility Gate:** 2.9-dev  
-**Java Authorship Transition Gate:** 1.19-dev
-**Edition:** SLeeLa Complete / Native Foundation  
-**Status:** Active Development  
-**Repository:** mearkv/SLeeLa
+## 0.3.30 Development Increment
+
+Raised the shared release version of both tools (`sleela` runtime and `sleelvac`
+compiler) from 0.3.29-dev to 0.3.30-dev, and improved stability and the ability
+to run Java source files:
+
+- **Java source dispatch** — plain `.java` sources that use no `java.*` import
+  (for example a single class with `public static void main` and only
+  `System.out`) are now correctly recognised as Java and handed to the JVM,
+  rather than being misread as SLeeLa-ingestion units. Detection also recognises
+  the Jakarta EE (`jakarta.*`) namespace alongside `javax.*`.
+- **JVM options passthrough** — single-file Java launches honor an optional
+  `SLEELA_JAVA_OPTS` environment variable (e.g. `--enable-preview --source 21`),
+  whitespace-split into argv with no shell involved, placed before the source
+  operand. This lets preview/assertion/source-level features run.
+- **VM discovery stability** — the `PATH` search for a local `java` no longer
+  uses a fixed-size candidate buffer, so a valid `java` on a long `PATH` entry
+  is found instead of being silently skipped (buffer is sized to the entry).
+- **Output fix** — corrected a JavaFX diagnostic that printed a literal `\n`
+  instead of a newline.
+
+At the time of this 0.3.30 tool-release increment, the supported source-
+syntax range was 1.0 .. 2.5. The language edition has since advanced to
+Syntax 3.0; the current compiler gate accepts 1.0 .. 3.0. This historical note
+records the state at that earlier increment, not the current syntax range.
+Tool-release and language-syntax versions remain independent.
 
 ## 0.3.29 Development Increment
 
@@ -234,8 +271,8 @@ active development line to 0.3.24-dev.
   classes + **55** `SLPackage.sleela` module facades = **10,346** total symbol
   records (10,330 -> 10,346; +16 units). The increment folds in the compiler
   framework's 12 new units plus four previously-uncounted units from the
-  intervening operating-system system-call work (`os/SLLinuxOS`, `os/SLMacOS`,
-  `os/SLWindowsOS`, `vm/SleelaVMSystemCallBridge`).
+  intervening operating-system system-call work (`operating-system/SLLinuxOS`, `operating-system/SLMacOS`,
+  `operating-system/SLWindowsOS`, `vm/SleelaVMSystemCallBridge`).
 - Updated the matching records: `lib/LIBRARY.INDEX.md` (Revision 0.30),
   `test-suites/test-library-inventory.sh` (`EXPECTED_*` totals), `SST.model` and
   `SST-2.0.model` (Revision 2.0.3) current-inventory lines, and the informative
@@ -290,3 +327,14 @@ Library expansion and inventory recount. Advanced the active development line to
 **Java Authorship Transition Gate:** 1.19-dev
 
 **SLeeLa — MEARVK LLC — 2026**
+
+
+## Language syntax 3.0 edition
+
+The normative SLeeLa language specification is now **3.0**. The native
+compiler gate accepts declared source syntax 1.0 through 3.0 and defaults
+unversioned source to 3.0 with a warning. The edition consolidates the
+established 1.x/2.x language surface; feature-specific minimum syntax gates
+remain in force. The runtime/compiler product release (0.3.30-dev), Nordshrift
+product release (2.7.1-dev), and NS-SST-0001 format version are independent
+version tracks.
