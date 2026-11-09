@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -9,7 +9,7 @@
 
 # SLeeLa — A Tutorial Series
 
-A hands-on, twelve-part tour of **SLeeLa at her source best**: the language, the
+A hands-on, fifteen-part tour of **SLeeLa at her source best**: the language, the
 Wrapper™ source file, the Nordshrift driver and its triplet targets, the
 conducted-method vocabulary, subjects, and the protocol/tooling work that rides
 on top (HTTP 3.0 integrity, HTTP colors, and the `.ledger` class).
@@ -34,6 +34,9 @@ appears in shipping `.sleela` sources and `.sst` sheets.
 | 10 | [The `.ledger` class](10-ledger.md) | Per-file QR insignia + SHA-256 chain + timestamp |
 | 11 | [HTTP 3.0 & HTTP colors](11-http3-and-colors.md) | Packet integrity and naming HTTP colors from source |
 | 12 | [Putting it together](12-capstone.md) | A small end-to-end module, built and ledgered |
+| 13 | [The Metadata Class standard](13-metadata-class.md) | The metapattern: provenance, legality, and probation of intent |
+| 14 | [The text & String family](14-text-and-strings.md) | The `lib/text` String surface: in-language ops, the char-cell view, and honest bridge descriptors |
+| 15 | [The philosophers Constructor Guide-chain](15-philosophers-constructors.md) | The perfect Constructor: the `::` Guide chain, the 21 seatings in 7 categories, the orthogonal Ordain axis, and the time-bounded contract |
 
 ## Prerequisites
 
@@ -50,3 +53,9 @@ appears in shipping `.sleela` sources and `.sst` sheets.
   never fabricated per-person figures (see the glossary's term-care note).
 
 Start with [Lesson 01](01-what-is-sleela.md).
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>
