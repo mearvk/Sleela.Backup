@@ -1,27 +1,67 @@
-/*
- * lib/cpu/SLMMU.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLMMU — a Memory Management Unit providing real
- *   page-table translation from a guest's (virtual / guest-physical) address
- *   space to host-physical addresses, with per-page presence and protection
- *   bits. This is step 2 of the OS-VM roadmap: it replaces the single
- *   base-offset window with genuine second-level address translation, so a
- *   guest OS can have paged memory, unmapped regions that fault, and
- *   read-only/no-execute protections — the memory model a real kernel needs.
- *
- * Model: a single-level page table over a configurable page size. Each entry
- * records the host-physical frame and permission bits (present, write, exec).
- * translate() walks the table; a miss or protection violation raises a page
- * fault (returned as -1 with the fault recorded), which the hypervisor delivers
- * to the guest as a TRAP.
- *
- * Page-table entries are stored in SLRAM (one word per entry: frame<<3 | perms)
- * so the table can be large (realistic address spaces).
- *
- * Family: cpu. Composes SLRAM.
- */
-#sleela 1.3
+<< lib/cpu/SLMMU.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMMU — a Memory Management Unit providing real
+     page-table translation from a guest's (virtual / guest-physical) address
+     space to host-physical addresses, with per-page presence and protection
+     bits. This is step 2 of the OS-VM roadmap: it replaces the single
+     base-offset window with genuine second-level address translation, so a
+     guest OS can have paged memory, unmapped regions that fault, and
+     read-only/no-execute protections — the memory model a real kernel needs.
+   
+   Model: a single-level page table over a configurable page size. Each entry
+   records the host-physical frame and permission bits (present, write, exec).
+   translate() walks the table; a miss or protection violation raises a page
+   fault (returned as -1 with the fault recorded), which the hypervisor delivers
+   to the guest as a TRAP.
+   
+   Page-table entries are stored in SLRAM (one word per entry: frame<<3 | perms)
+   so the table can be large (realistic address spaces).
+   
+   Family: cpu. Composes SLRAM. >>
+#sleela 2.5
+material;
 class SLMMU {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10261;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-06";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   static final int PERM_PRESENT = 1;
   static final int PERM_WRITE   = 2;
   static final int PERM_EXEC    = 4;
@@ -30,9 +70,12 @@ class SLMMU {
   static final int FAULT_UNMAPPED= 1;
   static final int FAULT_PROT    = 2;
 
-  int pageSize;      // words per page
-  int pageCount;     // number of virtual pages
-  SLRAM table;       // page table: entry = (frame << 3) | perms
+  < words per page >
+  int pageSize;
+  < number of virtual pages >
+  int pageCount;
+  < page table: entry = (frame << 3) | perms >
+  SLRAM table;
   int translations;
   int faults;
   int lastFault;
@@ -46,7 +89,7 @@ class SLMMU {
   int vpnOf(int vaddr) { return vaddr / pageSize; }
   int offsetOf(int vaddr) { return vaddr % pageSize; }
 
-  // Map a virtual page to a host-physical frame with permissions.
+  < Map a virtual page to a host-physical frame with permissions. >
   void map(int vpn, int frame, int perms) {
     if (vpn >= 0 && vpn < pageCount) {
       table.writeWord(vpn, (frame * 8) + (perms + PERM_PRESENT));
@@ -57,11 +100,12 @@ class SLMMU {
   int entryOf(int vpn) { if (vpn < 0 || vpn >= pageCount) { return 0; } return table.readWord(vpn); }
   int frameOf(int entry) { return entry / 8; }
   int permsOf(int entry) { return entry % 8; }
-  boolean present(int entry) { return (permsOf(entry) % 2) == 1; } // PRESENT bit
+  < PRESENT bit >
+  boolean present(int entry) { return (permsOf(entry) % 2) == 1; }
 
-  // Translate a virtual address to a host-physical address, checking the
-  // requested access (0 read, PERM_WRITE write, PERM_EXEC execute). Returns the
-  // host-physical address, or -1 on a page fault (reason recorded).
+  < Translate a virtual address to a host-physical address, checking the >
+  < requested access (0 read, PERM_WRITE write, PERM_EXEC execute). Returns the >
+  < host-physical address, or -1 on a page fault (reason recorded). >
   int translateAccess(int vaddr, int access) {
     translations = translations + 1;
     int vpn = vpnOf(vaddr);
@@ -74,12 +118,12 @@ class SLMMU {
     return (frameOf(entry) * pageSize) + offsetOf(vaddr);
   }
 
-  // Convenience: a plain read translation.
+  < Convenience: a plain read translation. >
   int translate(int vaddr) { return translateAccess(vaddr, 0); }
 
-  // Identity-map `pages` pages starting at vpn 0 to frames at `baseFrame`, with
-  // full permissions — the simplest bring-up a guest kernel uses before it
-  // installs its own tables.
+  < Identity-map `pages` pages starting at vpn 0 to frames at `baseFrame`, with >
+  < full permissions — the simplest bring-up a guest kernel uses before it >
+  < installs its own tables. >
   void identityMap(int pages, int baseFrame, int perms) {
     int i = 0;
     while (i < pages) { map(i, baseFrame + i, perms); i = i + 1; }
