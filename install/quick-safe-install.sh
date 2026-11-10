@@ -56,6 +56,8 @@ echo "Staging runtime..."
 mkdir -p "$STAGE_DIR/lib" "$STAGE_DIR/bin" "$STAGE_DIR/config" "$STAGE_DIR/tools" "$STAGE_DIR/security"
 cp -a "$REPO_ROOT/lib/." "$STAGE_DIR/lib/"
 cp -a "$REPO_ROOT/tools/verify-before-execution.py" "$STAGE_DIR/tools/"
+cp -a "$REPO_ROOT/tools/sleela-native-drive.py" "$STAGE_DIR/tools/"
+cp -a "$REPO_ROOT/tools/sleela-native-service.py" "$STAGE_DIR/tools/"
 cp -a "$REPO_ROOT/security/sha256-manifest.json" "$STAGE_DIR/security/"
 # Ship every source file named by the trusted manifest so installed verifier
 # calls can validate against the same root rather than a partial source tree.
@@ -74,8 +76,14 @@ for entry in entries:
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(src, dst)
 PY_MANIFEST_COPY
+echo "Verifying staged runtime against the trusted SHA-256 manifest..."
+python3 "$STAGE_DIR/tools/verify-before-execution.py" \
+  --manifest "$STAGE_DIR/security/sha256-manifest.json" \
+  --root "$STAGE_DIR"
 if [ -d "$REPO_ROOT/bin" ]; then cp -a "$REPO_ROOT/bin/." "$STAGE_DIR/bin/"; fi
-for product in sleela nordshrift; do
+# sleelvac is now an INDEPENDENT binary (not a copy of sleela), so it must be
+# installed too -- otherwise a stale or missing sleelvac is left behind.
+for product in sleela sleelvac nordshrift; do
   built="$REPO_ROOT/impl/build/$product"
   [ -x "$built" ] || { echo "Required compiled product missing: $built" >&2; exit 1; }
   install -m 755 "$built" "$STAGE_DIR/bin/$product"
@@ -125,7 +133,7 @@ else
   sudo mkdir -p "$INSTALL_ROOT" "$BIN_DEST" "$CONFIG_DIR" /etc/profile.d
   sudo cp -a "$STAGE_DIR/." "$INSTALL_ROOT/"
   sudo cp "$STAGE_DIR/config/startup.conf" "$CONFIG_DIR/startup.conf"
-  for product in sleela nordshrift; do sudo ln -sfn "$INSTALL_ROOT/bin/$product" "$BIN_DEST/$product"; done
+  for product in sleela sleelvac nordshrift; do sudo ln -sfn "$INSTALL_ROOT/bin/$product" "$BIN_DEST/$product"; done
   printf 'export SLEELA_HOME="%s"\n' "$INSTALL_ROOT" | sudo tee /etc/profile.d/sleela.sh >/dev/null
   echo "System PATH: $BIN_DEST (standard /usr/local/bin location; /etc/profile.d/sleela.sh sets SLEELA_HOME)"
 fi
