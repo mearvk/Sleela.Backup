@@ -40,6 +40,9 @@ public:
     virtual void set_title(const std::string& title) = 0;
     virtual void show() = 0;
     virtual void hide() = 0;
+    virtual void set_size_limits(int min_width, int min_height,
+                                 int max_width, int max_height) = 0;
+    virtual void resize_content(int width, int height) = 0;
 
     /* Current client-area size in device pixels. */
     virtual int width() const = 0;
@@ -50,6 +53,12 @@ public:
 
     /* Push the Canvas pixels to the window surface now. */
     virtual void present(const Canvas& canvas) = 0;
+
+    /* Select the presentation buffering mode (SLUIBufferingMode). The default
+     * is a no-op so a backend that only blits directly (headless, or a port
+     * that has not implemented buffering yet) degrades gracefully; a backend
+     * that supports off-screen buffering overrides this to switch strategy. */
+    virtual void set_buffering(SLUIBufferingMode /*mode*/) {}
 };
 
 /* A backend owns the application connection (display/dispatcher) and the font
@@ -74,6 +83,12 @@ public:
     /* Request the event loop stop; slui_app_run returns `exit_code`. */
     virtual void quit(int exit_code) = 0;
     virtual bool should_quit(int* exit_code) const = 0;
+
+    /* Report the primary screen / display size in pixels. Returns true and
+     * fills *w,*h on success; the DEFAULT returns false so a backend that does
+     * not know its display (headless, or a port that has not implemented it)
+     * degrades gracefully and callers fall back to a modeled size. */
+    virtual bool screen_size(int* w, int* h) const { (void)w; (void)h; return false; }
 
     /* Font: resolve a family+size once, then rasterize glyphs on demand.
      * `family` is a hint ("Inter", "Cantarell", "system"...); the backend maps
