@@ -3,7 +3,17 @@
 // ===========================================================================
 #include "parser.h"
 #include <stdexcept>
+#include <cctype>
 namespace sleela {
+// Parse a GC-hint aggressiveness level that is already clamped to a small band
+// (0..1000000) at the call site, tolerating an absurdly long digit run without
+// throwing std::out_of_range from std::stoll. Returns the clamp ceiling for any
+// value that would overflow, which the caller clamps again.
+static long long parseHintLevel(const std::string& s){
+    try{ return std::stoll(s); }
+    catch(const std::out_of_range&){ return 1000000; }
+    catch(const std::invalid_argument&){ return 0; }
+}
 const Token& Parser::peek(int off) const { size_t p=i_+(size_t)off; if(p>=toks_.size()) return toks_.back(); return toks_[p]; }
 bool Parser::accept(Tok k){if(check(k)){i_++;return true;}return false;}
 const Token& Parser::expect(Tok k,const char* what){if(!check(k)) error(std::string("expected ")+what+" but found '"+(cur().text.empty()?tokName(cur().kind):cur().text)+"'");return toks_[i_++];}
@@ -22,7 +32,9 @@ unsigned Parser::parseJavaModifiers(){
         case Tok::KwNative:m|=JavaNative;break; case Tok::KwSynchronized:m|=JavaSynchronized;break;
         case Tok::KwVolatile:m|=JavaVolatile;break; case Tok::KwTransient:m|=JavaTransient;break;
         case Tok::KwStrictfp:m|=JavaStrictfp;break; case Tok::KwSealed:m|=JavaSealed;break;
-        case Tok::KwNonSealed:m|=JavaNonSealed;break; case Tok::KwDefault:m|=JavaDefault;break;
+        case Tok::KwNonSealed:m|=JavaNonSealed;break; case Tok::KwConst:m|=JavaConst;break;
+        case Tok::KwUsualMem:m|=JavaMemUsual;break; case Tok::KwAccurateMem:m|=JavaMemAccurate;break;
+        case Tok::KwDefault:m|=JavaDefault;break;
         default: continue;
     } i_++; again=true;}
     return m;
@@ -35,7 +47,16 @@ JavaTypeKind Parser::tokenTypeKind(Tok k) const {
 }
 std::string Parser::parseQualifiedName(){
     std::string n=expect(Tok::Ident,"qualified name").text;
-    while(accept(Tok::Dot)) n+="."+expect(Tok::Ident,"identifier after '.'").text;
+    // Stop before "..." (varargs) so java.lang.Object... parses as a type.
+    while(check(Tok::Dot) && !(peek(1).kind==Tok::Dot)){
+        ++i_;
+        // A segment of a qualified name may spell a SLeeLa keyword
+        // (java.lang.String, javax.print.Doc): accept any word token here.
+        const Token& seg=cur();
+        bool word=!seg.text.empty() && (std::isalpha(static_cast<unsigned char>(seg.text[0]))||seg.text[0]=='_');
+        if(seg.kind!=Tok::Ident && word){ n+="."+seg.text; ++i_; continue; }
+        n+="."+expect(Tok::Ident,"identifier after '.'").text;
+    }
     return n;
 }
 // Nested-class name mangling (syntax 1.11). The source spells a nested class
@@ -59,17 +80,65 @@ std::vector<std::string> Parser::parseTypeList(Tok terminator){
 std::vector<std::string> Parser::parseTypeParameters(){
     std::vector<std::string> out; if(!accept(Tok::Lt)) return out;
     do { std::string p=expect(Tok::Ident,"type parameter name").text;
-        if(accept(Tok::KwExtends)){ p += " extends "; p += parseGenericType(); while(accept(Tok::AndAnd)) p += " & " + parseGenericType(); }
+        if(accept(Tok::KwExtends)){ p += " extends "; p += parseGenericType(); while(accept(Tok::AndAnd)||accept(Tok::BitAnd)) p += " & " + parseGenericType(); }
         out.push_back(p);
-    } while(accept(Tok::Comma)); expect(Tok::Gt,"'>'"); return out;
+    } while(accept(Tok::Comma));
+    splitAngleClosers();
+    expect(Tok::Gt,"'>'");
+    return out;
 }
 std::string Parser::parseGenericType(){
     std::string t=parseQualifiedName();
     if(accept(Tok::Lt)){ t += "<"; do {
-        if(accept(Tok::Question)){ t += "?"; if(accept(Tok::KwExtends)) t += " extends " + parseGenericType(); else if(accept(Tok::KwSuper)) t += " super " + parseGenericType(); }
-        else t += parseGenericType();
-    } while(accept(Tok::Comma)); expect(Tok::Gt,"'>'"); t += ">"; }
+        if(accept(Tok::Question)){ t += "?"; if(accept(Tok::KwExtends)) t += " extends " + parseTypeArgument(); else if(accept(Tok::KwSuper)) t += " super " + parseTypeArgument(); }
+        else t += parseTypeArgument();
+    } while(accept(Tok::Comma));
+    // A nested type-argument list may close with '>>' or '>>>' (Java lexes them
+    // as shift operators); consume one '>' and leave the rest for the caller.
+    splitAngleClosers();
+    expect(Tok::Gt,"'>'"); t += ">"; }
     return t;
+}
+// Java lexes '>>' / '>>>' as shift operators; in a type-argument list they
+// close nested lists. Split the token into single '>' tokens (permanently, so
+// a lookahead rewind re-reads the same tokens).
+void Parser::splitAngleClosers(){
+    int n = check(Tok::ShiftRight) ? 2 : (check(Tok::UnsignedShiftRight) ? 3 : 0);
+    if(n==0) return;
+    Token gt=toks_[i_]; gt.kind=Tok::Gt; gt.text=">";
+    toks_[i_]=gt;
+    for(int k=1;k<n;++k) toks_.insert(toks_.begin()+static_cast<std::ptrdiff_t>(i_)+k, gt);
+}
+// One type argument: a reference type (possibly generic), a keyword type
+// (String, int, ...), each optionally followed by array brackets.
+std::string Parser::parseTypeArgument(){
+    std::string t;
+    if(check(Tok::Ident)) t=parseGenericType();
+    else if(isTypeStart()){ t=cur().text; ++i_; }
+    else t=parseGenericType();
+    while(check(Tok::LBracket) && peek(1).kind==Tok::RBracket){ i_+=2; t+="[]"; }
+    return t;
+}
+// Varargs (T... name) is the Java spelling of an array parameter.
+bool Parser::acceptEllipsis(){
+    if(check(Tok::Dot) && peek(1).kind==Tok::Dot && peek(2).kind==Tok::Dot){ i_+=3; return true; }
+    return false;
+}
+// Java signature types are erased to the VM types SLeeLa supports, while the
+// source keeps the Java spelling: a declared type variable (E, T, K ...) and
+// any package-qualified reference type (java.util.List<E>) erase to Any,
+// java.lang.String to String. Array suffixes are preserved.
+std::string Parser::javaErase(const std::string& source){
+    std::string base=source; std::string dims;
+    while(base.size()>=2 && base.compare(base.size()-2,2,"[]")==0){ dims+="[]"; base.resize(base.size()-2); }
+    std::string raw=base.substr(0,base.find('<'));
+    for(auto it=typeVars_.rbegin(); it!=typeVars_.rend(); ++it)
+        for(const auto& v:*it) if(v==raw) return "Any"+dims;
+    if(raw.find('.')!=std::string::npos && !raw.empty() && raw[0]>='a' && raw[0]<='z'){
+        if(raw=="java.lang.String") return "String"+dims;
+        return "Any"+dims;
+    }
+    return source;
 }
 void Parser::parseThrows(std::vector<std::string>& out){
     if(!accept(Tok::KwThrows)) return;
@@ -77,7 +146,14 @@ void Parser::parseThrows(std::vector<std::string>& out){
 }
 annotation::Annotation Parser::parseAnnotation(annotation::UseSite site){
     expect(Tok::At,"'@'");
-    std::string name=parseQualifiedName();
+    // An annotation name lives in its own namespace after '@', so a word that is
+    // a reserved modifier keyword elsewhere is still a valid annotation name.
+    // @native in particular reuses the `native` modifier keyword (Tok::KwNative)
+    // as the ahead-of-time-native marker; accept it (and any single keyword
+    // token) as the annotation name rather than requiring a bare identifier.
+    std::string name;
+    if(check(Tok::KwNative)){ name="native"; ++i_; }
+    else name=parseQualifiedName();
     std::string value;
     bool marker=true;
     if(accept(Tok::LParen)){
@@ -98,6 +174,137 @@ std::vector<annotation::Annotation> Parser::parseAnnotations(annotation::UseSite
 }
 std::vector<annotation::Annotation> Parser::parseTypeAnnotations(){
     return parseAnnotations(annotation::UseSite::TypeUse);
+}
+// Resolve the loop-timing annotations into a per-iteration sleep in ms.
+//
+//   @loopDelay(<N>)                 sleep N milliseconds per iteration
+//   @loopDelay(ms = <N>)            sleep N milliseconds per iteration
+//   @loopDelay(seconds = <N>)       sleep N seconds per iteration
+//   @loopBudget(seconds = <T>, iterations = <K>)   spread K iterations over T
+//                                   seconds -> per-iteration sleep = T/K ms
+//   @loopBudget(ms = <T>, iterations = <K>)        total T ms over K iterations
+//
+// The annotation argument text is captured by parseAnnotation as a loose,
+// space-joined string; this reads unsigned integers keyed by the words
+// "ms"/"milliseconds", "seconds", and "iterations" (a bare number defaults to
+// milliseconds). Unknown annotations are ignored here (validated elsewhere).
+long Parser::loopTimingMillis(const std::vector<annotation::Annotation>& anns){
+    long resultMs=0;
+    bool sawTiming=false;
+    for(const auto& a:anns){
+        if(a.name!="loopDelay" && a.name!="loopBudget") continue;
+        sawTiming=true;
+        // Pull "<word> <number>" pairs and standalone numbers from the value.
+        long ms=-1, seconds=-1, iters=-1, bareNum=-1;
+        const std::string& v=a.value;
+        size_t i=0;
+        std::string pendingKey;
+        while(i<v.size()){
+            unsigned char ch=(unsigned char)v[i];
+            if(std::isalpha(ch)){
+                size_t j=i; while(j<v.size() && std::isalpha((unsigned char)v[j])) ++j;
+                pendingKey=v.substr(i,j-i);
+                for(char& c:pendingKey) c=(char)std::tolower((unsigned char)c);
+                i=j;
+            } else if(std::isdigit(ch)){
+                size_t j=i; long num=0; while(j<v.size() && std::isdigit((unsigned char)v[j])){ num=num*10+(v[j]-'0'); ++j; }
+                if(pendingKey=="ms"||pendingKey=="millis"||pendingKey=="milliseconds") ms=num;
+                else if(pendingKey=="seconds"||pendingKey=="sec"||pendingKey=="s") seconds=num;
+                else if(pendingKey=="iterations"||pendingKey=="iters"||pendingKey=="count") iters=num;
+                else bareNum=num;
+                pendingKey.clear();
+                i=j;
+            } else { ++i; }
+        }
+        if(a.name=="loopDelay"){
+            long perIter=0;
+            if(ms>=0) perIter=ms;
+            else if(seconds>=0) perIter=seconds*1000;
+            else if(bareNum>=0) perIter=bareNum;        // bare number defaults to ms
+            else error("@loopDelay requires a delay, e.g. @loopDelay(250) or @loopDelay(seconds = 2)");
+            resultMs+=perIter;
+        } else { // loopBudget
+            long totalMs=-1;
+            if(ms>=0) totalMs=ms;
+            else if(seconds>=0) totalMs=seconds*1000;
+            else if(bareNum>=0) totalMs=bareNum;        // bare number defaults to total ms
+            if(totalMs<0||iters<=0)
+                error("@loopBudget requires a total time and a positive iteration count, e.g. @loopBudget(seconds = 10, iterations = 1000)");
+            resultMs+=totalMs/iters;                    // even per-iteration share
+        }
+    }
+    if(sawTiming && resultMs<0) resultMs=0;
+    return resultMs;
+}
+// Resolve a loop's leading @spill annotation into a LoopSpill.
+//
+//   @spill                                  a bare timer-start checkpoint
+//                                           (pause of 0 ms before iteration)
+//   @spill(ms = <N>)                        pause N ms once before iterating
+//   @spill(<N>)                             bare number defaults to ms
+//   @spill(seconds = <N>)                   pause N seconds once
+//   @spill(judges = <subject>)              name the judge "of performs"
+//   @spill(witnesses = <subject>)           name the witness "of performs"
+//   @spill(seconds = 1, judges = Panel, witnesses = AuditLog)   all together
+//
+// A @spill "counts as a timer start itself": unlike @loopDelay/@loopBudget
+// (which sleep every iteration), the spill pause fires ONCE before the loop's
+// first iteration, so the loop can seemingly pause before it starts. The two
+// optional subjects -- the judges and witnesses of the loop's performs -- are
+// retained as loop metadata and are each single annotation tokens (values with
+// embedded whitespace are collapsed, matching the loose annotation grammar).
+//
+// Only one @spill may appear on a loop, and each of judges/witnesses may be
+// named at most once. The argument text is the same loose, space-joined string
+// produced by parseAnnotation; this reads "<key> <value>" pairs plus a bare
+// number (defaulting to ms), mirroring loopTimingMillis.
+LoopSpill Parser::loopSpill(const std::vector<annotation::Annotation>& anns){
+    LoopSpill out;
+    bool sawSpill=false;
+    for(const auto& a:anns){
+        if(a.name!="spill") continue;
+        if(sawSpill) error("a loop may carry only one @spill annotation");
+        sawSpill=true; out.hasSpill=true;
+        long ms=-1, seconds=-1, bareNum=-1;
+        bool sawJudges=false, sawWitnesses=false;
+        const std::string& v=a.value;
+        size_t i=0; std::string pendingKey;
+        while(i<v.size()){
+            unsigned char ch=(unsigned char)v[i];
+            if(std::isspace(ch)){ ++i; continue; }
+            if(std::isdigit(ch)){
+                size_t j=i; long num=0; while(j<v.size() && std::isdigit((unsigned char)v[j])){ num=num*10+(v[j]-'0'); ++j; }
+                if(pendingKey=="ms"||pendingKey=="millis"||pendingKey=="milliseconds") ms=num;
+                else if(pendingKey=="seconds"||pendingKey=="sec"||pendingKey=="s") seconds=num;
+                else if(pendingKey.empty()) bareNum=num;
+                else error("@spill does not understand a number for '"+pendingKey+"'");
+                pendingKey.clear(); i=j; continue;
+            }
+            // Read a bareword token (identifier / collapsed subject value).
+            size_t j=i; while(j<v.size() && !std::isspace((unsigned char)v[j])) ++j;
+            std::string word=v.substr(i,j-i); i=j;
+            if(word=="="||word==",") continue; // separators between key/value pairs
+            std::string lw=word; for(char& c:lw) c=(char)std::tolower((unsigned char)c);
+            if(lw=="ms"||lw=="millis"||lw=="milliseconds"||lw=="seconds"||lw=="sec"||lw=="s"){ pendingKey=lw; continue; }
+            if(lw=="judges"||lw=="judge"){ pendingKey="judges"; continue; }
+            if(lw=="witnesses"||lw=="witness"){ pendingKey="witnesses"; continue; }
+            // Otherwise this word is a value for the pending subject key.
+            if(pendingKey=="judges"){
+                if(sawJudges) error("@spill names 'judges' more than once");
+                out.spillJudges=word; sawJudges=true; pendingKey.clear();
+            } else if(pendingKey=="witnesses"){
+                if(sawWitnesses) error("@spill names 'witnesses' more than once");
+                out.spillWitnesses=word; sawWitnesses=true; pendingKey.clear();
+            } else {
+                error("@spill does not understand '"+word+"'; expected ms/seconds, judges, or witnesses");
+            }
+        }
+        if(ms>=0) out.spillPauseMs=ms;
+        else if(seconds>=0) out.spillPauseMs=seconds*1000;
+        else if(bareNum>=0) out.spillPauseMs=bareNum; // bare number defaults to ms
+        else out.spillPauseMs=0;                       // marker spill: checkpoint, no sleep
+    }
+    return out;
 }
 Program Parser::parseProgram(){
     collectStructNames(); Program p; bool contentStarted=false;
@@ -164,12 +371,152 @@ Program Parser::parseProgram(){
                 if(!parsedDynamite)i_=save;
             }
             if(!parsedDynamite) {
-                p.imports.push_back(expect(Tok::Ident,"module name").text);
+                std::string module=expect(Tok::Ident,"module name").text;
+                // Permit qualified library roots (for example
+                // gui.version-military) as well as simple native modules.
+                while(!check(Tok::Semicolon)&&!check(Tok::Eof)){
+                    module += cur().text;
+                    ++i_;
+                }
                 expect(Tok::Semicolon,"';'");
+                p.imports.push_back(std::move(module));
             }
         }
         else if(check(Tok::KwExtends)){ contentStarted=true; p.documentExtensions.push_back(parseDocumentExtension()); }
         else if(check(Tok::KwStruct)){ contentStarted=true; p.structs.push_back(parseStruct()); }
+        else if(check(Tok::Ident)&&(cur().text=="author"||cur().text=="authorial")){
+            // Author marker (syntax 2.4). A single, modifier-less, type-less word
+            // at document scope -- a static class of the document itself -- that
+            // marks the document as handled by professional council and permits
+            // duplicate members (see SLEELA.syntax section 18). `author` and
+            // `authorial` are exact synonyms. A trailing ';' is optional; a
+            // repeat marker is harmless (the flag is already set). It is a
+            // contextual word, not a reserved keyword, so below 2.4 (or anywhere
+            // else) `author`/`authorial` remain ordinary identifiers.
+            ++i_;
+            accept(Tok::Semicolon);
+            p.authorMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="material"){
+            // Material marker (syntax 2.5). A single, modifier-less, type-less
+            // word at document scope that DECLARES the document material -- well
+            // considered, present to its author as its own Source (see
+            // SLEELA.syntax section 19). Declarative only: it changes nothing
+            // about parsing/typing/codegen. A trailing ';' is optional; a repeat
+            // marker is harmless. Like author/authorial it is contextual, not a
+            // reserved keyword, so `material` stays an ordinary identifier
+            // anywhere else (and in any document below 2.5).
+            ++i_;
+            accept(Tok::Semicolon);
+            p.materialMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="memory"){
+            // Memory marker (syntax 2.5). A single, modifier-less, type-less
+            // word at document scope that DECLARES the document a document of
+            // memory -- authored by and for the Graduates of Supply of the New
+            // York State Department of Commerce (section 20 of SLEELA.syntax).
+            // Declarative only: it changes nothing about parsing/typing/codegen.
+            // A trailing ';' is optional; a repeat marker is harmless. Like
+            // author/authorial and material it is contextual, not a reserved
+            // keyword, so `memory` stays an ordinary identifier anywhere else
+            // (and in any document below 2.5).
+            ++i_;
+            accept(Tok::Semicolon);
+            p.memoryMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="determine"){
+            // Determine marker (syntax 2.6). A single, modifier-less, type-less
+            // word at document scope that DECLARES the document a determine
+            // document (see SLEELA.syntax section 23). Declarative only: it
+            // changes nothing about parsing/typing/codegen. The ideal, as-is:
+            // the document is open to be processed to further by a doctor,
+            // physician, or ghost toward completion; the procurement of term is
+            // held ideal as real for the torturement (completion by legal hand)
+            // as required by further processor review; science practitioners
+            // should and could can use it. A trailing ';' is optional; a repeat
+            // marker is harmless. Like author/authorial, material, and memory it
+            // is contextual, not a reserved keyword, so `determine` stays an
+            // ordinary identifier anywhere else (and in any document below 2.6).
+            ++i_;
+            accept(Tok::Semicolon);
+            p.determineMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="object"){
+            // Object marker (syntax 2.6). A single, modifier-less, type-less
+            // word at document scope that DECLARES the document an object
+            // document -- a member of the Natural Process family of markers
+            // (author/authorial, material, memory, determine; see SLEELA.syntax
+            // section 24). It names the document as an Object: a settled thing
+            // standing in the catalogue of what is, to which its author and the
+            // field relate. Declarative only: it changes nothing about
+            // parsing/typing/codegen. A trailing ';' is optional; a repeat
+            // marker is harmless. Contextual, not a reserved keyword, so
+            // `object` stays an ordinary identifier anywhere else (and in any
+            // document below 2.6). Recognised only here, at top-level document
+            // scope before content begins, so a field access or a class member
+            // named `object` is unaffected.
+            ++i_;
+            accept(Tok::Semicolon);
+            p.objectMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="field"&&!contentStarted){
+            // Field marker (syntax 2.6). A single, modifier-less, type-less word
+            // at document scope that DECLARES the document a field document -- a
+            // member of the Natural Process family (author/authorial, material,
+            // memory, determine, object; see SLEELA.syntax section 24). It names
+            // the document as the Field: the ground of relation in which objects
+            // stand and move. Declarative only: it changes nothing about
+            // parsing/typing/codegen. A trailing ';' is optional; a repeat
+            // marker is harmless. Contextual, not a reserved keyword, and
+            // recognised ONLY at top-level document scope BEFORE any content has
+            // begun, so the ordinary `field-decl` grammar inside a class and
+            // every `.field` access remain exactly as before.
+            ++i_;
+            accept(Tok::Semicolon);
+            p.fieldMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="pure"){
+            // Pure marker (syntax 3.0). A single, modifier-less, type-less word
+            // at document scope that DECLARES the document pure -- steered by,
+            // and standing on, its OWN honesty: clean, unmixed, and true to
+            // itself (see SLEELA.syntax section 27). Declarative only: it
+            // changes nothing about parsing/typing/codegen. A trailing ';' is
+            // optional; a repeat marker is harmless. Like the other Preonem
+            // markers it is contextual, not a reserved keyword, so `pure` stays
+            // an ordinary identifier anywhere else (and in any document below
+            // 3.0). `pure` and `gasoline` mean nearly the same thing.
+            ++i_;
+            accept(Tok::Semicolon);
+            p.pureMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="gasoline"){
+            // Gasoline marker (syntax 3.0). The near-synonym of `pure`: the same
+            // claim of a document steered by its own honesty, in the sense of a
+            // refined, usable grade (see SLEELA.syntax section 27). Declarative
+            // only: it changes nothing about parsing/typing/codegen. A trailing
+            // ';' is optional; a repeat marker is harmless. Contextual, not a
+            // reserved keyword, so `gasoline` stays an ordinary identifier
+            // anywhere else (and in any document below 3.0).
+            ++i_;
+            accept(Tok::Semicolon);
+            p.gasolineMarked=true;
+        }
+        else if(check(Tok::Ident)&&cur().text=="artifact"){
+            // Artifact marker (syntax 3.0). A single, modifier-less, type-less
+            // word at document scope that DECLARES the document an artifact --
+            // enacted, legislature-grade text, graded unto time and space (see
+            // SLEELA.syntax section 35). It states the document's standing: not
+            // loose prose but an enacted artifact of a body, binding for the
+            // moment and place it is read until superseded by a later enactment.
+            // Declarative only: it changes nothing about parsing/typing/codegen.
+            // A trailing ';' is optional; a repeat marker is harmless. Like the
+            // other Preonem markers it is contextual, not a reserved keyword, so
+            // `artifact` stays an ordinary identifier anywhere else (and in any
+            // document below 3.0).
+            ++i_;
+            accept(Tok::Semicolon);
+            p.artifactMarked=true;
+        }
         else {
             unsigned mods=parseJavaModifiers();
             if(check(Tok::KwClass)||check(Tok::KwInterface)||check(Tok::KwEnum)||check(Tok::KwRecord)){
@@ -224,7 +571,8 @@ DocumentExtension Parser::parseDocumentExtension(){
 ClassDecl Parser::parseClass(unsigned classModifiers,std::vector<annotation::Annotation> annotations,int depth){
     Tok kind=cur().kind; ClassDecl c; c.java.kind=tokenTypeKind(kind); c.java.modifiers=classModifiers; c.java.annotations=std::move(annotations);
     if(kind!=Tok::KwClass&&kind!=Tok::KwInterface&&kind!=Tok::KwEnum&&kind!=Tok::KwRecord) error("expected Java type declaration");
-    i_++; c.name=expect(Tok::Ident,"type name").text; c.java.qualifiedName=c.name; c.java.typeParameters=parseTypeParameters();
+    i_++; if(check(Tok::KwStringT)){ c.name=cur().text; ++i_; } else c.name=expect(Tok::Ident,"type name").text; c.java.qualifiedName=c.name; c.java.typeParameters=parseTypeParameters();
+    { std::vector<std::string> vars; for(const auto& tp:c.java.typeParameters) vars.push_back(tp.substr(0,tp.find(' '))); typeVars_.push_back(vars); }
     if(accept(Tok::KwExtends)) c.java.superclass=parseQualifiedName();
     if(accept(Tok::KwImplements)) c.java.interfaces=parseTypeList(Tok::LBrace);
     expect(Tok::LBrace,"'{'");
@@ -247,11 +595,17 @@ ClassDecl Parser::parseClass(unsigned classModifiers,std::vector<annotation::Ann
             hoistedNested_.push_back(std::move(nested));
             continue;
         }
+        if(check(Tok::Lt)){
+            // Generic method (Java): <T> T[] toArray(T[] a)
+            bool stat=(mods&JavaStatic)!=0, prot=(mods&JavaProtected)!=0;
+            c.methods.push_back(parseMethod(stat,prot,mods,std::move(annotations)));
+            continue;
+        }
         if(!isTypeStart() && !(check(Tok::Ident)&&peek(1).kind==Tok::LParen)) error("expected a type/member declaration");
         if(check(Tok::Ident)&&peek(1).kind==Tok::LParen&&cur().text==c.name){
             Method m; m.isStatic=false; m.isProtected=(mods&JavaProtected)!=0; m.java.modifiers=mods; m.java.constructor=true; m.java.annotations=std::move(annotations);
             m.retType=c.name; m.name=expect(Tok::Ident,"constructor name").text; expect(Tok::LParen,"'('");
-            if(!check(Tok::RParen)){do{Param p; p.annotations=parseAnnotations(annotation::UseSite::Parameter); p.type=parseType(&p.typeAnnotations); p.name=expect(Tok::Ident,"parameter name").text; m.params.push_back(std::move(p));}while(accept(Tok::Comma));}
+            if(!check(Tok::RParen)){do{Param p; p.annotations=parseAnnotations(annotation::UseSite::Parameter); p.type=parseType(&p.typeAnnotations); if(acceptEllipsis()) p.type+="[]"; p.name=expect(Tok::Ident,"parameter name").text; m.params.push_back(std::move(p));}while(accept(Tok::Comma));}
             expect(Tok::RParen,"')'"); parseThrows(m.java.thrownTypes); m.body=parseBlock(); c.methods.push_back(std::move(m)); continue;
         }
         if(!isTypeStart()) error("expected a field or method type");
@@ -261,25 +615,27 @@ ClassDecl Parser::parseClass(unsigned classModifiers,std::vector<annotation::Ann
         if(after==Tok::LParen)c.methods.push_back(parseMethod(stat,prot,mods,std::move(annotations)));
         else c.fields.push_back(parseField(stat,prot,mods,std::move(annotations)));
     }
-    expect(Tok::RBrace,"'}'"); return c;
+    expect(Tok::RBrace,"'}'"); typeVars_.pop_back(); return c;
 }
 Field Parser::parseField(bool isStatic,bool isProtected,unsigned modifiers,std::vector<annotation::Annotation> annotations){Field f;f.isStatic=isStatic;f.isProtected=isProtected;f.java.modifiers=modifiers;f.annotations=std::move(annotations);f.type=parseType(&f.typeAnnotations);f.name=expect(Tok::Ident,"field name").text;if(accept(Tok::Assign))f.init=parseExpr();expect(Tok::Semicolon,"';'");return f;}
 // A type is one of the scalar keywords, or an identifier naming a declared struct.
-bool Parser::isTypeStart()const{Tok k=cur().kind;if(k==Tok::KwVoid||k==Tok::KwIntT||k==Tok::KwDoubleT||k==Tok::KwBoolT||k==Tok::KwStringT)return true;return k==Tok::Ident;}
+bool Parser::isTypeStart()const{Tok k=cur().kind;if(k==Tok::KwVoid||k==Tok::KwIntT||k==Tok::KwLongT||k==Tok::KwInt64T||k==Tok::KwInt128T||k==Tok::KwDoubleT||k==Tok::KwBoolT||k==Tok::KwStringT)return true;return k==Tok::Ident;}
 std::string Parser::parseType(std::vector<annotation::Annotation>* typeAnnotations){
     if(typeAnnotations){auto a=parseTypeAnnotations(); typeAnnotations->insert(typeAnnotations->end(),a.begin(),a.end());}
     if(!isTypeStart()) error("expected a type");
     std::string t;
-    if(check(Tok::Ident)) t=mangleTypeName(parseGenericType()); else { t=cur().text; i_++; }
+    if(check(Tok::Ident)){ std::string g=parseGenericType(); std::string e=javaErase(g); t = (e==g) ? mangleTypeName(g) : e; } else { t=cur().text; i_++; }
     while(accept(Tok::LBracket)){ if(typeAnnotations){auto a=parseTypeAnnotations(); typeAnnotations->insert(typeAnnotations->end(),a.begin(),a.end());} expect(Tok::RBracket,"']'");t+="[]"; }
     return t;
 }
 Method Parser::parseMethod(bool isStatic,bool isProtected,unsigned modifiers,std::vector<annotation::Annotation> annotations){
     Method m;m.isStatic=isStatic;m.isProtected=isProtected;m.java.modifiers=modifiers;m.java.annotations=std::move(annotations);
-    m.java.typeParameters=parseTypeParameters();m.retType=parseType(&m.java.typeAnnotations);m.name=expect(Tok::Ident,"method name").text;expect(Tok::LParen,"'('");
-    if(!check(Tok::RParen)){do{Param p;p.annotations=parseAnnotations(annotation::UseSite::Parameter);p.type=parseType(&p.typeAnnotations);p.name=expect(Tok::Ident,"parameter name").text;m.params.push_back(std::move(p));}while(accept(Tok::Comma));}
+    m.java.typeParameters=parseTypeParameters();
+    { std::vector<std::string> vars; for(const auto& tp:m.java.typeParameters) vars.push_back(tp.substr(0,tp.find(' '))); typeVars_.push_back(vars); }
+    m.retType=parseType(&m.java.typeAnnotations);m.name=expect(Tok::Ident,"method name").text;expect(Tok::LParen,"'('");
+    if(!check(Tok::RParen)){do{Param p;p.annotations=parseAnnotations(annotation::UseSite::Parameter);p.type=parseType(&p.typeAnnotations);if(acceptEllipsis())p.type+="[]";p.name=expect(Tok::Ident,"parameter name").text;m.params.push_back(std::move(p));}while(accept(Tok::Comma));}
     expect(Tok::RParen,"')'");parseThrows(m.java.thrownTypes);
-    m.body=parseBlock();return m;
+    m.body=parseBlock();typeVars_.pop_back();return m;
 }
 // Parse one "simple statement" without its trailing ';': a local variable
 // declaration (`Type name [= expr]`), an assignment to a variable or struct
@@ -306,7 +662,7 @@ StmtP Parser::parseSimpleStatement(){
             h->spelling=cur().text;         // "gc" or "mem"
             i_++;                           // consume the GC-hint word
             if(levelHint){
-                long long n=std::stoll(cur().text); i_++;
+                long long n=parseHintLevel(cur().text); i_++;
                 if(n>1000000) n=1000000;
                 h->aggressiveness=(int)n;
             } else {
@@ -335,7 +691,7 @@ StmtP Parser::parseSimpleStatement(){
             if(levelHint){
                 // Preserve the raw level so the semantic analyzer can reject an
                 // out-of-range band (0..100) rather than silently clamping it.
-                long long n=std::stoll(cur().text); i_++;   // consume the int level
+                long long n=parseHintLevel(cur().text); i_++;   // consume the int level
                 if(n>1000000) n=1000000;   // guard only absurd input for int fit
                 h->aggressiveness=(int)n;
             } else {
@@ -360,6 +716,16 @@ StmtP Parser::parseSimpleStatement(){
             while(peek((int)k).kind==Tok::Dot&&peek((int)(k+1)).kind==Tok::Ident) k+=2;
             if(peek((int)k).kind==Tok::Ident) localDecl=true;         // run followed by the var name
         }
+        else if(peek(1).kind==Tok::LBracket){                         // array of an Ident type: `T[] name` / `T[][] name`
+            // Distinguish a declaration `U256[] xs` / `int256[][] m` from an
+            // indexing expression `arr[i] = ...`: a declaration's brackets are
+            // all empty (`[` immediately followed by `]`) and the run is
+            // followed by the variable name. An indexing expression has a
+            // subscript between the brackets, so this never misfires on it.
+            size_t k=1;                                               // peek offset: at first '['
+            while(peek((int)k).kind==Tok::LBracket&&peek((int)(k+1)).kind==Tok::RBracket) k+=2;
+            if(k>1 && peek((int)k).kind==Tok::Ident) localDecl=true;  // one+ empty `[]` then the var name
+        }
     }
     if(localDecl){auto d=std::make_unique<VarDecl>();d->type=parseType();d->name=expect(Tok::Ident,"variable name").text;if(accept(Tok::Assign))d->init=parseExpr();return d;}
     // Otherwise parse an expression; if `=` follows, it is an assignment whose
@@ -375,10 +741,41 @@ StmtP Parser::parseSimpleStatement(){
 }
 ExprP Parser::parseExpr(){return parseAssignment();}
 ExprP Parser::parseAssignment(){
-    ExprP e=parseConditional();
+    ExprP e=parseGuideChain();
     if(check(Tok::Assign)||check(Tok::PlusAssign)||check(Tok::MinusAssign)||check(Tok::StarAssign)||check(Tok::SlashAssign)||check(Tok::PercentAssign)){
         std::string op=cur().text; i_++; return std::make_unique<AssignmentExpr>(op,std::move(e),parseAssignment());
     }
+    return e;
+}
+// Guide chain (syntax 2.3): `new T(...) :: Guide :: Guide ...`.
+// Sits just below assignment, above `:::`. It only engages when the parsed head
+// is a constructor call (NewExpr) AND the next tokens are `:: <Ident>`, so it
+// never shadows the three existing `::` uses -- method references (obj::method),
+// the `ran::` GC-hint scope, and qualified `::dynamite`/`::permissible` imports --
+// all of which are consumed earlier, inside parsePrimary/parsePostfix or at the
+// top level, on a non-NewExpr head. A trailing `::` after `new T()` is not eaten
+// by parsePostfix, so it reaches this level cleanly.
+ExprP Parser::parseGuideChain(){
+    ExprP e=parseStructOffload();
+    if(dynamic_cast<NewExpr*>(e.get())
+       && check(Tok::DoubleColon) && peek(1).kind==Tok::Ident){
+        auto gc=std::make_unique<GuideChainExpr>(std::move(e));
+        while(check(Tok::DoubleColon) && peek(1).kind==Tok::Ident){
+            ++i_; // consume '::'
+            gc->guides.push_back(cur().text); ++i_; // consume the Guide name
+        }
+        return gc;
+    }
+    return e;
+}
+// Structural-offload send: `source ::: receiver(args)`. The `:::` operator tells
+// the VM to perform a structured, element-by-element transfer of the left
+// operand's data into the right-hand receiver (framing done by the interpreter,
+// not a source for-loop). Low precedence, left-associative, so it composes:
+//   a ::: b(n) ::: c(m)  ==  (a ::: b(n)) ::: c(m).
+ExprP Parser::parseStructOffload(){
+    ExprP e=parseConditional();
+    while(accept(Tok::TripleColon)){ e=std::make_unique<Binary>(":::",std::move(e),parseConditional()); }
     return e;
 }
 ExprP Parser::parseConditional(){
@@ -419,8 +816,25 @@ ExprP Parser::parseUnary(){
 ExprP Parser::parsePrimary(){
     const Token&t=cur();
     switch(t.kind){
-    case Tok::Int:i_++;return parsePostfix(std::make_unique<IntLit>(std::stoll(t.text)));
-    case Tok::Double:i_++;return parsePostfix(std::make_unique<DoubleLit>(std::stod(t.text)));
+    case Tok::Int:{
+        // Capture position before advancing so an overflow/format failure is
+        // reported as a located "Syntax error (line,col)" naming the literal,
+        // not an uncaught std::stoll exception whose what() is just "stoll".
+        int ln=t.line,cl=t.col;const std::string nt=t.text;i_++;long long iv;
+        try{
+            if(nt.size()>2&&nt[0]=='0'&&(nt[1]=='b'||nt[1]=='B'))iv=std::stoll(nt.substr(2),nullptr,2);
+            else iv=std::stoll(nt,nullptr,0);
+        }catch(const std::out_of_range&){throw std::runtime_error("Syntax error (line "+std::to_string(ln)+", col "+std::to_string(cl)+"): integer literal '"+nt+"' is out of range for a 64-bit integer");}
+        catch(const std::invalid_argument&){throw std::runtime_error("Syntax error (line "+std::to_string(ln)+", col "+std::to_string(cl)+"): malformed integer literal '"+nt+"'");}
+        return parsePostfix(std::make_unique<IntLit>(iv));
+    }
+    case Tok::Double:{
+        int ln=t.line,cl=t.col;const std::string nt=t.text;i_++;double dv;
+        try{dv=std::stod(nt);}
+        catch(const std::out_of_range&){throw std::runtime_error("Syntax error (line "+std::to_string(ln)+", col "+std::to_string(cl)+"): floating-point literal '"+nt+"' is out of range");}
+        catch(const std::invalid_argument&){throw std::runtime_error("Syntax error (line "+std::to_string(ln)+", col "+std::to_string(cl)+"): malformed floating-point literal '"+nt+"'");}
+        return parsePostfix(std::make_unique<DoubleLit>(dv));
+    }
     case Tok::Str:i_++;return parsePostfix(std::make_unique<StrLit>(t.text));
     case Tok::KwTrue:i_++;return parsePostfix(std::make_unique<BoolLit>(true));
     case Tok::KwFalse:i_++;return parsePostfix(std::make_unique<BoolLit>(false));
@@ -430,7 +844,7 @@ ExprP Parser::parsePrimary(){
     case Tok::LParen:{
         i_++;
         // Java cast disambiguation for a simple/qualified type: (Type) expression.
-        if(check(Tok::Ident)||check(Tok::KwIntT)||check(Tok::KwDoubleT)||check(Tok::KwBoolT)||check(Tok::KwStringT)){
+        if(check(Tok::Ident)||check(Tok::KwIntT)||check(Tok::KwLongT)||check(Tok::KwInt64T)||check(Tok::KwInt128T)||check(Tok::KwDoubleT)||check(Tok::KwBoolT)||check(Tok::KwStringT)){
             size_t save=i_; std::string type;
             try { type=parseType(); if(check(Tok::RParen)){i_++; return std::make_unique<CastExpr>(type,parseUnary());} }
             catch(const std::exception&) {}
@@ -445,7 +859,7 @@ ExprP Parser::parsePrimary(){
         // `new int[n]` and `new String[n]` parse like `new Point()`.
         std::string type;
         if(check(Tok::Ident)) type=mangleTypeName(parseGenericType());
-        else if(check(Tok::KwIntT)||check(Tok::KwDoubleT)||check(Tok::KwBoolT)||check(Tok::KwStringT)||check(Tok::KwVoid)){ type=cur().text; i_++; }
+        else if(check(Tok::KwIntT)||check(Tok::KwLongT)||check(Tok::KwInt64T)||check(Tok::KwInt128T)||check(Tok::KwDoubleT)||check(Tok::KwBoolT)||check(Tok::KwStringT)||check(Tok::KwVoid)){ type=cur().text; i_++; }
         else { error("expected a type after 'new'"); }
         auto n=std::make_unique<NewExpr>(type);
         if(accept(Tok::LBracket)){
@@ -517,11 +931,30 @@ std::unique_ptr<Block> Parser::parseBlock(){expect(Tok::LBrace,"'{'");auto b=std
 StmtP Parser::parseIf(){expect(Tok::KwIf,"'if'");expect(Tok::LParen,"'('");auto s=std::make_unique<IfStmt>();s->cond=parseExpr();expect(Tok::RParen,"')'");s->thenS=parseStatement();if(accept(Tok::KwElse))s->elseS=parseStatement();return s;}
 StmtP Parser::parseWhile(){expect(Tok::KwWhile,"'while'");expect(Tok::LParen,"'('");auto s=std::make_unique<WhileStmt>();s->cond=parseExpr();expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
 StmtP Parser::parseDo(){expect(Tok::KwDo,"'do'");auto s=std::make_unique<DoStmt>();s->body=parseStatement();expect(Tok::KwWhile,"'while'");expect(Tok::LParen,"'('");s->cond=parseExpr();expect(Tok::RParen,"')'");expect(Tok::Semicolon,"';'");return s;}
-StmtP Parser::parseFor(){expect(Tok::KwFor,"'for'");expect(Tok::LParen,"'('");auto s=std::make_unique<ForStmt>();if(!check(Tok::Semicolon))s->init=parseSimpleStatement();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon))s->cond=parseExpr();expect(Tok::Semicolon,"';'");if(!check(Tok::RParen))s->update=std::make_unique<ExprStmt>(parseExpr());expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
+StmtP Parser::parseFor(){expect(Tok::KwFor,"'for'");expect(Tok::LParen,"'('");auto s=std::make_unique<ForStmt>();if(!check(Tok::Semicolon))s->init=parseSimpleStatement();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon))s->cond=parseExpr();expect(Tok::Semicolon,"';'");if(!check(Tok::Semicolon)&&!check(Tok::RParen))s->update=std::make_unique<ExprStmt>(parseExpr());if(accept(Tok::Semicolon)){if(check(Tok::Semicolon)||check(Tok::RParen))error("four-term for loop requires a thread-stability Boolean expression");s->threadStable=parseExpr();if(accept(Tok::Semicolon)){if(check(Tok::RParen))error("five-term for loop requires a VM heap-health Boolean expression");s->heapHealthy=parseExpr();}}expect(Tok::RParen,"')'");s->body=parseStatement();return s;}
 StmtP Parser::parseSynchronized(){expect(Tok::KwSynchronized,"'synchronized'");expect(Tok::LParen,"'('");auto s=std::make_unique<SynchronizedStmt>();s->monitor=parseExpr();expect(Tok::RParen,"')'");s->body=parseBlock();return s;}
 StmtP Parser::parseTry(){expect(Tok::KwTry,"'try'");auto s=std::make_unique<TryStmt>();s->body=parseBlock();while(accept(Tok::KwCatch)){expect(Tok::LParen,"'('");CatchClause c; c.type=expect(Tok::Ident,"exception type").text;c.variable=expect(Tok::Ident,"exception variable").text;expect(Tok::RParen,"')'");c.body=parseBlock();s->catches.push_back(std::move(c));}if(accept(Tok::KwFinally))s->finallyBlock=parseBlock();if(s->catches.empty()&&!s->finallyBlock)error("try requires catch or finally");return s;}
 StmtP Parser::parseSwitch(){expect(Tok::KwSwitch,"'switch'");expect(Tok::LParen,"'('");auto s=std::make_unique<SwitchStmt>();s->selector=parseExpr();expect(Tok::RParen,"')'");expect(Tok::LBrace,"'{'");while(!check(Tok::RBrace)&&!check(Tok::Eof)){SwitchCase sc;if(accept(Tok::KwDefault)){sc.isDefault=true;expect(Tok::Colon,"':'");}else{expect(Tok::KwCase,"'case'");sc.labels.push_back(parseExpr());while(accept(Tok::Comma))sc.labels.push_back(parseExpr());expect(Tok::Colon,"':'");}while(!check(Tok::KwCase)&&!check(Tok::KwDefault)&&!check(Tok::RBrace)&&!check(Tok::Eof))sc.statements.push_back(parseStatement());s->cases.push_back(std::move(sc));}expect(Tok::RBrace,"'}'");return s;}
 StmtP Parser::parseStatement(){
+ // A statement may carry leading annotations. The statement-level annotations
+ // are the loop-timing ones (@loopDelay / @loopBudget), which set a loop's
+ // per-iteration sleep, and @spill, which marks the loop entry as a timer-start
+ // checkpoint (a one-shot pause before iterating) and may name the judges and
+ // witnesses of the loop's performs. All must precede a for/while/do loop.
+ if(check(Tok::At)){
+   auto anns=parseAnnotations(annotation::UseSite::LocalVariable);
+   long ms=loopTimingMillis(anns);
+   LoopSpill spill=loopSpill(anns);
+   StmtP loop;
+   if(check(Tok::KwWhile)) loop=parseWhile();
+   else if(check(Tok::KwFor)) loop=parseFor();
+   else if(check(Tok::KwDo)) loop=parseDo();
+   else error("a loop annotation (@loopDelay / @loopBudget / @spill) must precede a 'for', 'while', or 'do' loop");
+   if(auto w=dynamic_cast<WhileStmt*>(loop.get())){ w->loopSleepMs=ms; w->spill=spill; }
+   else if(auto f=dynamic_cast<ForStmt*>(loop.get())){ f->loopSleepMs=ms; f->spill=spill; }
+   else if(auto d=dynamic_cast<DoStmt*>(loop.get())){ d->loopSleepMs=ms; d->spill=spill; }
+   return loop;
+ }
  if(check(Tok::LBrace))return parseBlock();
  if(check(Tok::KwIf))return parseIf();
  if(check(Tok::KwWhile))return parseWhile();
