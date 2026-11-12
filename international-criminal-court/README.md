@@ -1,4 +1,4 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
 # ICC — Legal Standings documents
 
@@ -56,3 +56,9 @@ authoring environment; nothing was fabricated to fill them):
 Placement in this repository does not assert any official ICC status or
 endorsement, nor any relationship with The Walt Disney Company. Materials here
 are supplied by the requester for storage, integrity, and reference.
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>

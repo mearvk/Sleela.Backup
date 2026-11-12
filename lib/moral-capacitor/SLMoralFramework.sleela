@@ -1,34 +1,81 @@
-/*
- * lib/moral-capacitor/SLMoralFramework.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLMoralFramework — the catalogue of ethical lenses the
- *   Moral Capacitor(TM) charges from. Each framework is a named way of judging
- *   an operation's rightness, drawn from the coorenagraph moral vocabulary:
- *   deontology (duties/rules), consequentialism/utilitarianism (outcomes),
- *   virtue ethics (character), beneficence (do good / avoid harm), and
- *   consent/autonomy (respect the affected party's will). A framework contributes
- *   a small signed charge to the capacitor: positive when it endorses the
- *   operation, negative when it objects.
- *
- * This is the vocabulary bridge: the frameworks name the same ethics the
- * coorenagraph package defines (Deontology, Utilitarianism, VirtueEthics,
- * Beneficence), made evaluable as capacitor charge.
- *
- * Family: moral-capacitor. Bridges coorenagraph; charges SLMoralCapacitor.
- */
-#sleela 1.5
+<< lib/moral-capacitor/SLMoralFramework.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMoralFramework — the catalogue of ethical lenses the
+     Moral Capacitor(TM) charges from. Each framework is a named way of judging
+     an operation's rightness, drawn from the coorenagraph moral vocabulary:
+     deontology (duties/rules), consequentialism/utilitarianism (outcomes),
+     virtue ethics (character), beneficence (do good / avoid harm), and
+     consent/autonomy (respect the affected party's will). A framework contributes
+     a small signed charge to the capacitor: positive when it endorses the
+     operation, negative when it objects.
+   
+   This is the vocabulary bridge: the frameworks name the same ethics the
+   coorenagraph package defines (Deontology, Utilitarianism, VirtueEthics,
+   Beneficence), made evaluable as capacitor charge.
+   
+   Family: moral-capacitor. Bridges coorenagraph; charges SLMoralCapacitor. >>
+#sleela 2.5
+material;
 class SLMoralFramework {
-  // Framework ordinals.
-  static final int DEONTOLOGY     = 1;  // duties / rules
-  static final int UTILITARIANISM = 2;  // outcomes / greatest good
-  static final int VIRTUE_ETHICS  = 3;  // character / what a good agent does
-  static final int BENEFICENCE    = 4;  // do good, avoid harm
-  static final int CONSENT        = 5;  // respect autonomy / consent
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10914;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-10";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Framework ordinals. >
+  < duties / rules >
+  static final int DEONTOLOGY     = 1;
+  < outcomes / greatest good >
+  static final int UTILITARIANISM = 2;
+  < character / what a good agent does >
+  static final int VIRTUE_ETHICS  = 3;
+  < do good, avoid harm >
+  static final int BENEFICENCE    = 4;
+  < respect autonomy / consent >
+  static final int CONSENT        = 5;
   static final int FRAMEWORK_COUNT = 5;
 
-  int framework;      // one of the ordinals
+  < one of the ordinals >
+  int framework;
   String label;
-  int weight;         // how much this framework's charge counts (1..4)
+  < how much this framework's charge counts (1..4) >
+  int weight;
   int configured;
 
   void configure(int fw) {
@@ -41,7 +88,7 @@ class SLMoralFramework {
     else { label = "unknown"; framework = 0; }
   }
 
-  // Configure by name ("deontology", "utilitarianism", ...).
+  < Configure by name ("deontology", "utilitarianism", ...). >
   void configureByName(String name) {
     if (name == "utilitarianism") { configure(UTILITARIANISM); return; }
     if (name == "virtue")         { configure(VIRTUE_ETHICS); return; }
@@ -58,8 +105,8 @@ class SLMoralFramework {
   String name()   { return label; }
   int frameworkWeight() { return weight; }
 
-  // The coorenagraph vocabulary class name this framework corresponds to, so a
-  // caller can cross-reference the moral definition.
+  < The coorenagraph vocabulary class name this framework corresponds to, so a >
+  < caller can cross-reference the moral definition. >
   String coorenagraphTerm() {
     if (framework == DEONTOLOGY)     { return "Deontology"; }
     if (framework == UTILITARIANISM) { return "Utilitarianism"; }
