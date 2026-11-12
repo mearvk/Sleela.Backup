@@ -1,0 +1,217 @@
+<< lib/java/jdk-28/java.base/java/util/Locale.sleela
+   SLeeLa file for the Java type java.util.Locale (module java.base). One Java type, one SLeeLa file.
+   Java Source (JDK 28 API): https://download.java.net/java/early_access/jdk28/docs/api/java.base/java/util/Locale.html
+   Java kind: class; extends java.lang.Object; implements java.lang.Cloneable, java.io.Serializable
+   Status: members from the JDK 28 API (exact signatures).
+   The SLeeLa functions here are produced from that Java Source. No Java source text is copied. >>
+#sleela 3.0
+material;
+
+class Locale {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs. Values are faithful
+     to the real origin of the Java type: the Java SE / JDK 28 API by Oracle
+     and the OpenJDK community. >>
+  String metaVersion = "1.0.0";
+  int metaId = 5608;
+  String metaAuthor = "Oracle / OpenJDK";
+  String metaDate = "2026-11-12";
+  String metaCopyright = "GPLv2 with Classpath Exception (OpenJDK)";
+  String metaTrademark = "Java";
+  String metaCorporation = "Oracle Corporation";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-12";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "Java SE 28 API Specification (JDK 28 early access)";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  String javaType = "java.util.Locale";
+  String javaModule = "java.base";
+  String javaSource = "https://download.java.net/java/early_access/jdk28/docs/api/java.base/java/util/Locale.html";
+  String javaKind = "class";
+  String javaSuper = "java.lang.Object";
+
+  < ---- generics (SLeeLa erasure, SLEELA.syntax 16.3 and 38.1) ---- >
+  << The class is written without Java type parameters: every type variable and
+     every parameterized or package-qualified reference type erases to Any, and
+     java.lang.String erases to String. A value of a type parameter travels as
+     Any; test it with instanceof and cast it where it is used. The Java type
+     parameters are kept as data in JAVA_TYPE_PARAMETERS. An instance may record
+     the type arguments its caller means with bindGenericTypeArguments (for an
+     ArrayList of String, bind the single name java.lang.String). Nothing is
+     checked against them at run time. >>
+  static final String JAVA_TYPE_PARAMETERS = "";
+  String[] genericTypeArguments = new String[0];
+  public static String genericTypeParameters() { return JAVA_TYPE_PARAMETERS; }
+  public static int genericTypeParameterCount() { return 0; }
+  public static String genericTypeParameterName(int index) { return null; }
+  public Locale bindGenericTypeArguments(String[] arguments) { if (arguments == null) { this.genericTypeArguments = new String[0]; } else { this.genericTypeArguments = arguments; } return this; }
+  public String genericTypeArgument(int index) { if (index < 0 || index >= arrayLength(genericTypeArguments)) { return null; } return genericTypeArguments[index]; }
+  public int genericTypeArgumentCount() { return arrayLength(genericTypeArguments); }
+
+  < ---- BEGIN java declarations (from the JDK 28 API) ---- >
+  < constants and static fields (values reflected from the JDK) >
+  static Any ENGLISH = null;
+  static Any FRENCH = null;
+  static Any GERMAN = null;
+  static Any ITALIAN = null;
+  static Any JAPANESE = null;
+  static Any KOREAN = null;
+  static Any CHINESE = null;
+  static Any SIMPLIFIED_CHINESE = null;
+  static Any TRADITIONAL_CHINESE = null;
+  static Any FRANCE = null;
+  static Any GERMANY = null;
+  static Any ITALY = null;
+  static Any JAPAN = null;
+  static Any KOREA = null;
+  static Any UK = null;
+  static Any US = null;
+  static Any CANADA = null;
+  static Any CANADA_FRENCH = null;
+  static Any ROOT = null;
+  static Any CHINA = null;
+  static Any PRC = null;
+  static Any TAIWAN = null;
+  static final int PRIVATE_USE_EXTENSION = 120;
+  static final int UNICODE_LOCALE_EXTENSION = 117;
+  < ---- END java declarations ---- >
+
+  < ---- BEGIN java constructors (exact JDK 28 API signatures) ---- >
+  @throwable("java.lang.UnsupportedOperationException")
+  public Locale(String language) { }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Locale(String language, String country, String variant) { }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Locale(String language, String country) { }
+  < ---- END java constructors ---- >
+
+  < ---- BEGIN java signatures (exact JDK 28 API signatures) ---- >
+  << Not yet SLeeLa logic: each method returns the default value of its
+     Java return type. @throwable names what Java throws for it (abstract:
+     AbstractMethodError, else UnsupportedOperationException, plus the
+     declared throws). Write the logic from the Java Source above into the
+     java implementation block; the generator then drops the stub. >>
+  @throwable("java.lang.UnsupportedOperationException")
+  public boolean equals(Any obj) { return false; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public final String toString() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public int hashCode() { return 0; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Any clone() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any of(String language, String country) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any of(String language, String country, String variant) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any of(String language) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any getDefault(Any category) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any getDefault() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any lookup(Any priorityList, Any locales) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any filter(Any priorityList, Any locales, Any mode) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any filter(Any priorityList, Any locales) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getLanguage() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public final String getDisplayName() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getDisplayName(Any inLocale) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any[] getAvailableLocales() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getUnicodeLocaleType(String key) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getCountry() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Any stripExtensions() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public boolean hasExtensions() { return false; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getVariant() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static synchronized void setDefault(Any category, Any newLocale) { }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static synchronized void setDefault(Any newLocale) { }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getScript() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Any getUnicodeLocaleAttributes() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Any getUnicodeLocaleKeys() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public final String getDisplayLanguage() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getDisplayLanguage(Any inLocale) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getDisplayScript(Any inLocale) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getDisplayScript() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getDisplayCountry(Any inLocale) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public final String getDisplayCountry() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getDisplayVariant(Any inLocale) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public final String getDisplayVariant() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any filterTags(Any priorityList, Any tags) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any filterTags(Any priorityList, Any tags, Any mode) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static String lookupTag(Any priorityList, Any tags) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any availableLocales() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any getISOCountries(Any type) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static String[] getISOCountries() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static String[] getISOLanguages() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String getExtension(char key) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public Any getExtensionKeys() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public String toLanguageTag() { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static String caseFoldLanguageTag(String languageTag) { return null; }
+  @throwable("java.lang.UnsupportedOperationException")
+  public static Any forLanguageTag(String languageTag) { return null; }
+  @throwable("java.lang.UnsupportedOperationException, java.util.MissingResourceException")
+  public String getISO3Language() { return null; }
+  @throwable("java.lang.UnsupportedOperationException, java.util.MissingResourceException")
+  public String getISO3Country() { return null; }
+  < ---- END java signatures ---- >
+}

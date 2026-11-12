@@ -50,8 +50,21 @@ public:
     NativeWindow* native() { return native_.get(); }
     bool closed() const { return closed_; }
 
+    /* Presentation buffering: remembered on the window and pushed to the native
+     * surface, so it is re-applied if the native window is ever recreated. */
+    void set_buffering(SLUIBufferingMode mode);
+    SLUIBufferingMode buffering() const { return buffering_; }
+    SLUIStatus set_min_size(int width, int height);
+    SLUIStatus set_max_size(int width, int height);
+    SLUIStatus set_size_limits(int min_width, int min_height, int max_width, int max_height);
+    SLUIStatus get_min_size(SLUISize* out) const;
+    SLUIStatus get_max_size(SLUISize* out) const;
+
 private:
     void relayout();
+    SLUISize layout_minimum() const;
+    SLUISize effective_minimum() const;
+    void refresh_native_size_limits();
     static void invalidate_thunk(void* self) {
         static_cast<Window*>(self)->request_redraw();
     }
@@ -61,6 +74,10 @@ private:
     bool custom_titlebar_ = false;
     bool dirty_ = true;
     bool closed_ = false;
+    SLUIBufferingMode buffering_ = SLUI_BUFFERING_TRIPLE;
+    int min_width_ = 0, min_height_ = 0, max_width_ = 0, max_height_ = 0;
+    int applied_min_width_ = -1, applied_min_height_ = -1;
+    int applied_max_width_ = -1, applied_max_height_ = -1;
 
     std::unique_ptr<Widget> root_;
     std::unique_ptr<NativeWindow> native_;
