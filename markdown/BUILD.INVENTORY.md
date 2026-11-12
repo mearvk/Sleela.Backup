@@ -1,6 +1,6 @@
 # SLeeLa Build and Makefile Inventory
 
-SLeeLa Version: 0.3.0-dev  
+SLeeLa Version: 1.3.2-pro  
 Inventory Date: 2026-10-05  
 Purpose: Repository-wide build-surface audit
 
@@ -25,7 +25,7 @@ The 22 tracked build surfaces are:
 - http/7.0/build/, http/8.0/build/, http/9.0/build/
 - ide/build/
 - regex/build/
-- sleela-virtual-machine/7/build/, sleela-virtual-machine/8/build/, sleela-virtual-machine/9/build/, sleela-virtual-machine/11/build/
+- sleela-virtual-machine/007/build/, sleela-virtual-machine/008/build/, sleela-virtual-machine/009/build/, sleela-virtual-machine/011/build/
 - telephony-skya/build/
 
 The HTTP version build directories contain their own Makefiles and negotiation fragments. They are intentionally product/version-local build systems rather than one shared generated output tree.
