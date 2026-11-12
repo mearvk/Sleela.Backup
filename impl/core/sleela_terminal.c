@@ -182,16 +182,88 @@ int slterminal_resize(SLTerminalHandle terminal, unsigned cols, unsigned rows) {
     return SUCCEEDED(hr) ? 0 : (int)hr;
 }
 
+static DWORD WINAPI close_pseudoconsole_thread(LPVOID context) {
+    ClosePseudoConsole((HPCON)context);
+    return 0;
+}
+
+static void drain_terminal_output(HANDLE output_read) {
+    char buffer[4096];
+    DWORD received = 0;
+
+    if (!output_read) return;
+    /* ClosePseudoConsole may emit a final frame and wait for the host to
+     * drain it on Windows versions before 11 24H2. This blocking reader is
+     * deliberately run concurrently with ClosePseudoConsole. */
+    while (ReadFile(output_read, buffer, (DWORD)sizeof(buffer), &received, NULL) &&
+           received > 0) {
+        /* Drain until the pseudoconsole closes its output writer. */
+    }
+}
+
 int slterminal_close(SLTerminalHandle terminal) {
     SLWinTerminal* t = as_terminal(terminal);
+    DWORD wait_result;
+    HANDLE close_thread = NULL;
+    int rc = 0;
     if (!t) return EINVAL;
-    CloseHandle(t->input_write);
-    CloseHandle(t->output_read);
-    WaitForSingleObject(t->process, INFINITE);
-    CloseHandle(t->process);
-    ClosePseudoConsole(t->console);
+
+    /* Closing the input writer lets finite commands finish. Reap the child
+     * before beginning pseudoconsole teardown. */
+    if (t->input_write && !CloseHandle(t->input_write)) rc = (int)GetLastError();
+    t->input_write = NULL;
+
+    wait_result = WaitForSingleObject(t->process, 3000);
+    if (wait_result == WAIT_TIMEOUT) {
+        if (!TerminateProcess(t->process, ERROR_PROCESS_ABORTED)) {
+            DWORD error_code = GetLastError();
+            if (error_code != ERROR_ACCESS_DENIED && rc == 0) rc = (int)error_code;
+        }
+        wait_result = WaitForSingleObject(t->process, 2000);
+    }
+    if (wait_result != WAIT_OBJECT_0 && rc == 0) {
+        rc = wait_result == WAIT_FAILED ? (int)GetLastError() : ERROR_TIMEOUT;
+    }
+
+    /* ClosePseudoConsole can emit a final output frame and wait for the host
+     * to drain it on Windows 10 and Windows 11 before 24H2. Run the close on
+     * its own thread while this thread reads until the pseudoconsole closes
+     * its output writer. This avoids both a blocked close and a lost final
+     * frame. */
+    if (t->console && t->output_read) {
+        close_thread = CreateThread(NULL, 0, close_pseudoconsole_thread,
+                                    (LPVOID)t->console, 0, NULL);
+        if (close_thread) {
+            drain_terminal_output(t->output_read);
+            wait_result = WaitForSingleObject(close_thread, INFINITE);
+            if (wait_result != WAIT_OBJECT_0 && rc == 0)
+                rc = wait_result == WAIT_FAILED ? (int)GetLastError() : ERROR_TIMEOUT;
+            CloseHandle(close_thread);
+            close_thread = NULL;
+        } else {
+            /* Allocation failure fallback: closing the output pipe before
+             * ClosePseudoConsole is the documented non-threaded alternative. */
+            DWORD error_code = GetLastError();
+            if (rc == 0) rc = (int)error_code;
+            if (!CloseHandle(t->output_read) && rc == 0)
+                rc = (int)GetLastError();
+            t->output_read = NULL;
+            ClosePseudoConsole(t->console);
+        }
+    } else if (t->console) {
+        ClosePseudoConsole(t->console);
+    }
+    t->console = NULL;
+
+    if (t->output_read && !CloseHandle(t->output_read) && rc == 0)
+        rc = (int)GetLastError();
+    t->output_read = NULL;
+
+    if (t->process && !CloseHandle(t->process) && rc == 0)
+        rc = (int)GetLastError();
+    t->process = NULL;
     free(t);
-    return 0;
+    return rc;
 }
 
 int slterminal_valid(SLTerminalHandle terminal) { return as_terminal(terminal) != NULL; }
@@ -213,6 +285,7 @@ int slterminal_last_error(void) { return (int)GetLastError(); }
 typedef struct {
     int master;
     pid_t child;
+    char slave_name[256];
 } SLLinuxTerminal;
 
 static SLLinuxTerminal* as_terminal(SLTerminalHandle h) {
@@ -243,6 +316,8 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     pid_t child;
     struct winsize ws;
     SLLinuxTerminal* t;
+    char slave_path[256];
+    char* slave_name;
     if (!terminal || cols == 0 || rows == 0) return EINVAL;
     *terminal = (SLTerminalHandle)0;
     master = posix_openpt(O_RDWR | O_NOCTTY);
@@ -250,20 +325,35 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     if (grantpt(master) < 0 || unlockpt(master) < 0) {
         int e = errno; close(master); return e;
     }
+    slave_name = ptsname(master);
+    if (!slave_name) { int e = errno; close(master); return e; }
+    if (strlen(slave_name) >= sizeof(slave_path)) { close(master); return ENAMETOOLONG; }
+    strcpy(slave_path, slave_name);
     memset(&ws, 0, sizeof(ws));
     ws.ws_col = (unsigned short)(cols > 65535 ? 65535 : cols);
     ws.ws_row = (unsigned short)(rows > 65535 ? 65535 : rows);
+#if defined(__APPLE__)
+    /* Darwin PTYs can reject TIOCSWINSZ on the master before the slave has
+     * been opened. Set the initial dimensions through the slave descriptor. */
+    {
+        int size_fd = open(slave_path, O_RDWR | O_NOCTTY);
+        if (size_fd < 0) { int e = errno; close(master); return e; }
+        if (ioctl(size_fd, TIOCSWINSZ, &ws) < 0) {
+            int e = errno; close(size_fd); close(master); return e;
+        }
+        close(size_fd);
+    }
+#else
     if (ioctl(master, TIOCSWINSZ, &ws) < 0) {
         int e = errno; close(master); return e;
     }
+#endif
     child = fork();
     if (child < 0) { int e = errno; close(master); return e; }
     if (child == 0) {
-        char* slave_name = ptsname(master);
         int slave;
-        if (!slave_name) _exit(127);
         setsid();
-        slave = open(slave_name, O_RDWR);
+        slave = open(slave_path, O_RDWR | O_NOCTTY);
         if (slave < 0) _exit(127);
         ioctl(slave, TIOCSCTTY, 0);
         dup2(slave, STDIN_FILENO);
@@ -278,6 +368,7 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     if (!t) { kill(child, SIGTERM); close(master); waitpid(child, NULL, 0); return ENOMEM; }
     t->master = master;
     t->child = child;
+    strcpy(t->slave_name, slave_path);
     *terminal = (SLTerminalHandle)(intptr_t)t;
     return 0;
 }
@@ -305,7 +396,19 @@ int slterminal_resize(SLTerminalHandle terminal, unsigned cols, unsigned rows) {
     memset(&ws, 0, sizeof(ws));
     ws.ws_col = (unsigned short)(cols > 65535 ? 65535 : cols);
     ws.ws_row = (unsigned short)(rows > 65535 ? 65535 : rows);
+#if defined(__APPLE__)
+    {
+        int size_fd = open(t->slave_name, O_RDWR | O_NOCTTY);
+        int rc, e;
+        if (size_fd < 0) return errno;
+        rc = ioctl(size_fd, TIOCSWINSZ, &ws);
+        e = errno;
+        close(size_fd);
+        return rc == 0 ? 0 : e;
+    }
+#else
     return ioctl(t->master, TIOCSWINSZ, &ws) == 0 ? 0 : errno;
+#endif
 }
 
 int slterminal_close(SLTerminalHandle terminal) {
