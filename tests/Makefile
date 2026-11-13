@@ -1,9 +1,12 @@
+CC ?= cc
+CFLAGS ?= -std=c11 -O2 -Wall -Wextra -pedantic
 CXX ?= c++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pedantic
+LDLIBS ?= -lm
 
-.PHONY: all clean check jdk28-conformance jdk28-functional jdk28-signatures java-source-equivalence java-conversions java-flow java-exceptions java-api-dependencies java-constraints java-signature-comparison java-platform-qualification
+.PHONY: all clean check ai-neural-nets-xor neural-nets-xor ai-character-recognition character-recognition-smoke character-recognition-cli jdk28-conformance jdk28-functional jdk28-signatures java-source-equivalence java-conversions java-flow java-exceptions java-api-dependencies java-constraints java-signature-comparison java-platform-qualification
 
-all: memory reflection nordshrift runtime network-security
+all: memory reflection nordshrift runtime network-security neural-nets-xor character-recognition-smoke character-recognition-cli
 
 memory: native_memory_smoke.cpp ../api/native/memory/sleela_memory_manager.cpp
 	$(CXX) $(CXXFLAGS) -I../api/native/memory $^ -o $@
@@ -20,12 +23,30 @@ runtime: runtime_smoke.cpp ../api/native/runtime/sleela_runtime.cpp
 network-security: network_security_smoke.cpp ../api/native/network/sleela_network.cpp ../api/native/security/sleela_security.cpp
 	$(CXX) $(CXXFLAGS) $^ -lcrypto -o $@
 
+neural-nets-xor: ../artificial-intelligence/neural-nets/xor_example.c ../artificial-intelligence/neural-nets/neural_nets.c ../artificial-intelligence/neural-nets/neural_nets.h
+	$(CC) $(CFLAGS) -I../artificial-intelligence/neural-nets ../artificial-intelligence/neural-nets/xor_example.c ../artificial-intelligence/neural-nets/neural_nets.c $(LDLIBS) -o $@
+
+ai-neural-nets-xor: neural-nets-xor
+	./neural-nets-xor
+
+character-recognition-smoke: character_recognition_smoke.c ../artificial-intelligence/character-recognition/character_recognition.c ../artificial-intelligence/character-recognition/character_recognition.h
+	$(CC) $(CFLAGS) -I../artificial-intelligence/character-recognition $< ../artificial-intelligence/character-recognition/character_recognition.c $(LDLIBS) -o $@
+
+ai-character-recognition: character-recognition-smoke
+	./character-recognition-smoke
+
+character-recognition-cli: ../artificial-intelligence/character-recognition/character_recognition_main.c ../artificial-intelligence/character-recognition/character_recognition.c ../artificial-intelligence/character-recognition/character_recognition.h
+	$(CC) $(CFLAGS) -I../artificial-intelligence/character-recognition ../artificial-intelligence/character-recognition/character_recognition_main.c ../artificial-intelligence/character-recognition/character_recognition.c $(LDLIBS) -o $@
+	./character-recognition-cli --help
+
 check: all
 	./memory
 	./reflection
 	./nordshrift
 	./runtime
 	./network-security
+	./neural-nets-xor
+	./character-recognition-smoke
 
 jdk28-conformance:
 	python3 jdk28_functional_equivalence.py
@@ -41,14 +62,14 @@ java-source-equivalence:
 	python3 java_source_equivalence.py --java java_equivalence/ExpressionSurface.java --sleela java_equivalence/ExpressionSurface.sleela --json java_equivalence/expression-report.json
 
 clean:
-	rm -f memory reflection nordshrift runtime network-security
+	rm -f memory reflection nordshrift runtime network-security neural-nets-xor character-recognition-smoke character-recognition-cli character-recognition-smoke.txt character-recognition-smoke.jsonl
 
 java-conversions:
-	$(CXX) $(CXXFLAGS) -I../impl/frontend java_conversion_semantics.cpp ../impl/frontend/java_equivalence.cpp -o java-conversions
+	$(CXX) $(CXXFLAGS) -I../impl/frontend -I../impl/frontend/java java_conversion_semantics.cpp ../impl/frontend/java/java_equivalence.cpp -o java-conversions
 	./java-conversions
 
 java-overload:
-	$(CXX) $(CXXFLAGS) -I../impl/frontend java_overload_override.cpp ../impl/frontend/java_equivalence.cpp -o java-overload
+	$(CXX) $(CXXFLAGS) -I../impl/frontend -I../impl/frontend/java java_overload_override.cpp ../impl/frontend/java/java_equivalence.cpp -o java-overload
 	./java-overload
 
 java-flow:
@@ -71,3 +92,22 @@ java-platform-qualification:
 
 java-qualification:
 	python3 java_qualification_manifest.py
+
+.PHONY: java-api-dependency-graph java-api-member-dependencies java-api-visibility-constructor java-source-implementation-audit java-lang-native
+
+java-api-dependency-graph:
+	python3 java_api_dependency_graph_suite.py
+
+java-api-member-dependencies:
+	python3 java_api_member_dependencies_suite.py
+
+java-api-visibility-constructor:
+	python3 java_api_visibility_constructor_suite.py
+
+java-source-implementation-audit:
+	python3 java_source_implementation_audit_suite.py
+	python3 java_source_implementation_audit.py --top 40
+
+java-lang-native:
+	python3 java_object_identity_native_suite.py
+	python3 java_string_native_suite.py
