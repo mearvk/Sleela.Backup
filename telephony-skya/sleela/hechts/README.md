@@ -1,4 +1,4 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
 # Hecht's — Notional Brand on Skya Telephony
 
@@ -45,7 +45,7 @@ run comes back empty), it reaches back **finally** to the local Promise-brand
 server (`127.0.0.1:171`) and PINGs it.
 
 Elapsed time comes from the SLeeLa Time API built-in `timeUtcMillis()` — the
-same clock service `lib/os/SLClock` uses.
+same clock service `lib/operating-system/SLClock` uses.
 
 ### Server — always open, NAT-careful, PING-ready
 
