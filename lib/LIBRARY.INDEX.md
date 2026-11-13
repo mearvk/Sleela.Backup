@@ -1,11 +1,468 @@
 # SLeeLa /lib Library Index
 
-**Revision:** 0.48  
-**Packages:** 90  
-**SLeeLa source units:** 10907  
-**Module-facade symbols:** 62  
-**Total symbol records:** 10969  
+> Revision 1.04 moves the `lib/java/jdk-28/` module folders up from `docs/api/` to `lib/java/jdk-28/<module>/<package>/<Type>.sleela` and adds the 16 JDK 28 modules that export no packages (`java.se`, `jdk.jlink`, `jdk.zipfs`, ...) as folders holding a `module-summary.md`: 58 module folders and 386 folders in all. The /lib loader (`impl/frontend/driver.cpp`) now treats `java/jdk-28/` as a reference tier like `docs/api/`, so a real `lib/java/java/...` unit always wins; `working-binaries/sleela` was rebuilt with that rule. No source or symbol count change (moves only).
+>
+> Revision 1.14 adds `lib/java/converter/JConvOuter.sleela` (inner classes reach the enclosing instance through an `slOuter` field and an `slOuterArg` constructor parameter; `Outer.this` and unqualified outer members are rewritten). One new source unit (counts: 18126 to **18127** sources; 18212 to **18213** symbols).
+>
+> Revision 1.13 adds `lib/java/converter/JConvLambda.sleela` (lambda and method reference lowering to `(id, env)`, LOWERING.md section 2) and `lib/java/support/SLJavaFaults.sleela` (the Java exceptions for VM faults raised inside a try, SLEELA.syntax 37.5). Two new source units; with `JavaFloat` and `JavaFormat`, added the same day, the counts go from 18122 to **18126** sources and 18208 to **18212** symbols.
+>
+> Revision 1.12 adds `lib/java/converter/JConvExpr.sleela`, the expression half of the converter typed pass (precedence tree; the int wrap, division, shift and string-conversion laws of the conversion model). One new source unit (counts: 18121 to **18122** sources; 18207 to **18208** symbols).
+>
+> Revision 1.11 adds `lib/java/converter/JConvModel.sleela`, which reads the shared Java-to-SLeeLa conversion model (`impl/subjects/conversion/conversion.model`) for the converter. One new source unit (counts: 18120 to **18121** sources; 18206 to **18207** symbols).
+>
+> Revision 1.11 adds two Java-tier support classes to `lib/java/`: `JavaFloat` (binary32 rounding for the `float` type) and `JavaFormat` (`String.format` conversions and `String.join`), both used by the Java to SLeeLa converter and specified in `lib/java/JAVA.SPEC.md`. Two new source units (counts: 18122 to **18124** sources; 18208 to **18210** total records; 123 packages).
+>
+> Revision 1.12 adds `lib/java/JavaChecks.sleela`, the Java-tier check that throws `NegativeArraySizeException` for a negative array size (`JavaChecks.size`), used by the Java to SLeeLa converter and specified in `lib/java/JAVA.SPEC.md` section 4.8. One new source unit (counts: 18127 to **18128** sources; 18213 to **18214** total records; 123 packages).
+>
+> Revision 1.10 adds `lib/char/` and `lib/array/`, the libraries of the char specification (SLEELA.syntax section 45) and the array specification (section 46): `SLChar` (classification, case mapping, digits, surrogates, `toString`); `SLIntArray`, `SLDoubleArray`, `SLRefArray` (version-neutral helpers over `int[]`, `double[]`, `Any[]`: copy, fill, search, sum, minimum, maximum, reverse, heapsort, binary search, text) and `SLArray2D` (rectangular grids, needs syntax 3.1); each package has an `SLPackage` facade. Five new source units and two new facades (counts: 18115 to **18120** sources; 18199 to **18206** total records; 121 to **123** packages; 84 to **86** facades).
+>
+> Revision 1.09 adds `lib/java/converter/`, the Java source to SLeeLa source converter: ten SLeeLa units (`JConvMain`, `JConvConfig`, `JConvWalker`, `JConvSource`, `JConvLexer`, `JConvRules`, `JConvRewriter`, `JConvTranslator`, `JConvEmitter`, `JConvReport`) plus `README.md` and `run-converter.sh`. It walks a Java source tree and writes one SLeeLa file per type; every Java-to-SLeeLa decision is in `JConvRules`. Ten new source units (counts: 18105 to **18115** sources; 18189 to **18199** symbols).
+>
+> Revision 1.08 adds `lib/java/JavaOperands.sleela`, the Java operand-semantics class: 32-bit `int` arithmetic and shifts, `byte`/`short`/`char` narrowing, the `long` MIN_VALUE / -1 corner, and the JLS 5.1.3 floating point to integer conversions, verified against a real JDK by `examples/java/differential/OperandSemantics`. One new source unit (counts: 18104 to **18105** sources; 18188 to **18189** symbols).
+>
+> Revision 1.07 adds five Java-container support units to `lib/java/support/`: `SLJavaLambda` and `SLJavaLambdaTable` (lowered lambdas), `SLJavaBeanEvents` (java.beans event delivery), and `SLJavaProperty` and `SLJavaPropertyModel` (the general Java property model). Five new source units (counts: 18099 to **18104** sources; 18183 to **18188** total records; 121 packages).
+>
+> Revision 1.06 adds `lib/java/support/` (`SLJavaBits`, `SLJavaHex`, `SLJavaMd5`), the shared helper classes of the Java container. Three new source units (counts: 18096 to **18099** sources; 18180 to **18183** total records; 121 packages).
+> Revision 1.05 adds `lib/security/Security2.sleela`, the class that sits above the VM in colocated memory during boot, init and start (SLEELA.syntax section 42.6). One new source unit (counts: 18095 to **18096** sources; 18179 to **18180** total records; 121 packages).
+
+> Revision 1.04 adds `lib/java/SleelaHome.sleela`, the basic holder behind `Sleela.home` (SLEELA.syntax section 42): a class with public fields `vm` and `nearestDescendant`. One new source unit (counts: 18094 to **18095** sources; 18178 to **18179** total records; 121 packages).
+
+> Revision 1.03 adds `lib/java/jdk-28/`: one SLeeLa file per public Java SE / JDK 28 type (4,721 files, 1:1), at the online API path `lib/java/jdk-28/docs/api/<module>/<package>/<Type>.sleela`, each naming its JDK 28 API page as Java Source. The `docs/api` segment keeps the real `lib/java/java/...` units preferred by the loader, so no existing program becomes ambiguous. 4,721 new source units (counts: 13373 to **18094** sources; 13457 to **18178** total records; 121 packages).
+>
+> Revision 1.02 adds `lib/java/implementations/java/lang/JavaStringMethods.sleela`, the `java.lang.String` instance methods for built-in Strings (SLEELA.syntax section 41; sources 13373, symbols 13457).
+>
+> Revision 1.01 closes the short-side gap left by revision 1.00: `SLShortBook.isLongTerm`/`qtyLongTerm` (`lib/advantage/trading-actions-on-verb/SLShortBook.sleela`) mirror `SLLongBook`'s wording and behavior exactly, and `SLTermPotency`'s three methods (`termPotencyBp`, `agePotencyBp`, `atLeastHalfLongTerm`) are each overloaded for both book types (SLeeLa 3.0 overload resolution by argument type). Two new courseware entries (5-6) exercise the short-side overloads, including a direct check that the short-side readings exactly match the long-side readings at identical lot structure and ages -- the two overloads of each method are proven consistent with each other, not just independently correct -- plus the short-side counterpart of the empty-book/invalid-day and FIFO-cover entries. Gate `test-suites/test-long-term-potencies.sh` now covers 6 entries. Two new source units (counts: 13370 to **13372** sources; 13454 to **13456** total records; 121 packages).
+
+> Revision 1.00 adds `long-term-potencies/` to the advantage courseware (`lib/advantage/learner-vs-professional/courseware/long-term-potencies/`): `SLTermPotency` defines, precisely, two basis-point ratios over an existing `SLLongBook` -- term potency (the share of held units that have crossed the long-term threshold) and age potency (how close the weighted-average age is to the oldest lot's age) -- read-only, inventing no new fact the book does not already expose via `isLongTerm`/`qtyLongTerm`/`oldestAge`/`weightedAgeFloor`. States plainly that `SLShortBook` has no `isLongTerm`/`qtyLongTerm` yet, so term potency has no short-side counterpart. Four entries: a book aging past the threshold (with the buy/check order deliberately interleaved so no query is asked about a day before the book's own last action day, a real ordering bug caught while authoring entry 1), a FIFO sell removing a lot's whole contribution to both potencies, honest -1/-2 answers for an empty book and an invalid day, and ten randomly generated portfolios cross-checked against an independent Python model. Gate: `test-suites/test-long-term-potencies.sh` (4 entries). Five new source units (counts: 13365 to **13370** sources; 13449 to **13454** total records; 121 packages).
+
+> Revision 0.99 is a general code-quality review of `trading-actions-on-verb` and its courseware, checking the code itself rather than only comparing outputs to saved expectations. Found and fixed: `SLBatchReturn.idealBatchProfit` used a magnitude-based rejection sentinel that could equal a real, legitimate large-batch loss (a silent wrong answer); `idealBatchReturnBp`'s basis-point conversion formed a product that still overflowed the exact-comparison limit even after that fix, also silently wrong, fixed by re-deriving `maxTrades`/`maxCapital`/`maxBp` together against the single tightest product; the explicit per-trade batch path had no capital bound at all, latent but reachable; a dead, inaccurate `reason()` method was removed from `SLBatchReturn`; a `maxLots()` getter existed in `SLLongBook`/`SLShortBook` but was never called (the 16-lot cap was a duplicated literal in six places across four classes, and `SLDailyCapBook` lacked the getter entirely) -- now the single source of truth in all four book classes. Both overflow fixes were confirmed genuine by reverting them and watching new boundary-case regression tests fail with the original symptom, plus a 500-sample random sweep against an independent Python model. Also corrected: a stale session learning claiming an apostrophe in an angle-bracket comment is a lexical error does not reproduce against the current `working-binaries/sleela` (1.3.2-pro) and should not be relied on. No source or symbol count change (edits only, no new files).
+
+> Revision 0.98 adds `lib/java/implementations/java/lang/JavaText.sleela`, the plain-String / Java UTF-16 text bridge used by `java.io.File` (sources 13359, symbols 13443).
+>
+> Revision 0.98 answers items 1-4 raised while extending `trading-actions-on-verb` and its courseware. (1) `SLBatchReturn.sleela` computes the exact total return over a stated batch of N trades (idealized win-rate/size, or an explicit per-trade list of up to 64), with no compounding, the exact per-trade average a total implies, and a differential cross-check against real `SLLongBook` buy/sell pairs; use case 27 and a new adult reader (`07-batch-vs-per-trade.md`) use it to show precisely why a 20%-per-2,000-trades claim means 1 bp per trade as a batch total but 400x capital if misread as a per-trade rate repeated 2,000 times. (2) That reader connects it to the existing single-trade sensitivity reader. (3)-(4) `SLDailyCapShortBook.sleela` mirrors `SLDailyCapBook` on the short side (shortSell/cover/hold/coverAll, borrow cost, the 2,000-actions-per-day cap), with three new short-side medium-term courseware entries (18-20), bringing that folder to 20. Gates: `test-trading-actions.sh` now covers 27 use cases, `test-long-medium-averages.sh` now covers 20. Six new source units (counts: 13359 to **13365** sources; 13443 to **13449** total records; 121 packages).
+
+> Revision 0.97 adds `long-medium-averages/` to the advantage courseware (`lib/advantage/learner-vs-professional/courseware/long-medium-averages/`): `SLDailyCapBook` (SLLongBook plus a 2,000-actions-per-day cap, status code 10) and 17 entries — 16 medium-term FIFO trade stories across invented goods, plus one proving the cap boundary (2000th accepted, 2001st refused unchanged, reset on day change). A companion `ORGANIZED.md` glossary separates terms that are defined and used in code from terms raised in planning that were never given a working definition (notably 'Flat 2', left explicitly open) and records one declined request (sexual content) outside the scope of this library. Gate: `test-suites/test-long-medium-averages.sh` (17 entries); expected values for entries 1-16 came from an independent Python model. Eighteen new source units (counts: 13340 to **13358** sources; 13424 to **13442** total records; 121 packages).
+
+> Revision 0.96 adds illustrative short margin to `trading-actions-on-verb` (`lib/advantage/trading-actions-on-verb/`): `SLShortMargin` computes the exact ceiling requirement without a product that could pass 2^53, equity and excess, the deposit that meets a call, the fewest shares to cover (binary search, checked against a scan and for minimality) and the first call day under borrow cost (closed form, checked against stepping). Four new use cases (23 to 26): the requirement, a call and cover, a differential grid test, and margin wearing down with time against the short book accrual. Python reproduced every expected value and count; off-by-one mutations were caught, and a mutation that made the binary search never terminate was caught as a hang, so `test-suites/test-trading-actions.sh` now runs each case under a timeout and covers 26 use cases. Five new source units (counts: 13335 to **13340** sources; 13419 to **13424** total records; 121 packages).
+
+> Revision 0.95 adds the short side to `trading-actions-on-verb` (`lib/advantage/trading-actions-on-verb/`): `SLShortBook`, the mirror of `SLLongBook`, with `shortSell`, `cover`, `hold` and `coverAll`, FIFO lots, a fixed-while-short borrow cost per share-day, `markToMarket` and the same exact-comparison bounds. Seven new use cases (16 to 22): short open, cover and realized profit, refusals, the long/short loss asymmetry, borrow cost with a time stop, a differential stress test against a per-share shadow with borrow cost, and a mirror-law stress test in which one random stream drives both books and the short profit must equal minus the long profit at every step. Python reproduced every expected number and tally, and three deliberately broken copies of `SLShortBook` were all caught. The gate `test-suites/test-trading-actions.sh` now runs 22 use cases. Eight new source units (counts: 13327 to **13335** sources; 13411 to **13419** total records; 121 packages).
+
+> Revision 0.94 is a second review of `trading-actions-on-verb` (`lib/advantage/trading-actions-on-verb/`). It measured that SLeeLa `int` is 64-bit with exact `+ - * / %` but comparisons exact only up to 2^53 - 1, which exposed a wrong `isqrt` (it assumed a 32-bit word). Fixed: every compared value is bounded by `maxExact` and out-of-range input is refused; `SLLongBook` gains size and day bounds (status 8), -1 answers for a day before the book day, and a fixed 16-lot capacity; `SLEuclid.canFill` is now an O(log) closed form (the scan stays as `canFillScan`) and gains `nearestIndex`; fees and `realizedNet` are documented as a cash view. Two assurance use cases are added: 14, a differential stress test (1,200 random verbs against an independent per-share shadow model, tallies reproduced in Python) and 15, an exhaustive check of every Euclid routine against a slower method. The gate is `test-suites/test-trading-actions.sh` (15 use cases). Steering note added to `.kiro/steering/sleela-authoring-gotchas.md`. Two new source units (counts: 13325 to **13327** sources; 13409 to **13411** total records; 121 packages).
+
+> Revision 0.93 adds a `trading-actions-on-verb/` subject folder to the **`advantage`** package (`lib/advantage/trading-actions-on-verb/`): trading as verbs (`buy`, `sell`, `hold`, `flatten`) on a long-only FIFO position book. `SLLongBook` carries lots, integer-cent money, time-on-long queries (age, weighted age, term, time stop) and checked invariants (conservation of shares and cost); `SLEuclid` carries careful integer Euclid loops (gcd, Bezout, exact fills by two lot sizes, squared Euclidean distance, floor square root) with stated invariants and bounds. Thirteen self-checking use cases (seven on the style of trading long, six on time on long, the last joining both) with `.expected.txt` files are gated by `test-suites/test-trading-actions.sh`; expected values come from an independent Python model. Illustrative only, not trading, tax or legal advice. Fifteen new source units (counts: 13310 to **13325** sources; 13394 to **13409** total records; 121 packages).
+
+> Revision 0.92 extends the Device Instructor series in the **`advantage`** package (`lib/advantage/learner-vs-professional/series/`) from 22 to 32 lessons: ten larger trading decisions (lessons 23 to 32: rice, sugar, aluminum, zinc, nickel, rubber, glass, paper, plastic resin and an eight-way capstone) with five to eight options each. `SLDecisionDesk` now holds up to eight options and adds a sixth slip, a discount filed under the wrong option, caught by comparing the carrier of each entry as well as its value; lessons 7 to 22 output is unchanged. Each lesson has an `.expected.txt` checked by `test-suites/test-device-instructor.sh`, and every outcome was cross-checked against an independent Python oracle. Quotes are illustrative inputs, not market data. Ten new source units (counts: 13300 to **13310** sources; 13384 to **13394** total records; 121 packages).
+
+> Revision 0.91 extends the Device Instructor series in the **`advantage`** package (`lib/advantage/learner-vs-professional/series/`) from six to 22 lessons: sixteen trading decisions (lessons 7 to 22: lumber, cement, copper, steel, coffee, cotton, solar, lithium, semiconductors, server racks, smartphones, televisions, wheat, fuel, freight and a tie capstone) on a new shared `SLDecisionDesk` (the Purchase Master runs the onion, the student registers entries with one slip of five kinds, every differing entry is named, ties go to the earlier option). Each lesson has an `.expected.txt` checked by `test-suites/test-device-instructor.sh`, and the outcomes were cross-checked against an independent Python oracle. Quotes are illustrative inputs, not market data. Seventeen new source units (counts: 13283 to **13300** sources; 13367 to **13384** total records; 121 packages).
+
+> Revision 0.90 adds the Device Instructor series to the **`advantage`** package (`lib/advantage/learner-vs-professional/series/`): six runnable courseware lessons (`DiRegistryIntake`, `DiStudentInput`, `DiSystemReadiness`, `DiAgreement`, `DiNestedCarriers`, `DiPurchaseOnion`) on a shared `SLNounRegistry` (a carrier is the field or a registered noun; chains lead back to the field), each with an `.expected.txt` checked by `test-suites/test-device-instructor.sh`, plus `MANUAL.md` for user concerns and unit 1 of the children and adults courseware. Seven new source units (counts: 13276 to **13283** sources; 13360 to **13367** total records; 121 packages).
+
+> Revision 0.89 completes the wiring of the `guidoc` document GUI (release 1.2.0). An audit found settings the XML declared that nothing read (`fileDialog maxLines`, `listener flagExternal`, `command confirmsDiscard`) and gaps in the editor: no way to move the selection or scroll past the visible rows, no Enter/Esc in dialogs and menus, no window-close handling, no single entry point for a host. Now: Previous/Next Line and Page Up/Down (the editor scrolls with the selection), Edit Line (F2) loads the selected line into the entry, a `<keys>` section binds Enter/Esc, `requestClose()` handles the window close button, `SLGuiDocHost.event()` is the one host entry (press, type, key, close, tick), the three settings are wired and `applySettings()` re-reads them, and a twelfth readiness check (`wiring`) proves every widget command and key reaches a handler. Painting now serves latched repaints so a tick only repaints for outside changes. The demo makes 275 self-checks (each setting is changed and its effect observed); 19/19 commands and menu items covered. No new source units (counts unchanged: 13276 sources, 13360 total records, 121 packages).
+
+> Revision 0.88 adds a **system lock** and **editor's choice** to the `guidoc` document GUI (release 1.1.0). A new System menu has Lock System (admin only; refuses every command that adds content: New, Open, Save As, Insert, Replace, Delete, per the new `lockPolicy` on each XML command) and Editor's Choice (admin only, while locked: edit one tab despite the lock; the session is bound to that tab, ends on its own, and leaves no mark; `<lock choiceEdits=keep|revert>` keeps or exactly reverts its edits). The lock holds below the menu: `SLGuiDocTab` refuses edits and `SLDocumentObserver` gains `freeze()` / `thaw()` / `editAdmin()` so outside writers and module proposals are refused too; `SLObserverDocument.restore()` supports the exact revert. The XML, the validator (new lock rules) and the readiness gate (212 self-checks, 14/14 commands, 14/14 items) cover it. No new source units (counts unchanged: 13276 sources, 13360 total records, 121 packages).
+
+> Revision 0.87 makes the **`guidoc`** document GUI ready. `SLGuiDocReady` gives it a ready lifecycle (created, checking, ready, failed) with ten named self-checks and one-shot ready subscribers; until it is ready every command, click and accelerator is refused, and a failed gate never notifies. `SLGuiDocApp` counts which commands ran and which menu items were clicked. `gui-document.xml` gains a `<readiness status release>` claim that `tools/validate_gui_document.py --gate` verifies by running `guidoc-demo` (152 self-checks, every command run, every menu item clicked); the document is marked `ready` 1.0.0. `SLGuiDocHost` renders a text outline and a mount plan (nodes carry their white role), `guidoc.sleela` is the launcher, `test-suites/test-guidoc.sh` and `.github/workflows/guidoc-ci.yml` are the release gate. Documentation: `lib/guidoc/GUIDOC.md`. Three new source units (counts: 13273 to **13276** sources; 13357 to **13360** total records; 121 packages).
+
+> Revision 0.86 adds the **`guidoc`** package (`lib/guidoc/`): the document GUI, in white. A GUI document listener (`SLGuiDocListener`, an observer module admitted to each tab) keeps the screen in step with a standing document and flags external changes; around it sit tabs (up to 14), menus with accelerators and enabled-when conditions, a line editor, open and save-as dialogs, discard confirmations, and load/save through `SLGuiDocFile` (atomic plain-text save plus a one-file-per-line sidecar; load accepts a split only if it rejoins to the file exactly, otherwise opens unsplit and read-only). The GUI is described by `gui-document.xsd` / `gui-document.xml` and built from `SLGuiDocSpec`; every colour comes from the White flavor via `SLGuiDocWhite`. `SLGuiDocTab`, `SLGuiDocView` (76-node widget tree) and `SLGuiDocApp` (controller) complete it; `guidoc-demo` makes 152 self-checks (99 at the time of this revision). `tools/validate_gui_document.py` checks the XML against the schema, the cross-field rules and `SLGuiDocSpec.standard()`. Documentation: `lib/guidoc/GUIDOC.md`. Eight new source units (counts: 13265 to **13273** sources; 13349 to **13357** total records; 120 to **121** packages).
+
+> Revision 0.85 adds the **`softlisten`** package (`lib/softlisten/`): soft offers and soft listeners. People offer document edits, observer modules and vertical-integration tiers; nothing takes effect until the consuming model agrees. While an offer waits, the Malice, Ties and Loader soft listeners (nested in `SLSoftOfferDesk`) ascertain it, plus a use-model check against the live document, and attach findings of severity info/warn/hold/block; holds clear when the world changes, blocks do not. Soft listeners can be paused, altered (level) and retired, and fail closed (an unavailable listener holds every offer). `SLHotLinker` gains `preflight`, a dry run that `attach` itself now uses. `softlisten-demo` makes 81 self-checks. Documentation: `lib/softlisten/SOFTLISTEN.md`. Three new source units (counts: 13262 to **13265** sources; 13346 to **13349** total records; 119 to **120** packages).
+
+> Revision 0.84 adds the **`hotlink`** package (`lib/hotlink/`): the hot-link matrix and its backing model. `hotlink-matrix.xsd` / `hotlink-matrix.xml` declare which types of class may join a running system (code arrival, instance arrival, contract, trust floor, cap, gates) and which types may be connected, in what mode and fan-out; `SLHotLinkRow`, `SLHotLinkMatrix` (validated, sealable), `SLHotLinker` (instance and connection gate: trust floor, caps, cycle guard, native authorizer plus host-pinned digest, audit trail) and `SLHotLinkIntegration` (grows a vertical-integration stack and moves value only along approved connections) enforce it; `hotlink-demo` makes 80 self-checks. `tools/validate_hotlink_matrix.py` checks the XML against the schema, the cross-field rules and `standard()`. Documentation: `lib/hotlink/HOTLINK.md`. Five new source units (counts: 13257 to **13262** sources; 13341 to **13346** total records; 118 to **119** packages).
+
+> Revision 0.83 adds the **`observer`** package (`lib/observer/`): a dynamic document observer. Modules are admitted through bounded ports while the program runs; on each document change they may answer, converse (hop-limited), or propose edits that the observer alone applies (revision-checked, depth- and rate-capped), with fault quarantine, sender stamping and an audit trail. Ships `SLObserverDocument`, `SLObserverMessage`, `SLObserverPort`, `SLDocumentObserver` (nested `Auditor`), drop-in nested-class modules `SLObserverSummaryModule`, `SLObserverGuardModule`, `SLObserverReviewModule`, the modest GUI `SLObserverView`, and runnable `observer-demo` (39 self-checks) and `observer-gui-demo`. Documentation: `lib/observer/OBSERVER.md`. Ten new source units (counts: 13247 to **13257** sources; 13331 to **13341** total records; 117 to **118** packages).
+
+> Revision 0.82 adds a `trading/` subject subfolder to the **`advantage`** package (`lib/advantage/trading/`): the SLeeLa port of the eleven cross-asset trading models from the C/C++ `advantage` module. Classes: `SLTradingResult` (the common result with the advantage bridge: baseline and advantage net of the opportunity cost of capital), `SLTradingCheck` (shared fail-closed validation and finite bounds), the eleven models `SLTradingArbitrage`, `SLTradingMarketMaking`, `SLTradingRefurbishment`, `SLTradingRegional`, `SLTradingAggregation`, `SLTradingAsymmetry`, `SLTradingConsignment`, `SLTradingDistressed`, `SLTradingVirtual`, `SLTradingSynthetic` and `SLTradingMomentum`, `SLTradingRateBudget` (a wait before the next request from rate-limit numbers; honors Retry-After, cites RFC 9110), and counsel (`SLTradingApproach` scoring mean x confidence x trust, `SLTradingCounsel` ranking best-first). A runnable `trading-demo` makes 93 self-checks against hand-computed anchors and matches the C++ counsel scores. Pure computation: no prices fetched, no orders placed. Honest limits: illustrative inputs only, per-trade not per-year, and the SLeeLa `String` type has no character access so header text is parsed by the caller or the C layer. New documentation: `lib/advantage/TRADING.md`. Seventeen new source units (counts: 13230 to **13247** sources; 13314 to **13331** total records).
+
+> Revision 0.81 completes the **`java`** package type inventory against the reflected public JDK API (OpenJDK 25.0.2; JDK 28 envelope format): 1,235 previously missing public types gain source units (every one of the 4,801 public types now has a file), and every type carries a generated `java declarations` block (constants with real values, fields, abstract methods, complete enums and records) from `lib/java/tools/jdk_api_declare.py`. Measured coverage is in `lib/java/COVERAGE.md`. Counts also absorb five units of earlier drift.
+
+> Revision 0.80 adds a `medium-results/` folder to the **`advantage`** package (`lib/advantage/medium-results/`) demonstrating the connect medium + network subject connecting, controlling, and executing trades over open exchange in the USA. Four self-validating examples, one per theme: `business-exchange` (a US small business runs the full connect -> control -> execute -> record loop), `trade-exchange` (cross-venue commodity routing with a settlement fee), `economics-exchange` (joint-surplus maximization + Nash split via the math subject, settled in integer cents), and `youthfulness-exchange` (a guardrailed first trade: buyer-favored price + a hard spend cap turning an over-cap spend into a safe non-retryable decline). Each spine connects a national clock + venue, scouts and negotiates, and settles + records; every live operation defers to a host adapter (code 9). Four new source units.
+
+> Revision 0.79 adds a `connect/` subject subfolder to the **`advantage`** package (`lib/advantage/connect/`): the in-between connectivity MEDIUM that links Advantage SLeeLa programs to external systems, with one uniform status-code + fault-record convention (exception handling for every class of perform). Shared backbone: `SLConnectStatus` (the universal integer outcome vocabulary OK..NATIVE_ADAPTER_REQUIRED..INTERNAL, with transient-vs-permanent classification) and `SLConnectFault` (a structured fault record: code, subsystem, operation, message, retryable, attempts). Four connectors, each modelling lifecycle in the VM and deferring the live operation to a documented host adapter: `SLSqlConnector` (MySQL/databases, native slsql_*), `SLClockConnector` (national clocks / NTP, native slntp_*, cites RFC 5905), `SLNetConnector` (network connectivity, native slnet_*), and `SLMoneyConnector` (money sources -- banks, cards, wallets -- native slbank_*, integer cents, keystore-alias only, declines non-retryable). A runnable `connect-demo` validates all four. No secrets live in SLeeLa; no live database/clock/socket/bank is dialed from inside the VM. The medium also carries `SLTechInstallerII` -- a credentialed Tech Installer II authority (Max Rupplin / MEARVK LLC, North Carolina, 2026 and forward, governed by N.C.G.S. Chapter 57D) authorized to install the actual Use of the Advantage(TM) System onto install sets or settings, ceteris paribus (idempotent, licence-gated, changing only the declared target) -- with a runnable `installer-demo`. Nine new source units.
+
+> Revision 0.78 adds a `network/` subject subfolder to the **`advantage`** package (`lib/advantage/network/`) and a `network-trades/` example family spanning all four example levels. The subject ships `SLMarketScout` (the offline, deterministic stand-in for a live internet quote search -- same public shape as a live transport fetch -- reporting best buy ask, best sell bid, and the cross-venue spread), `SLNegotiationRound` (the performant closed-form clearing step `P* = sellerMin + alpha*(buyerMax - sellerMin)`, so a fan of counterparties clears in O(parties) with no search loop), and `SLCashflow` (the engineering grease: money in, a trade, time, and cash flow out as a receipt, with fees, carry, profit, return-on-capital, and a simple annualized rate), plus a runnable `network-demo`. The 12 `network-trades` examples walk the socio-economic ladder from lumber -> cement -> copper -> steel -> coffee -> cotton -> solar -> lithium -> semiconductors -> server racks -> smartphones -> televisions, each self-validating against hand-computed anchors, each paired with an equally-named `.md` covering per-tier class consensus for safe arrival / ethical use and the money-in -> trade -> time -> cash-out receipt. Sixteen new source units (4 subject + 12 examples).
+
+> Revision 0.77 populates `lib/advantage/examples/`: a `primers/` subfolder with one runnable primer per subject (onion, math, physics, integration, grading, output) and four more careful `professionals/` examples (trader -> math, healer -> physics, helper -> integration, consumer -> onion), each self-validating. Ten new source examples.
+
+> Revision 0.76 adds the `lib/advantage/examples/` source folder with a `professionals/` subfolder: a runnable `professionals-demo` that grades professional roles (engineer, doctor, teacher, auditor, clerk, apprentice) A–D via the grading subject (champion doctor A9, 4 winners). One new source example.
+
+> Revision 0.75 adds an `output/` seam to the **`advantage`** package (`lib/advantage/output/`) so modules can emit instead of staying silent: `SLAdvantageSink` routes rendered lines to the terminal (stdout), a CommonRails-formatted surface, a socket/connector (framed + buffered for a native slnet_write, exposed via drain()/lastFrame()), or a silent capture; `SLAdvantageEmitter` is the module-facing API (line/state/status/report/grade) that formats via the toolchain's PrintRail for the CommonRails target. The three top-level models (`SLAdvantageDeveloperModel`, `SLVerticalIntegration`, `SLGradeBook`) gained an `emitThrough(emitter)` self-report method. A runnable `output-demo` validates all four targets plus a live module self-report. Honest limit: a live socket is not available under `run`, so the socket target buffers framed lines for a native host to forward.
+
+> Revision 0.74 added a `grading/` subject subfolder to the **`advantage`** package (`lib/advantage/grading/`): a sophistication circuit grader that scores and rates modules and sets of modules. Classes: `SLModuleGrade` (one graded module -> 1..10 tier + S/A/B/C/D/F letter, with a role: normal/grader/absolute), `SLGradeSet` (a named set -- all/winning/losing/grader/absolute -- with its own aggregate rating), `SLSophisticationCircuit` (registers modules, applies win/lose/absolute thresholds, partitions the field into the named sets, finds the champion), and `SLGradeBook` (the top-level face: per-module and per-set ratings, overall field rating, win rate, and rating of any externally-supplied set). A runnable `grading-demo` validates it. Graders are themselves gradable (meta-graded); absolute modules are judged against a fixed bar.
+
+> Revision 0.73 added an `integration/` subject subfolder to the **`advantage`** package (`lib/advantage/integration/`): a vertical-integration model for capitalism/retail built from recursively-composable compartments, each with its own capacitive space, meaning, and relevance (OOD). Classes: `SLIntegrationKind` (the compartment-kind vocabulary -- nested-model, onion, engineering-bay, trial, newton-tray, and plain holders for resources/mediums/hobbies/games/entertainment/processes/consumption/trading/gaining/selling/forcing/challenging), `SLCompartment` (the recursive self-similar node), `SLEngineeringBay` (medium-capacity build/process), `SLTrialCompartment` (study/experiment), `SLNewtonMedianTray` (median-based enlightenment), and `SLVerticalIntegration` (the ordered upstream->downstream tier stack with recursion, vertical flow, and a system-sophistication score). A runnable `integration-demo` validates it. Mainly a vertical arrangement; tiers may embed their own sub-models.
+
+> Revision 0.72 added a `physics/` subject subfolder to the **`advantage`** package (`lib/advantage/physics/`): a structural-economics "physics of trust fields" modelling trust and announcements AS geometric/topological/stochastic objects (flagged as an analogy). Classes: `SLTrustMetric` (trust as a conformal metric tensor g_mu_nu), `SLTransactionalGeodesic` (Christoffel symbols + geodesic integration of the transaction path), `SLAnnouncementContact` (contact 1-form, the alpha^dalpha!=0 test, hyperplane restriction, homotopy-null check), `SLTrustDecaySDE` (CIR mean-reverting diffusion + Poisson-jump breach), and `SLPhysicsMath` helpers, with a runnable `physics-demo`. A new `lib/advantage/PHYSICS.md` documents the subject with definitions, explanations, ASCII sketches, worked examples, and cited sources (Einstein 1915, contact topology, Cox-Ingersoll-Ross 1985).
+
+> Revision 0.71 reorganized the **`advantage`** bilateral trade economics into a `math/` subject subfolder (`lib/advantage/math/`): `SLJointProfitMax` (integrated surplus + Q* where MR=MC), `SLNashBargaining` (the alpha-weighted split with a closed-form Nash price), `SLBilateralNewsvendor` (overage/underage costs + the centralized critical ratio), and shared `SLTradeMath` exp/ln/pow helpers, with a runnable `trade-math-demo`. A new `lib/advantage/MATH.md` documents the subject with definitions, explanations, ASCII sketches, and worked examples. The former flat `SLAdvantageTrade` is superseded by these focused subject classes.
+
+> Revision 0.70 extended the **`advantage`** package with bilateral trade economics (`SLAdvantageTrade`): joint profit maximization (the integrated surplus Pi_total(Q) with the optimal quantity Q* where marginal revenue equals marginal supply cost), the bilateral-monopoly Nash bargaining split (seller/buyer profit curves split by a bargaining-power index alpha over reservation profits, with a closed-form Nash price), and the bilateral newsvendor critical ratio (overage/underage costs on both ends and the centralized service level that avoids double marginalization). Self-contained exp/ln/pow helpers keep the package dependency-free; a runnable `advantage-trade-demo` validates every result against hand-computed anchors (Q*=20, Pi_total=800, Nash price 60 splitting 400/400, critical ratio 80/95).
+
+> Revision 0.69 adds the **`advantage`** SLeeLa standard-library package (`lib/advantage/`): the Sequitur onion model for advantaging a unique dividend with respect to a model. It ships `SLAdvantageLayer` (one concentric onion layer), `SLAdvantageDividend` (the unique dividend held wrt a named model), `SLAdvantageSequitur` (the ordered, navigable onion of layers — dividend, review, concerns, maths, additions, subtraction, regrouping, iteration — with inward/outward cursor navigation), and two encapsulations over the same engine: `SLAdvantageUserModel` (simple, outcome-facing) and `SLAdvantageDeveloperModel` (full-control). A `SLPackage` facade and a runnable `advantage-demo` (validated via `sleela run`) complete the package.
+
+> Revision 0.68 tightens the AI-facing facade contracts: neural-network configuration now owns defensive copies of layer sizes, adapter-only operations cannot claim native readiness, and character-recognition validates input-buffer dimensions and finite similarity thresholds. The native C APIs remain the execution authority until the embedding runtime supplies adapters.
+
+> Revision 0.67 adds two AI-facing SLeeLa standard-library packages. **`neural-nets`** (`lib/neural-nets/`) mirrors the native C ABI v1 with `SLNeuralNetworkConfig`, `SLNeuralNetwork`, and a package facade; it exposes the validated network configuration and lifecycle contract while inference/training remain explicit native-adapter operations. **`character-recognition`** (`lib/character-recognition/`) mirrors the native C11 glyph-recognition API with `SLCharacterRecognition`, `SLCharacterResult`, and a package facade; normalization and recognition remain native-adapter operations. Both packages document their exact native boundaries and limitations. The authoritative C/C++ implementations remain under `artificial-intelligence/`; these SLeeLa packages do not duplicate kernels or claim native execution without an adapter.
+
+
+**Revision:** 0.82  
+**Packages:** 123  
+**SLeeLa source units:** 18128  
+**Module-facade symbols:** 86  
+**Total symbol records:** 18214  
 **Symbol manifest:** `LIBRARY.SYMBOLS.md`
+
+> Revision 0.66 brings three big-number improvements that make a 10,000,000-digit
+> multiply run in ~3 seconds (from ~75 s). (1) **NTT multiply**: OP_BIGMUL now
+> uses a number-theoretic transform (exact, mod a 62-bit prime, base-1000
+> sub-limbs) above 512 limbs — O(n log n) vs Karatsuba's O(n^1.585). A
+> 10M-digit multiply dropped from ~39 s to ~3 s and scales linearly. (2) **New
+> big-integer opcodes** OP_BIGADD and OP_BIGDIVMOD (the `bigadd(a,b,result)` and
+> `bigdivmod(dividend,divisor,result)` builtins), completing the op set needed
+> for base conversion and a native Chudnovsky pi. (3) **Lock-free primitive
+> arrays + O(1) GC tracing**: the array opcodes skip the per-element mutex when
+> single-threaded, and the collector no longer re-scans a scalars-only array
+> (a new has_refs flag), removing an O(n^2) cost — filling a 1,000,000-element
+> array went from ~9 s to ~0.1 s. Regression guards `examples/BigNumOpsVerify`
+> (Karatsuba+NTT multiply, add, divmod vs references), `examples/BigMulVerify`,
+> and `examples/BigArrayGCVerify` all pass; threading/synchro/munction tests
+> pass (the lock-free path falls back to locking as soon as a worker spawns).
+
+> Revision 0.65 adds the `slrtp` package — the Sleela Retrouval Tactical
+> Processor, SLeeLa's AOP-style interception framework (aspects, pointcuts,
+> join points, and before / after-returning / after-throwing / around advice).
+> Seven new `#sleela 3.0` units under `lib/slrtp/` (SLPackage, SLRTPJoinPoint,
+> SLRTPPointcut, SLRTPAdvice, SLRTPAspect, SLRTPProcessor, and a runnable
+> slrtp-demo), one new package and one new facade. Because the VM has no
+> bytecode weaver and the checker does not upcast, interception is explicit and
+> advice is data-driven (a pointcut plus a built-in action). Counts rise from
+> 113/11907/80/11987 to 114/11913/81/11994.
+
+> Revision 0.64 makes very large numbers computable in SLeeLa by fixing two VM
+> bottlenecks exposed by big-integer work. (1) **Batched GC safepoint**: the
+> interpreter polled the collector -- taking a thread mutex -- on every single
+> instruction; it now polls once per 1,024 instructions (allocation opcodes poll
+> directly), so a tight fill/loop no longer pays a mutex per opcode. Filling a
+> 50,000-element array went from timing out (>100 s) to ~15 ms. (2) **GC
+> allocate-black**: the incremental generational collector snapshots roots once
+> at the start of marking, so an object allocated mid-marking was not rooted and
+> was swept while still live (surfacing as "index assignment on a non-array
+> value" when a second large array was built during a collection). New objects
+> allocated during an active cycle are now marked live for that cycle. Together
+> these let a 10,000,000-digit multiply run end to end for the first time
+> (~75 s total on Gen1), and put a ~1,000,000-digit single multiply at about one
+> second (fill 200 ms + multiply 1,120 ms). New regression guards:
+> `examples/BigArrayGCVerify` (two large arrays across a collection) and the
+> existing `examples/BigMulVerify`.
+
+> Revision 0.63 fixes a correctness bug in the OP_BIGMUL Karatsuba kernel and
+> adds a regression guard. The `z1 = z1 - z0 - z2` recombination subtracts two
+> operands from one limb, so the running borrow can reach two per limb, but the
+> kernel only handled a borrow of one -- producing wrong high limbs (an exact
+> multiple of 2^32) for products above the Karatsuba threshold. The borrow is
+> now carried as an integer count of bases. New `examples/BigMulVerify` checks
+> native `bigmul()` against a pure-SLeeLa schoolbook multiply across sizes from
+> 41 to 2,223 limbs (~370 to ~20,000 digits) and asserts the limb arrays are
+> identical. Measured after the fix: a ~20,000-digit multiply is byte-identical
+> to the reference and about 1,389x faster than the schoolbook multiply
+> (~2.1 ms native vs ~2.87 s pure-SLeeLa).
+
+> Revision 0.62 adds a native big-integer multiply to the VM and wires it into
+> `SLBigInteger`. A new append-only opcode **`OP_BIGMUL`** (156) multiplies two
+> base-1,000,000,000 limb `int[]` arrays with a C Karatsuba kernel in a single
+> native call -- bypassing the per-element array mutex and the per-instruction
+> interpreter overhead that make a hand-written limb loop slow. It is exposed to
+> SLeeLa as the `bigmul(a, b, result)` builtin and used by
+> `SLBigInteger.multiply()` (plus new `fromLimbs`/`toDecimalString` helpers and a
+> `examples/BigIntegerDemo`). Measured: a 1000-limb x 1000-limb product (about
+> 9,000 decimal digits each) completes in well under a millisecond, versus the
+> ~1,000,000 interpreted limb-pair array operations a pure-SLeeLa schoolbook
+> multiply would run. This is the VM bridge for heavy arithmetic that
+> `SLBigInteger` was originally designed to call, and the foundation for
+> computing very large numbers (e.g. high-digit pi) in SLeeLa itself.
+
+> Revision 0.61 adds the math precision norms and the Modium pi reference.
+> `SLMathNorms` carries the editable norms -- irrational-digit carry 2048,
+> repeating-digit carry 58, and a Finance-Verb carry with a hard floor of 1023
+> digits (requests below the floor are rejected and pinned). The norms are
+> documented and user-editable in `lib/math/MATH.PRECISION.NORMS.md` and
+> `lib/math/math-precision-norms.json`. `SLPiReference` is the Modium static
+> reference variable for pi: it carries pi inline to the 2048-digit irrational
+> norm, records its digit count and digit checksum, and self-verifies (head/tail
+> composition + echo) using only the string equality and concatenation that
+> SLeeLa guarantees -- the sibling `examples/PiReferenceDemo` reports pi
+> correctness on compile and run. The SLeeLa registry (`SLRegistry.seedDefaults`)
+> seeds a `Math` key with the three norms, the pi digit count, and the pi head
+> as the default start values a fresh install begins from. (A deeper reference
+> set in the millions of digits is produced out-of-band and resolved by handle;
+> the in-worker generator could not hold the full 7M-digit working set, so the
+> inline catalog value is pinned at the 2048-digit irrational norm.)
+
+> Revision 0.60 brings the `math` package to life. All **243** `lib/math`
+> classes, which previously carried only a generic `state`/`count` stub, now
+> have real, compiler-verified SLeeLa implementations spanning number theory,
+> statistics and probability, distributions, regression and hypothesis tests,
+> linear algebra (determinant/inverse/eigen), calculus and numerical methods,
+> ODE/PDE steps, Fourier/Laplace/Z transforms and signal processing,
+> optimization, sequences/series/combinatorics, set theory, geometry and
+> transforms, number types (complex/rational/big), expressions and symbolic
+> rules, fields, units, graphs, and tensors. The package also gains its
+> `SLPackage` facade and a runnable `examples/MathDemo`. Elementary functions
+> (`sqrt`, `exp`, `ln`, `sin`/`cos`, nth roots) are implemented inline in pure
+> SLeeLa; matrices/tensors are flat row-major `double[]`. Every result was
+> checked against known values via `impl/build/sleela run`.
+
+> Revision 0.59 adds the SLeeLa mirrors of the recently-built AI/LLM C/C++
+> subsystem as two new `/lib` packages. **`large-language-models`**
+> (`lib/large-language-models/`) mirrors
+> `artificial-intelligence/large-language-models`: `SLLlmEngine` (backend-driven
+> engine lifecycle), `SLLlmGenerationOptions`, `SLLlmVocabulary` (stable
+> insertion-order token ids), `SLLlmBaseVocabulary` (the `sleela-base-en-1.0`
+> seed with ten specials at fixed low ids), `SLLlmReasoning` (the RLM layer:
+> subjects, step kinds, verdicts, and the UNKNOWN-never-promoted commit policy),
+> `SLLlmCapacity` (the 2–16 GB envelope and derived reasoning budget),
+> `SLLlmCodeModel` (procedural code-model profile), `SLLlmSleelaVerifier` (the
+> static SLeeLa-rule checker that acts as the reasoning layer's symbolic half),
+> `SLLlmParametry` (known-by-name or local-by-path model binding, fail-closed),
+> and `SLLlmLoader` (the fixed-width loader/handler idiom), plus a runnable
+> `examples/LlmReasoningDemo`. **`rrs`** (`lib/rrs/`) mirrors
+> `artificial-intelligence/rrs`: `SLRrs` (Reasonable Responsibility Solidity —
+> the three-stage congruent feed-forward over the ternary 1/0/2 signal, the fold
+> kernel, and the `potestas` culmination) and `SLRrsSignalMonitor` (read-only
+> observability over the signal), plus a runnable `examples/RrsDemo`. The native
+> C/C++/Python sources remain authoritative; these classes expose the same
+> contracts to the SLeeLa compiler, Loader, and Nordshrift, and carry no model
+> or weights. Both demos pass `sleela check` and `sleela run`.
+
+> Revision 0.58 adds **VMSharp™** under the `vm` package (`lib/vm/vmsharp/`): a
+> VM manifest that can start as a self-installer bootloader for either a
+> **Minimal Desktop** or an **OS install by user-designated download**, on
+> commodity desktop processors — 32-bit **x86** and 64-bit **x64**, whether
+> **AMD** or **Intel** (x64 → UEFI, x86 → BIOS/MBR; live CPU facts via the OSLS
+> `oslsGetCPUInfo` read-only call). Five source classes plus the package facade:
+> **`VMSharp`** (the composing manifest), **`VMSharpBootloader`** (architecture +
+> vendor admission), **`VMSharpInstallPlan`** (the two startup modes with a
+> fail-closed designation gate — a download/install never proceeds without an
+> explicit, recorded source and target), **`VMSharpLevy`** (the declared
+> USD 380 per-use/install figure directed to a United States national retirement
+> process — disclosed, never auto-collected), **`VMSharpIncludedApp`** (an app
+> the image carries as a pre-designated install), and a runnable
+> `examples/VMSharpDemo`. The first included app is the **Java National GUI
+> FrontEnd Aspect** (`github.com/mearvk/Java.National.GUI.FrontEnd.Aspect` @
+> `main`), included for **Graduated Presidents of the United States**: a Java
+> Swing app built with a JDK (`javac`→`out/`, run `java -cp out Main`) that runs
+> on the VMSharp Desktop; its quiet install auto-designates the source while the
+> install target still passes the fail-closed gate. The classes are declarative
+> models: no firmware is flashed, no disk is written, no funds move, nothing is
+> cloned/compiled/run here; a real bootable image and a real build are produced
+> only by the pinned OS Creator toolchain. VMSharp can also **reach a GitHub repo
+> over a networking stack, acquire it, and run the OS Creator** against it:
+> **`VMSharpNetworkStack`** (HTTPS/TCP reach + OSLS `oslsNetworkResolve`),
+> **`VMSharpRepoAcquisition`** (clone / tarball / zip with the exact command/URL
+> for each), and **`VMSharpOSCreatorRun`** (the first-brush orchestrator targeting
+> `github.com/mearvk/OS.Sensitivity.III` for install instructions/data/code, with
+> a fail-closed gate — the OS Creator runs only after the repo is reachable AND
+> acquired) plus `examples/VMSharpOSCreatorDemo`; these reach nothing, clone
+> nothing, and build nothing. The fine finish adds the **install screens**:
+> **`VMSharpInstallWizard`** (welcome → CPU-admission gate → mode-select →
+> desktop/OS.Sensitivity.III path screens → fee disclosure → fail-closed
+> confirm) and the selectable **`VMSharpInstallOption`** component, plus
+> `examples/VMSharpInstallWizardDemo`; the wizard renders text screens and
+> drives the plan objects, and confirmation is gated on an admitted CPU and a
+> ready plan (OS path: reachable AND acquired AND target designated). It also
+> adds **USB boot media**: **`VMSharpUsbMedia`** models `make` → `make install`
+> → firmware loads from USB → VMSharp starts in a configured option, with an
+> engineering-preference knob (`sequitur` | `iq` | `havingness`), plus
+> `examples/VMSharpUsbMediaDemo` and **real per-OS Makefiles** under
+> `lib/vm/vmsharp/usb/` (a brand-detecting dispatcher + `Makefile.linux`,
+> `Makefile.windows`, `Makefile.macos`). `make` stages the files; `make install`
+> is fail-closed — it refuses without an explicit `USB_DEVICE` and an
+> `I_UNDERSTAND_THIS_ERASES=yes` confirmation, never auto-selects a disk, and
+> stages to a git-ignored `build/` dir outside the inventory. No firmware binary
+> is fabricated (VMSharp is a model; the media carries files + a boot
+> descriptor). And **`VMSharpDiskLayout`** lets VMSharp **choose the root
+> filesystem** (EXT4 default, or `xfs`/`btrfs`/`zfs`/`f2fs`/`ntfs`/`apfs`;
+> unrootable choices refused, faithful to `SLFilesystemCatalog`) and produce the
+> **initial hard-drive manifest** (GPT: FAT32 ESP + root + swap) and the
+> `parted`/`mkfs` partition plan — fail-closed until a target disk is designated,
+> and `VMSharpOSCreatorRun.osCreatorReady()` now also requires the disk layout
+> ready; the install wizard gained a disk-layout screen. It reads no disk, writes
+> no partition table, and runs no mkfs. Authored
+> for the User MEARVK LLC
+> (Max Rupplin 2026; George Soros a Kindness 2507+), respectful of United States
+> law and of the persons and groupings of peoples it concerns. Every class
+> carries the Metadata Class metapattern. Counts reconciled by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`. See `lib/vm/vmsharp/`.
+
+> Revision 0.57 grows the registered **`osls_*`** VM surface from **12 to 25**
+> read-only operations (OP_OSLS_CALL IDs 0–24) — no new opcode (155 stays
+> frozen; the typed registry grew). The 13 added calls are all read-only or
+> pure computation and bind under the existing host-read capability:
+> `osls_get_memory_info`, `osls_get_available_memory`, `osls_get_disk_space`,
+> `osls_get_volume_info`, `osls_get_system_load`, `osls_get_capabilities`,
+> `osls_get_runtime_info`, `osls_get_native_error`, `osls_path_normalize`,
+> `osls_path_join`, `osls_path_resolve`, `osls_get_path_info`,
+> `osls_network_resolve`. `SLOsSupportOSLSElements` gains the 13 matching element
+> factories, `SLOsSupportNative` the 13 wrappers, and `SLOsSupportCatalog` now
+> separates `getRegisteredInspectionFunctions` (live) from
+> `getStateChangingPlannedFunctions` (28 file/socket/timer/process operations
+> that stay out of the read-only path by design, per DESIGNATE.md §9). Native
+> C: new `os-level-support/osls_extended2.c`; and the long-standing per-platform
+> unevenness in the original twelve is fixed — Windows network enumeration (IP
+> Helper), CPU vendor/model + cache-line on all three platforms, and the real
+> Windows timezone key name. No new `.sleela` files, so the counts above are
+> unchanged. See `os-level-support/DESIGNATE.md` §11 and
+> `lib/os-level-support/README.md`.
+
+> Revision 0.56 indexes the **`os-level-support`** package (`lib/os-level-support/`)
+> in `LIBRARY.SYMBOLS.md` for the first time — the 20 source classes plus two
+> runnable examples that mirror and bind the native OSLS C ABI. New in this
+> revision: **`SLOsRuntimeStatus`** (the in-process runtime status space,
+> `slosh_status` / `osls_runtime_status`), split out from **`SLOsSupportStatus`**
+> which now carries the core `osls_status` values it was conflating;
+> **`SLOsSupportTyped`** (a typed-result binding catalogue pairing each OSLS
+> record call with its `lib/systems` record shape); and
+> **`SLOsSupportConsistencyExample`** (a runnable round-trip guard that asserts
+> the 12 OSLS element factories agree with the native registry, the status maps
+> round-trip, and the typed bindings name a known record class). Every
+> `lib/os-level-support` class now carries the Metadata Class metapattern; the
+> `*Source` facades delegate their grouping terms to the backend catalogues
+> instead of re-declaring them; `SLOsSupportNative` widens PID/epoch arguments to
+> `long` to match the `int64_t` C ABI; and the previously unrunnable example is
+> fixed (the reserved words `native` were renamed and multi-line `<` headers
+> converted to `<<`/`>>` blocks so the whole package loads and runs). The header
+> counts above are reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`. See `os-level-support/README.md` and
+> `lib/os-level-support/README.md`.
+
+> Revision 0.55 appends **`OP_OSLS_CALL` (155)** to the canonical ISA and
+> adds its `SLOpOslsCall` wrapper. The native VM dispatch now reaches the
+> registered `osls_*` ABI table through typed operation IDs 0–11, with bounded
+> JSON result marshalling. The opcode wrapper family now contains **156**
+> `SLOp*` classes for codes **0–155**, one-for-one with the native enum and
+> dispatch. The OSLS source facade and platform-specific source facades are
+> indexed alongside the wrapper. See `opcodes/OPCODES.md` and
+> `os-level-support/README.md`.
+
+> Revision 0.53 adds the new **`sleeladoc`** package (`lib/sleeladoc/`): the
+> SLeeLa-side **SleelaDoc extractor** — the Javadoc-tool analogue. It reads
+> structured doc-comments out of a `.sleela` Wrapper and renders a Markdown or
+> HTML API page, documenting *intent* (not just signatures). A SleelaDoc comment
+> is an ordinary angle-bracket comment whose sentinel token is `@doc` (or
+> `@page`), so it lexes today with no compiler change. Eight source Master
+> Classes plus the facade: **`SLSleelaDoc`** (the façade a caller drives —
+> `begin` → `feed` tokenized lines → `toMarkdown`/`toHtml`), **`SLDocScanner`**
+> (the token-stream front end that lifts doc blocks and `@tags` and attaches each
+> to the following declaration), **`SLDocRenderer`** (the Markdown/HTML back end),
+> and the model **`SLDocModel`** / **`SLDocMember`** / **`SLDocComment`** /
+> **`SLDocTag`**. Because the built-in String is opaque, the scanner reads
+> tokenized lines (the char-cell boundary used across `lib/text`/`lib/xml`); node
+> storage uses growable VM-managed object arrays. A runnable reference
+> (`sleeladoc-demo.sleela`) feeds a small documented class and prints the rendered
+> Markdown and HTML; `lib/sleeladoc/README.md` documents the surface, the
+> convention lives in `manifesto/SLEELADOC.md`, and the compiler's own
+> author-marked doc outputs (`--wiki` wikitext + the originated twin) are
+> documented in `manifesto/SLEELADOC.WIKI.md`. Every class carries the Metadata
+> Class metapattern.
+>
+> One new package (105 → **106**), one new facade (73 → **74**), eight new source
+> classes (11654 → **11662** sources; 11727 → **11736** total records). Counts
+> reconciled to the live `/lib` tree by `tools/generate-library-symbols.py` and
+> verified by `test-suites/test-library-inventory.sh`.
+
+> Revision 0.52 adds the new **`xml`** package (`lib/xml/`): a SLeeLa-side XML
+> **Document Object Model (DOM)**. Eight source Master Classes plus the package
+> facade. The DOM core — **`SLXmlDocument`** (the W3C `Document`: node factory
+> `createElement`/`createTextNode`/…, root management, `getElementById`,
+> `getElementsByTagName`, the XML declaration + serialization), **`SLXmlNode`**
+> (the central node: ordered children, named attributes, `textContent`,
+> `appendChild`/`removeChild`, depth/counts), **`SLXmlAttribute`** (a
+> name/value attribute with namespace prefix/local parts), and **`SLXmlNodeType`**
+> (the DOM `nodeType` vocabulary + walker predicates). The text boundary —
+> **`SLXmlSerializer`** (DOM → well-formed XML, compact or pretty, with XML 1.0
+> §2.4 character-data escaping) and **`SLXmlParser`** (a char-cell text → DOM
+> reader for the common subset plus a structural well-formedness check). And
+> **`SLXmlAspect`**, an executive-grade **aspect/quality register** that rates how
+> fully the library addresses each XML aspect (well-formedness, DOM, namespaces,
+> serialization, validity), each against its real governing W3C instrument, with
+> honest 0..10 scores (unimplemented validity scores low, never inflated).
+>
+> Node equality is a three-rung **tie of trust**: **identity** (`sameReference`,
+> native `==` on objects = same memory), **same subject** (`sameSubject`: same
+> nature/name/id/value, case-sensitive, children ignored), and **structure**
+> (`equals`/`sameStructure`: deep-equal subtrees — same subject, same attribute
+> set, same children in order). `tieStrength`/`tieName` report the rung; every
+> rung is reflexive, symmetric, and deterministic (idempotent). `SLXmlAttribute`
+> and `SLXmlDocument` carry the matching ladder. Node storage uses growable
+> VM-managed object arrays so a node's footprint tracks its real content. A
+> runnable reference (`xml-dom.sleela`) builds, queries, serializes, round-trips,
+> compares, and verifies the equality guarantees; `lib/xml/README.md` documents
+> the surface. Every class carries the Metadata Class metapattern.
+>
+> One new package (104 → **105**), one new facade (72 → **73**), eight new source
+> classes plus one upstream-reconciled source unit (11645 → **11654** sources;
+> 11717 → **11727** total records). Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.51 adds two companion `core` classes expressing the standing of a
+> work and its wins, both author-marked (syntax 2.4) and carrying the full
+> Metadata Class metapattern. **`SLAuthorship`** is the authorship *Method :
+> Class* — continuance (the work is carried forward), dignity (a modest,
+> protected standing; an empty claim honestly becomes `"unverified"`), and free
+> guidance (`imposes()` is false by contract). It carries any distinction as a
+> cited historiometric *estimate* with provenance, never an asserted score, and
+> ranks no person. **`SLVictory`** is the Victory Model: a *win* is a **check
+> that resolves to an exact item** (exact equality against a declared item),
+> measured against a named *calculus* (default: the U.S. reference standard,
+> citing NIST), in the direction *Humanities → Science* — "means are goals and
+> directions without worship elsewhere." Two new source classes; no new package
+> or facade. Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.50 defines the **`philosophers`** vocabulary categorically at the
+> IQ-201+ register. The twenty-one Guides are renamed and defined in seven
+> ternary categories — **Admission** (Approach, Notice, Warrant), **Inception**
+> (Patch, Seed, Frame), **Intent** (Aim, Course, Measure), **Vitality** (Health,
+> Vigor, Pattern), **Governance** (Guide, Ministry, Counsel), **Standing**
+> (Office, Saint, Favor), **Closure** (Impart, Conform, Approval) — in
+> `SLPhilosopherSeating` (`SEAT_*`, `CAT_*`, `category()`/`categoryName()`). A
+> new **`SLOrdain`** class adds **Ordain** as an *orthogonal* axis: the
+> ordinality itself (rank, category, nearness to the ordaining crown Approval),
+> which stands across all twenty-one rather than occupying a seat. The
+> categorical terms are related to the Source Diagram and the Language Syntax in
+> `lib/philosophers/PHILOSOPHERS.CATEGORICAL.md`, and the VIM/EMACS coloring
+> (`lib/linux-editors/`) is updated to the new Guide names plus a distinct
+> Ordain face. One new source class (`SLOrdain`); no new package or facade.
+> Counts reconciled to the live `/lib` tree by
+> `tools/generate-library-symbols.py` and verified by
+> `test-suites/test-library-inventory.sh`.
+
+> Revision 0.49 adds the new **`philosophers`** package (`lib/philosophers/`):
+> a model of the **perfect Constructor** of procedural design and its Guide
+> chain, declared with the `::` growth separator, e.g.
+> `Constructor() :: Patch :: Constructor :: Aim :: Guide`. Six Master Classes —
+> `SLPhilosopherSeating` (the finite register: base 21 seatings plus a signed
+> band [-2, +6] → capacity [19, 27], the 21 named Approach → Approval),
+> `SLPhilosopherGuide` (one `::`-separated growth / Wisdom, carrying a Gold or
+> Green color impart for the VIM/EMACS coloring), `SLFavorMechanism` (catches
+> the Notice of Approach at call time and grants/withholds runnability by
+> quorum), `SLConstructorContract` (the instantiative moment of nature and
+> time; the whistle only ticks ahead, ≤ ~2 min, then the object lives free),
+> `SLPhilosopherChain` (the ordered Guides under the seating capacity), and
+> `SLPhilosopherConstructor` (the orchestrator) — plus a runnable
+> `philosophers-demo.sleela`. The companion editor coloring lives under
+> `lib/linux-editors/` (`vim/syntax/sleela-philosophers.vim`,
+> `vim/ftplugin/sleela-philosophers.vim`, `emacs/sleela-philosophers.el`),
+> rendering the `::` separator and each Guide Gold/Yellow (approving) or Green
+> (growing). This adds **one new package and one new facade** (100 → **101**
+> and 69 → **70**) and 7 new source classes. The header counts above were also
+> **reconciled to the live `/lib` tree** by `tools/generate-library-symbols.py`
+> (the prior 0.48 header had drifted behind the filesystem); the counts now
+> match `find lib -type f -name '*.sleela'` exactly and are verified by
+> `test-suites/test-library-inventory.sh`.
 
 > Revision 0.48 adds **per-airline brand sites** to the **`website`** package:
 > one subdirectory per known modern airline under `lib/website/` (e.g.
@@ -351,7 +808,7 @@
 > (C, C++, Java, Python, JavaScript, Rust, Go), each an independent front end
 > that lowers its own language toward the common SLeeLa IR; see
 > `lib/compiler/MULTI-LANGUAGE.FRAMEWORK.md`. This revision also folds in four
-> previously-uncounted units (`os/SLLinuxOS`, `os/SLMacOS`, `os/SLWindowsOS`,
+> previously-uncounted units (`operating-system/SLLinuxOS`, `operating-system/SLMacOS`, `operating-system/SLWindowsOS`,
 > `vm/SleelaVMSystemCallBridge`). Sixteen `.sleela` units in total: 10,330 ->
 > **10,346** total records (10,275 -> **10,291** source classes); package count
 > unchanged at 83. `LIBRARY.SYMBOLS.md` was regenerated from the live tree
