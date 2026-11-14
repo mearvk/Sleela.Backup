@@ -1,4 +1,8 @@
+<img align="right" src="images/sleela/sleela-medium-profile-permanent-icon-002.jpg" width="45" height="45" alt="SLeeLa">
+
 # SLeeLa — Repository Organization
+<p align="center"><img src="https://raw.githubusercontent.com/mearvk/SLeeLa/master/merchandise/sleela-marketing-logo-001.png" alt="SLeeLa Marketing Logo" width="560"></p>
+
 
 A one-page map of this repository, intended to orient a new contributor or an
 AI assistant (Kiro, ChatGPT, etc.) quickly. For the full project narrative see
@@ -20,6 +24,7 @@ governed by the Sleela Language Metadocument (SL-META-0001).
 | `.sst` semantic layer (2.0) | [`SST-2.0.model`](SST-2.0.model) |
 | Standard library inventory (`/lib`) | [`lib/LIBRARY.INDEX.md`](lib/LIBRARY.INDEX.md), [`lib/LIBRARY.SYMBOLS.md`](lib/LIBRARY.SYMBOLS.md) |
 | Architecture overview | [`markdown/ARCHITECTURE.md`](markdown/ARCHITECTURE.md) |
+| Java Specific Section (the Java tier, Java to SLeeLa conversion) | [`lib/java/JAVA.SPEC.md`](lib/java/JAVA.SPEC.md) |
 | Compiler + library resolution | [`markdown/COMPILER.md`](markdown/COMPILER.md), [`markdown/COMPILER.RESOLUTION.md`](markdown/COMPILER.RESOLUTION.md) |
 | Build system | [`markdown/BUILD.md`](markdown/BUILD.md), [`impl/BUILD-LAYOUT.md`](impl/BUILD-LAYOUT.md) |
 | Native C/C++ design | [`impl/DESIGN.md`](impl/DESIGN.md) |
