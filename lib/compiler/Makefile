@@ -2,10 +2,16 @@
 # Max Rupplin - MEARVK LLC - 2026
 CC ?= cc
 CXX ?= c++
+PYTHON ?= python3
 CPPFLAGS ?= -Iinclude
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic
 BUILD_DIR ?= build
+ifeq ($(OS),Windows_NT)
+  EXE := .exe
+else
+  EXE :=
+endif
 
 C_SOURCES := src/sleela_compiler.c src/sleela_langc.c src/sleela_lang_bridge.c
 CPP_SOURCES := src/sleela_compiler.cpp src/sleela_langc.cpp
@@ -20,18 +26,18 @@ native: $(C_OBJECTS) $(CPP_OBJECTS)
 # Behavioral self-test for the multi-language front-end framework ABI. Links the
 # core ABI + bridge objects with the test driver and runs the assertions.
 selftest: $(BUILD_DIR)/sleela_langc.c.o $(BUILD_DIR)/sleela_lang_bridge.c.o | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/langc_selftest.c $^ -o $(BUILD_DIR)/langc_selftest
-	$(BUILD_DIR)/langc_selftest
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/langc_selftest.c $^ -o $(BUILD_DIR)/langc_selftest$(EXE)
+	$(BUILD_DIR)/langc_selftest$(EXE)
 
 # Resolve to an absolute path so it stays correct when passed into `make -C
 # ../../impl` (a relative path would otherwise be re-interpreted against impl/).
 SLEELA_SHA256_MANIFEST ?= $(abspath $(CURDIR)/../../security/sha256-manifest.json)
 
 runtime:
-	$(MAKE) -C ../../impl build/sleela SLEELA_SHA256_MANIFEST="$(SLEELA_SHA256_MANIFEST)"
+	$(MAKE) -C ../../impl build/sleela$(EXE) SLEELA_SHA256_MANIFEST="$(SLEELA_SHA256_MANIFEST)"
 
 inventory:
-	python3 ../../tools/sleela-build.py inventory-lib
+	$(PYTHON) ../../tools/sleela-build.py inventory-lib
 
 tutorial-check:
 	@printf '%s\n' 'SLeeLa compiler tutorial check'
@@ -40,7 +46,7 @@ tutorial-check:
 # Structural CI checks for the four compiler-construction example levels.
 # Complementary to, not a substitute for, compiling the .sleela sources.
 examples-check:
-	python3 examples/check_examples.py
+	$(PYTHON) examples/check_examples.py
 
 sanity:
 	@printf '%s\n' 'SLeeLa compiler package sanity check'

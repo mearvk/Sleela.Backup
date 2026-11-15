@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -49,7 +49,8 @@ L1  Core + Arith       Value/Token/AST model, precedence-climbing arithmetic
 - **Executor** — runs the AST: assignments, expansion, builtin/external
   dispatch, pipelines, redirections, control flow, and `$?` exit status.
 - **Builtins** — `cd`, `pwd`, `echo`, `export`, `unset`, `true`, `false`,
-  `exit`, `set`, `:`.
+  `exit`, `set`, `:`, plus topic-based `help` for language features, jobs,
+  process substitution, traps, prompt, portability, and build/install workflows.
 
 **M2 — control, functions, expansion:**
 
@@ -66,7 +67,8 @@ L1  Core + Arith       Value/Token/AST model, precedence-climbing arithmetic
 - **Parameter operators** — `${x:-default}`, `${x:=default}` (assigns back),
   `${x:?message}`, `${x:+alternate}`, and `${#x}` (length).
 - **Brace expansion** — `{a,b,c}` lists and numeric `{m..n}` ranges (cartesian
-  when combined, e.g. `{a,b}{1,2}`).
+  when combined, e.g. `{a,b}{1,2}`). Expansion is capped at 4,096 results and
+  64 recursive levels to limit memory/stack exhaustion from pathological input.
 - **Tilde expansion** — `~` → `$HOME`, `~user` → that user's home.
 - **Here-documents** — `<< DELIM` and `<<- DELIM` (tab-stripping); the body is
   expanded unless the delimiter is quoted (`<<'DELIM'`).
@@ -109,7 +111,8 @@ L1  Core + Arith       Value/Token/AST model, precedence-climbing arithmetic
   assignments use scoped environments, redirection failures are checked, and
   the process-substitution startup path avoids the common FIFO open deadlock.
 - **M5 CI validation** — the workflow performs a clean build, full smoke suite,
-  sanitizer validation, Clang installation, and fuzz-target compilation.
+  sanitizer validation, Clang installation, and fuzz-target compilation. The
+  fuzz harness also exercises expansion with command execution disabled.
 
 ### Soros relative time
 
@@ -137,6 +140,10 @@ than claiming that this project-defined notation replaces a civil calendar.
 
 See [`M5-HARDENING.md`](M5-HARDENING.md) for the implementation closeout and
 remaining gates toward the **GREAT** engineering classification.
+
+## Interactive prompt and help
+
+The interactive prompt defaults to the account username followed by `$ ` (for example, `ada$ `). Run `help` for the feature index or `help expansion`, `help jobs`, `help process`, `help traps`, `help select`, `help prompt`, `help soros`, `help portability`, or `help build` for topic-specific guidance. The help text also calls out known conformance and platform limitations.
 
 ## Build & run
 
@@ -188,3 +195,21 @@ printf '%s\n' 'cat <(printf hi)' | ./build/slsh
 
 *Original SleelaTerminal™ work. Behaviour targets public POSIX-shell
 specifications; no shell source was copied.*
+
+## Footerbar topic news feed
+
+Configure the footerbar from the shell with `footerbar chemistry`, `footerbar pharmacology`, or `footerbar chemistry pharmacology` to select one or multiple topics. Use `footerbar list` to see the 100-term catalog, `footerbar status` to inspect the saved selection, and `footerbar clear` to disable it. The GUI polls for changes and displays RSS headlines for the selected topics. See [FOOTERBAR-TOPICS.md](FOOTERBAR-TOPICS.md).
+
+### Interactive Tab completion
+
+In an interactive terminal, press **Tab** to complete a command from shell builtins and executable programs on `PATH`, or to complete a file or directory name. A unique directory completion keeps a trailing slash; a unique command/file completion adds a space. When several names match, Tab expands their shared prefix; pressing Tab again lists the matching candidates. Hidden files are offered when the typed prefix begins with a dot. Completion is part of the CLI line editor and does not change non-interactive script input.
+
+### Footer ticker appearance, scrolling, and RSS freshness
+
+The footer ticker uses a slightly grey text colour with a 1px pure-white text outline. In **Settings → Footer ticker**, choose when rightward scrolling starts: 5, 10, 15, 30, 45, or 60 minutes after the current footer message appears. The preference is saved in the user configuration. RSS searches request the past day of stories and display up to eight headlines. When a topic feed is enabled, SleelaTerminal refreshes every 15 minutes from 9:00 AM through 4:59 PM local time, and hourly outside that workday window. Feed updates require network access and `curl`.
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>

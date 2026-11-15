@@ -1,0 +1,364 @@
+<< lib/java/converter/JConvModel.sleela
+   Java container content (SLEELA.syntax 38.4): not part of the SLeeLa specification.
+   Definition: the Java-to-SLeeLa conversion model, read as data. It loads
+   impl/subjects/conversion/conversion.model (or the file named by JCONV_MODEL),
+   the same model that sleelactl java-convert reads, and answers the questions
+   the typed pass of JConvRewriter asks: the result type of a library member
+   (ret rows), the type of a library field (field rows), the SLeeLa function
+   of an int shift, division and remainder (binop int rows), the 32-bit wrap
+   (the cast long int row) and the string conversion template of a double,
+   char or reference (tostr rows), every cast row, and the chartext rows (a
+   library parameter that takes a char as text). The `widen` rows are also read so both converter implementations share primitive invocation-conversion facts. When the
+   file is missing the built-in defaults below are used and the report says so. >>
+#sleela 3.0
+material;
+
+class JConvModel {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Full record: a library-family class of the Java container. The data it
+     reads follows the Java Language Specification and the reflected JDK API. >>
+  String metaVersion = "0.5.0";
+  int metaId = 0;
+  String metaAuthor = "Max Rupplin";
+  String metaDate = "2026-11-13";
+  String metaCopyright = "MEARVK LLC";
+  String metaTrademark = "none";
+  String metaCorporation = "MEARVK LLC";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-13";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 5;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "The Java Language Specification, Java SE 28 Edition";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < where the model came from, its name and revision, and the rows read >
+  String path;
+  String modelName;
+  String revision;
+  boolean loaded;
+  int retRows;
+  < JLS 5.1.2 primitive widening edges from the shared conversion model >
+  String[] widenFrom;
+  String[] widenTo;
+  int widenN;
+  < ret rows: "Owner.member" to the result type (open addressing) >
+  String[] retKeys;
+  String[] retVals;
+  < field rows: "Owner.name" to the type >
+  String[] fieldKeys;
+  String[] fieldVals;
+  < binop int templates of the three shifts; tostr templates of double and char >
+  String shlInt;
+  String shrInt;
+  String ushrInt;
+  String tostrDouble;
+  String tostrChar;
+  < tostr reference: a reference shown through its toString() (null is "null") >
+  String tostrRef;
+  < binop int / and %, and cast long int (the 32-bit wrap) >
+  String divInt;
+  String remInt;
+  String toInt;
+  < every cast row: from, to, template (the double to integral narrowings saturate) >
+  String[] castFrom;
+  String[] castTo;
+  String[] castTpl;
+  int castN;
+  < chartext rows: owner, method, index of the argument that takes a char as text >
+  String[] ctOwner;
+  String[] ctMethod;
+  int[] ctIndex;
+  int ctN;
+  < qualify rows: VM built-in call names (an own method of that name is called qualified) >
+  String[] qualifyNames;
+  int qualifyN;
+
+  void addWiden(String from, String to) {
+    if (this.canWiden(from, to)) { return; }
+    if (this.widenN < arrayLength(this.widenFrom)) {
+      this.widenFrom[this.widenN] = from;
+      this.widenTo[this.widenN] = to;
+      this.widenN = this.widenN + 1;
+    }
+  }
+
+  JConvModel() {
+    this.path = "";
+    this.modelName = "built-in defaults";
+    this.revision = "";
+    this.loaded = false;
+    this.retRows = 0;
+    this.widenFrom = new String[64];
+    this.widenTo = new String[64];
+    this.widenN = 0;
+    this.addWiden("byte", "short");
+    this.addWiden("byte", "int");
+    this.addWiden("byte", "long");
+    this.addWiden("byte", "float");
+    this.addWiden("byte", "double");
+    this.addWiden("short", "int");
+    this.addWiden("short", "long");
+    this.addWiden("short", "float");
+    this.addWiden("short", "double");
+    this.addWiden("char", "int");
+    this.addWiden("char", "long");
+    this.addWiden("char", "float");
+    this.addWiden("char", "double");
+    this.addWiden("int", "long");
+    this.addWiden("int", "float");
+    this.addWiden("int", "double");
+    this.addWiden("long", "float");
+    this.addWiden("long", "double");
+    this.addWiden("float", "double");
+    this.retKeys = new String[32768];
+    this.retVals = new String[32768];
+    this.fieldKeys = new String[1024];
+    this.fieldVals = new String[1024];
+    < the rows of conversion.model 1.0.0, used when the file cannot be read >
+    this.shlInt = "JavaOperands.shlInt($a, $b)";
+    this.shrInt = "JavaOperands.shrInt($a, $b)";
+    this.ushrInt = "JavaOperands.ushrInt($a, $b)";
+    this.tostrDouble = "Double.toString($a)";
+    this.tostrChar = "JavaText.plainIfRepresentable(JavaText.codePointU($a))";
+    this.tostrRef = "JavaFormat.objectText($a)";
+    this.divInt = "JavaOperands.divInt($a, $b)";
+    this.remInt = "JavaOperands.remInt($a, $b)";
+    this.toInt = "JavaOperands.toInt($a)";
+    this.castFrom = new String[64];
+    this.castTo = new String[64];
+    this.castTpl = new String[64];
+    this.castN = 0;
+    this.ctOwner = new String[64];
+    this.ctMethod = new String[64];
+    this.ctIndex = new int[64];
+    this.ctN = 0;
+    this.qualifyNames = new String[512];
+    this.qualifyN = 0;
+  }
+
+  int slotIn(String key, int size) {
+    int h = key.hashCode();
+    if (h < 0) { h = 0 - h; }
+    return h % size;
+  }
+
+  < the first row for a key wins, as in the sleelactl loader (cm_find) >
+  void put(String[] keys, String[] vals, String key, String val) {
+    int s = slotIn(key, arrayLength(keys));
+    int probes = 0;
+    while (keys[s] != null) {
+      if (keys[s] == key) { return; }
+      s = (s + 1) % arrayLength(keys);
+      probes = probes + 1;
+      if (probes >= arrayLength(keys)) { return; }
+    }
+    keys[s] = key;
+    vals[s] = val;
+  }
+
+  String find(String[] keys, String[] vals, String key) {
+    int s = slotIn(key, arrayLength(keys));
+    int probes = 0;
+    while (keys[s] != null) {
+      if (keys[s] == key) { return vals[s]; }
+      s = (s + 1) % arrayLength(keys);
+      probes = probes + 1;
+      if (probes >= arrayLength(keys)) { return ""; }
+    }
+    return "";
+  }
+
+  < the result type of Owner.member, "@arg0", or "" when the model does not say >
+  String retOf(String owner, String member) { return find(this.retKeys, this.retVals, owner + "." + member); }
+
+  String fieldOf(String owner, String name) { return find(this.fieldKeys, this.fieldVals, owner + "." + name); }
+
+  < the whitespace-separated fields of source units a .. b-1: up to n, the last one keeps the rest >
+  String[] fieldsAt(JConvSource src, int a, int b, int n) {
+    String[] out = new String[n];
+    int count = 0;
+    int i = a;
+    while (count < n && i < b) {
+      while (i < b && (src.at(i) == 32 || src.at(i) == 9 || src.at(i) == 13)) { i = i + 1; }
+      if (i >= b) { break; }
+      int j = i;
+      if (count == n - 1) {
+        j = b;
+        while (j > i && (src.at(j - 1) == 32 || src.at(j - 1) == 9 || src.at(j - 1) == 13)) { j = j - 1; }
+      } else {
+        while (j < b && src.at(j) != 32 && src.at(j) != 9) { j = j + 1; }
+      }
+      out[count] = src.slice(i, j);
+      count = count + 1;
+      i = j;
+    }
+    return out;
+  }
+
+  < true when source units a .. start with the given ASCII word followed by a space >
+  boolean startsAt(JConvSource src, int a, String word) {
+    int n = word.length();
+    int k = 0;
+    while (k < n) {
+      if (src.at(a + k) != word.charAt(k)) { return false; }
+      k = k + 1;
+    }
+    return src.at(a + n) == 32;
+  }
+
+  boolean load(String file) {
+    this.path = file;
+    JConvSource src = new JConvSource();
+    if (osExists(file) != 1 || !src.load(file)) { return false; }
+    int i = 0;
+    int a = 0;
+    int rows = 0;
+    while (i <= src.length) {
+      if (i == src.length || src.at(i) == 10) {
+        if (i > a) {
+          if (startsAt(src, a, "widen")) {
+            String[] fw = fieldsAt(src, a, i, 3);
+            if (fw[1] != null && fw[2] != null) { this.addWiden(fw[1], fw[2]); }
+          } else if (startsAt(src, a, "ret")) {
+            String[] f = fieldsAt(src, a, i, 4);
+            if (f[3] != null) {
+              put(this.retKeys, this.retVals, f[1] + "." + f[2], f[3]);
+              this.retRows = this.retRows + 1;
+            }
+          } else if (startsAt(src, a, "field")) {
+            String[] f2 = fieldsAt(src, a, i, 4);
+            if (f2[3] != null) { put(this.fieldKeys, this.fieldVals, f2[1] + "." + f2[2], f2[3]); }
+          } else if (startsAt(src, a, "binop")) {
+            String[] f3 = fieldsAt(src, a, i, 4);
+            if (f3[1] == "int" && f3[2] == "<<") { this.shlInt = f3[3]; }
+            if (f3[1] == "int" && f3[2] == ">>") { this.shrInt = f3[3]; }
+            if (f3[1] == "int" && f3[2] == ">>>") { this.ushrInt = f3[3]; }
+            if (f3[1] == "int" && f3[2] == "/") { this.divInt = f3[3]; }
+            if (f3[1] == "int" && f3[2] == "%") { this.remInt = f3[3]; }
+          } else if (startsAt(src, a, "cast")) {
+            String[] f6 = fieldsAt(src, a, i, 4);
+            if (f6[1] == "long" && f6[2] == "int") { this.toInt = f6[3]; }
+            if (f6[3] != null && this.castN < arrayLength(this.castFrom)) {
+              this.castFrom[this.castN] = f6[1];
+              this.castTo[this.castN] = f6[2];
+              this.castTpl[this.castN] = f6[3];
+              this.castN = this.castN + 1;
+            }
+          } else if (startsAt(src, a, "qualify")) {
+            String[] f8 = fieldsAt(src, a, i, 2);
+            if (f8[1] != null && this.qualifyN < arrayLength(this.qualifyNames)) {
+              this.qualifyNames[this.qualifyN] = f8[1];
+              this.qualifyN = this.qualifyN + 1;
+            }
+          } else if (startsAt(src, a, "chartext")) {
+            String[] f7 = fieldsAt(src, a, i, 4);
+            if (f7[3] != null && this.ctN < arrayLength(this.ctOwner)) {
+              this.ctOwner[this.ctN] = f7[1];
+              this.ctMethod[this.ctN] = f7[2];
+              this.ctIndex[this.ctN] = parseIndex(f7[3]);
+              this.ctN = this.ctN + 1;
+            }
+          } else if (startsAt(src, a, "tostr")) {
+            String[] f4 = fieldsAt(src, a, i, 3);
+            if (f4[1] == "double") { this.tostrDouble = f4[2]; }
+            if (f4[1] == "char") { this.tostrChar = f4[2]; }
+            if (f4[1] == "reference") { this.tostrRef = f4[2]; }
+          } else if (startsAt(src, a, "model")) {
+            String[] f5 = fieldsAt(src, a, i, 3);
+            this.modelName = f5[1];
+            this.revision = f5[2];
+          }
+          rows = rows + 1;
+          if (rows % 1000 == 999) { int hint = 0; hint = gc; }
+        }
+        a = i + 1;
+      }
+      i = i + 1;
+    }
+    this.loaded = true;
+    return true;
+  }
+
+  < true when the shared model permits Java primitive widening from -> to >
+  boolean canWiden(String from, String to) {
+    int i = 0;
+    while (i < this.widenN) {
+      if (this.widenFrom[i] == from && this.widenTo[i] == to) { return true; }
+      i = i + 1;
+    }
+    return false;
+  }
+
+  int parseIndex(String t) {
+    int v = 0;
+    int i = 0;
+    while (i < t.length()) {
+      int c = t.charAt(i);
+      if (c < 48 || c > 57) { return -1; }
+      v = v * 10 + (c - 48);
+      i = i + 1;
+    }
+    return v;
+  }
+
+  < the template of the cast row from -> to, or "" (no row, or a plain assignment "=") >
+  String castTemplate(String from, String to) {
+    int i = 0;
+    while (i < this.castN) {
+      if (this.castFrom[i] == from && this.castTo[i] == to) {
+        if (this.castTpl[i] == "=") { return ""; }
+        return this.castTpl[i];
+      }
+      i = i + 1;
+    }
+    return "";
+  }
+
+  < true when the model lists name as a VM built-in call name (qualify row) >
+  boolean isQualifyName(String name) {
+    int i = 0;
+    while (i < this.qualifyN) { if (this.qualifyNames[i] == name) { return true; } i = i + 1; }
+    return false;
+  }
+
+  < the index of the argument of owner.method that takes a char as text (a chartext row), or -1 >
+  int charTextIndex(String owner, String method) {
+    int i = 0;
+    while (i < this.ctN) {
+      if (this.ctOwner[i] == owner && this.ctMethod[i] == method) { return this.ctIndex[i]; }
+      i = i + 1;
+    }
+    return -1;
+  }
+
+  String describe() {
+    if (!this.loaded) { return "built-in defaults (shared model file not read)"; }
+    < Do not include the absolute model path: it makes identical runs on
+       different checkout roots produce different report bytes. >
+    return this.modelName + " " + this.revision + " (" + this.retRows + " ret rows, " + this.widenN + " widening rows)";
+  }
+}
