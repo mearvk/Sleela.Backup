@@ -54,6 +54,8 @@ $Stage = Join-Path ([System.IO.Path]::GetTempPath()) ("sleela-install-" + [guid]
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "lib"),(Join-Path $Stage "bin"),(Join-Path $Stage "config"),(Join-Path $Stage "tools"),(Join-Path $Stage "security") | Out-Null
 if (Test-Path (Join-Path $RepoRoot "lib")) { Copy-Item -Recurse -Force (Join-Path $RepoRoot "lib\\*") (Join-Path $Stage "lib") }
 Copy-Item -Force (Join-Path $RepoRoot "tools\\verify-before-execution.py") (Join-Path $Stage "tools")
+Copy-Item -Force (Join-Path $RepoRoot "tools\\sleela-native-drive.py") (Join-Path $Stage "tools")
+Copy-Item -Force (Join-Path $RepoRoot "tools\\sleela-native-service.py") (Join-Path $Stage "tools")
 Copy-Item -Force (Join-Path $RepoRoot "security\\sha256-manifest.json") (Join-Path $Stage "security")
 # Preserve the trusted manifest's relative source paths so the installed verifier
 # sees the complete source set that the manifest describes.
@@ -66,7 +68,10 @@ foreach ($Entry in $Manifest.files) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
   Copy-Item -Force $Source $Target
 }
-foreach ($Product in @("sleela.exe","nordshrift.exe")) {
+Write-Host "Verifying staged runtime against the trusted SHA-256 manifest..."
+& py -3 (Join-Path $Stage "tools\verify-before-execution.py") --manifest (Join-Path $Stage "security\sha256-manifest.json") --root $Stage
+if ($LASTEXITCODE -ne 0) { throw "Staged runtime integrity verification failed; installation was not changed." }
+foreach ($Product in @("sleela.exe","sleelvac.exe","nordshrift.exe")) {
   $Built = Join-Path $RepoRoot ("impl\build\" + $Product)
   if (-not (Test-Path $Built)) { throw "Required compiled product missing: $Built" }
   Copy-Item -Force $Built (Join-Path $Stage ("bin\" + $Product))
