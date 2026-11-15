@@ -1,0 +1,104 @@
+<< lib/vm/src/sleela/SLVmReport.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLVmReport — the OOD equivalent of the native uniform
+     diagnostic surface (virtual-machine/vm-version/001/vm_report.{h,c}, v001).
+     It fixes one legible line format for every VM subsystem,
+     "[idea-vm] <SEV> (<subsystem>[/<code>]): <message>", gated by the active
+     verbosity, so a user sees consistent diagnostics instead of raw status
+     ints. On the native side output goes to a stream; on the Sleela side this
+     class formats and gates the line (print is the surface sink).
+   
+   Mirrors: enum VmSeverity, vm_report/vm_error/vm_warn/vm_notice/vm_debug.
+   
+   Family: vm. Composed by SLVmResult, SLVmMemory, SLVmTelemetry, SLVmAudit,
+     SLVmRuntime; it reads an SLVmConfig for the verbosity gate. >>
+#sleela 2.5
+material;
+class SLVmReport {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11295;
+  String metaAuthor = "unknown";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "unknown";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int SEV_DEBUG  = 0;
+  static final int SEV_NOTICE = 1;
+  static final int SEV_WARN   = 2;
+  static final int SEV_ERROR  = 3;
+
+  < mirrors the active SLVmConfig verbosity >
+  int verbosity;
+
+  void bind(SLVmConfig cfg) { if (cfg != null) { verbosity = cfg.verbosity; } }
+
+  String severityName(int s) {
+    if (s == SEV_DEBUG)  { return "DEBUG"; }
+    if (s == SEV_NOTICE) { return "NOTICE"; }
+    if (s == SEV_WARN)   { return "WARN"; }
+    if (s == SEV_ERROR)  { return "ERROR"; }
+    return "INFO";
+  }
+
+  < Lowest severity shown at the current verbosity (mirror min_shown()). >
+  int minShown() {
+    < quiet   -> errors only >
+    if (verbosity == 0) { return SEV_ERROR; }
+    < normal  -> warn+error >
+    if (verbosity == 1) { return SEV_WARN; }
+    < verbose -> notice..error >
+    if (verbosity == 2) { return SEV_NOTICE; }
+    < debug   -> everything >
+    return SEV_DEBUG;
+  }
+
+  < Emit one diagnostic if the severity is permitted. Returns 1 if printed. >
+  int emit(int sev, String subsystem, String code, String message) {
+    if (sev < minShown()) { return 0; }
+    String sub = subsystem;
+    if (sub == null) { sub = "vm"; }
+    String head = "[idea-vm] " + severityName(sev) + " (" + sub;
+    if (code != null) { head = head + "/" + code; }
+    print(head + "): " + message);
+    return 1;
+  }
+
+  int error(String subsystem, String code, String message)  { return emit(SEV_ERROR, subsystem, code, message); }
+  int warn(String subsystem, String code, String message)   { return emit(SEV_WARN, subsystem, code, message); }
+  int notice(String subsystem, String message)              { return emit(SEV_NOTICE, subsystem, null, message); }
+  int debug(String subsystem, String message)               { return emit(SEV_DEBUG, subsystem, null, message); }
+}

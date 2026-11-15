@@ -1,0 +1,104 @@
+<< SLeeLa Standard Library Definition.
+  Definition: Windows source-level facade. Portable calls use the existing OP_OS_*
+  VM bridge; Win32, IP Helper, Registry, SCM and Winsock extensions require
+  explicit native bindings and remain subject to Windows access controls. >>
+#sleela 2.5
+material;
+
+class SLOsSupportWindowsSource {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override each record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 0;
+  String metaAuthor = "mearvk";
+  String metaDate = "2026-11-05";
+  String metaCopyright = "Copyright mearvk LLC";
+  String metaTrademark = "none";
+  String metaCorporation = "mearvk LLC";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-05";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 8;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String value) { metaVersion = value; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int value) { metaId = value; }
+  String getMetaAuthor() { return metaAuthor; }
+  void setMetaAuthor(String value) { metaAuthor = value; }
+  String getMetaDate() { return metaDate; }
+  void setMetaDate(String value) { metaDate = value; }
+  String getMetaCopyright() { return metaCopyright; }
+  void setMetaCopyright(String value) { metaCopyright = value; }
+  String getMetaTrademark() { return metaTrademark; }
+  void setMetaTrademark(String value) { metaTrademark = value; }
+  String getMetaCorporation() { return metaCorporation; }
+  void setMetaCorporation(String value) { metaCorporation = value; }
+  String getMetaOrigin() { return metaOrigin; }
+  void setMetaOrigin(String value) { metaOrigin = value; }
+  String getMetaBirthDate() { return metaBirthDate; }
+  void setMetaBirthDate(String value) { metaBirthDate = value; }
+  int getMetaScienceRating() { return metaScienceRating; }
+  void setMetaScienceRating(int value) { metaScienceRating = value; }
+  String getMetaNationalSchedule() { return metaNationalSchedule; }
+  void setMetaNationalSchedule(String value) { metaNationalSchedule = value; }
+  String backendTerm = "WindowsBackend";
+  String platformName = "Windows";
+  String minimumTarget = "Windows 10";
+  String pathSeparator = "\\";
+  String lineEnding = "\r\n";
+  String executableSuffix = ".exe";
+
+  String getBackendTerm() { return backendTerm; }
+  String getPlatformName() { return platformName; }
+  String getMinimumTarget() { return minimumTarget; }
+  String getPathSeparator() { return pathSeparator; }
+  String getLineEnding() { return lineEnding; }
+  String getExecutableSuffix() { return executableSuffix; }
+  boolean isCurrentPlatform() { return osPlatform() == "Windows"; }
+
+  < Portable operations: routed through the existing VM bridge. >
+  String hostName() { return osHostName(); }
+  String userName() { return osUserName(); }
+  String currentDirectory() { return osCurrentDir(); }
+  String temporaryDirectory() { return osTempDir(); }
+  String environmentValue(String key) { return osGetEnv(key); }
+  boolean setEnvironmentValue(String key, String value) { return osSetEnv(key, value) == 0; }
+  boolean pathExists(String path) { return osExists(path) == 1; }
+  boolean isDirectory(String path) { return osIsDir(path) == 1; }
+  int fileSize(String path) { return osFileSize(path); }
+
+<< The grouping terms are owned by the backend catalogue (SLOsSupportWindows);
+   this facade delegates to that single source of truth rather than
+   re-declaring the list. >>
+  SLList getExtensionGroups() {
+    SLOsSupportWindows backend = new SLOsSupportWindows();
+    return backend.getGroupTerms();
+  }
+
+  SLList getNativeExtensionSymbols() {
+    SLList out = new SLList();
+    out.add("CreateIoCompletionPort");
+    out.add("CreateWaitableTimerW");
+    out.add("GetNativeSystemInfo");
+    out.add("GetProcessTimes");
+    out.add("GetSystemTimes");
+    out.add("GetVolumeInformationW");
+    out.add("GlobalMemoryStatusEx");
+    out.add("IPHelper:GetAdaptersAddresses");
+    out.add("ReadDirectoryChangesW");
+    out.add("RegistryReadOnly");
+    out.add("ServiceControlManager");
+    out.add("Winsock2");
+    return out;
+  }
+
+  boolean nativeExtensionRegistered(String symbol) { return false; }
+  String systemDirectory() { return osGetEnv("SystemRoot"); }
+  String temporaryPath() { return osTempDir(); }
+}

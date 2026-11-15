@@ -14,8 +14,15 @@
 #include <cstring>
 #include <fcntl.h>
 #include <functional>
+#include <filesystem>
+#include <sys/ioctl.h>
+#include <algorithm>
 #include <iostream>
 #include <map>
+#include <sstream>
+#include <cstdint>
+#include <iomanip>
+#include <ctime>
 #include <string>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -54,17 +61,24 @@ int applyRedirs(const std::vector<Redirection>& redirs) {
             int hp[2];
             if (::pipe(hp) != 0) { std::perror("heredoc pipe"); return -1; }
             pid_t w = ::fork();
+            if (w < 0) {
+                std::perror("heredoc fork");
+                ::close(hp[0]);
+                ::close(hp[1]);
+                return -1;
+            }
             if (w == 0) {
                 ::close(hp[0]);
                 const std::string& b = r.body;
                 std::size_t off = 0;
                 while (off < b.size()) {
                     ssize_t k = ::write(hp[1], b.data() + off, b.size() - off);
+                    if (k < 0 && errno == EINTR) continue;
                     if (k <= 0) break;
                     off += static_cast<std::size_t>(k);
                 }
                 ::close(hp[1]);
-                _exit(0);
+                _exit(off == b.size() ? 0 : 1);
             }
             ::close(hp[1]);
             const int target = r.fd >= 0 ? r.fd : 0;
@@ -118,6 +132,7 @@ int biEcho(const std::vector<std::string>& a, Environment&) {
     std::cout.flush();
     return 0;
 }
+
 
 int biPwd(const std::vector<std::string>&, Environment&) {
     char buf[4096];
@@ -180,6 +195,120 @@ int biExit(const std::vector<std::string>& a, Environment& env) {
 int biSet(const std::vector<std::string>&, Environment& env) {
     // Minimal: with no args, print exported variables (name=value).
     for (const auto& kv : env.exportedEnviron()) std::cout << kv << '\n';
+    std::cout.flush();
+    return 0;
+}
+
+// help [topic] -- built-in guide to the shell's substantial features.
+int biHelp(const std::vector<std::string>& a, Environment&) {
+    const std::string topic = a.size() > 1 ? a[1] : "all";
+    const std::map<std::string, std::string> pages = {
+        {"all", R"HELP(SLeeLa Terminal (slsh) help
+Usage: help [topic]
+
+Commands: cd, pwd, echo [-n], export, unset, set, true, false, :, exit,
+break [n], continue [n], read [-r] name..., getopts, test/[ ], jobs, wait,
+fg, bg, help [topic], prompt, prompt set OLD NEW, footerbar [topic...], soros time.
+
+Language: assignments; ; and newline; &&, ||, !, |, &; redirection (<, >, >>);
+if/elif/else/fi; while/until; for/in/do/done; case/in/esac; functions; brace
+groups; here-documents; parameter, arithmetic, command, tilde and brace
+expansion; pathname globbing; field splitting.
+
+Topics: expansion, control, jobs, io, process, traps, select, prompt, footerbar,
+soros, options, portability, build. Use help TOPIC for details.
+See README.md, BUILD-PLATFORMS.md, and M5-HARDENING.md.)HELP"},
+        {"expansion", R"HELP(Expansion
+$name and ${name}; positional parameters $1..$9, $#, $?, and $@.
+Arithmetic: $(( expression )). Parameter operators: ${x:-default},
+${x:=default}, ${x:?message}, ${x:+alternate}, and ${#x}.
+Command substitution: $( commands ). Tilde expansion: ~ and ~user.
+Brace expansion: {a,b} and {1..5}; pathname patterns: *, ?, [a-z], [!0-9].
+Field splitting and globbing are supported, but quote fidelity has known gaps:
+empty quoted words, quoted whitespace/glob suppression, and "$@" argument
+boundaries are not yet fully POSIX-conformant.)HELP"},
+        {"control", R"HELP(Control flow
+if/elif/else/fi; while and until loops; for name in words; do ...; done.
+case word in pattern) ... ;; esac. Define functions with name() { commands; }.
+Brace groups { commands; } run in the current shell.
+break [n] and continue [n] target enclosing loops. ! inverts pipeline status.
+&& and || short-circuit.)HELP"},
+        {"jobs", R"HELP(Jobs and process control
+command & starts a background job; jobs lists tracked jobs; wait [id] waits.
+fg [id] and bg [id] request foreground/background continuation.
+Full POSIX process-group and terminal job control is not claimed; see
+M5-HARDENING.md for remaining validation gaps.)HELP"},
+        {"io", R"HELP(Input/output
+command < file reads stdin; > truncates output; >> appends output.
+command1 | command2 connects stdout to the next command's stdin.
+Here-documents use <<DELIM or <<-DELIM; <<- strips leading tabs. A quoted
+delimiter suppresses body expansion. read [-r] name... reads a line; extra
+fields go to the last name, and no names stores the line in REPLY.
+Redirection failures are diagnosed and cause the command to fail.)HELP"},
+        {"process", R"HELP(Process integration
+<(command) supplies a readable FIFO path; >(command) supplies a writable FIFO.
+command & runs asynchronously and records a job.
+Exported variables are passed to external commands; prefix assignments for
+external commands are scoped to the child environment.
+Process substitution and interactive child/job lifecycle behavior have
+platform and validation limits; see BUILD-PLATFORMS.md and M5-HARDENING.md.)HELP"},
+        {"traps", R"HELP(Signal traps
+trap 'commands' SIGNAL registers an M5 trap action for supported names/numbers.
+Common names include HUP, INT, TERM, QUIT, USR1, USR2, PIPE, and ALRM.
+Registered actions are dispatched after the active shell command. This does
+not claim complete POSIX trap or signal/job-control semantics.)HELP"},
+        {"select", R"HELP(select menus
+Syntax: select name in item...; do commands; done
+Displays numbered choices; PS3 controls the prompt and REPLY records input.
+The selected item is assigned to name; break exits the menu loop.
+Example: select x in alpha beta; do echo "$x:$REPLY"; break; done)HELP"},
+        {"prompt", R"HELP(Prompt
+The interactive prompt defaults to the account username followed by '$ '
+(for example, ada$ ). The prompt command prints the current prompt.
+prompt set OLD NEW changes it only if OLD matches the current prompt.
+The replacement is the remainder of the input line; this is not a general
+POSIX PS1 expansion engine.)HELP"},
+        {"footerbar", R"HELP(Topic-selected RSS footerbar feed
+Commands: footerbar chemistry; footerbar pharmacology; footerbar chemistry pharmacology.
+Use footerbar list to print the 100 supported topic terms, footerbar status to
+inspect the saved selection, and footerbar clear to disable the feed. The GUI
+checks for selection changes every 30 seconds and refreshes RSS headlines every
+15 minutes. Network access and the curl executable are required.)HELP"},
+        {"soros", R"HELP(Soros relative time
+Command: soros time
+Uses the terminal's local civil year: 2026 maps to 2407; each following year
+adds one (2027 maps to 2408). 2607+ is the project's Great Mystery marker,
+not an externally recognized calendar or historical dating system.)HELP"},
+        {"options", R"HELP(Option parsing and predicates
+getopts optstring name [arg...] updates OPTIND and OPTARG. It supports bundled
+flags (-abc), -oVALUE, and -o VALUE. test and [ ] support string, numeric,
+and selected file predicates. See help io and help control.)HELP"},
+        {"portability", R"HELP(Portability and conformance
+The core CLI targets POSIX-like Linux and macOS. Native Windows support is not
+claimed. GUI compilation does not prove GUI runtime behavior. Quote provenance
+and field splitting, complete POSIX job control, and some signal/child lifecycle
+behavior remain implementation or validation gaps. See BUILD-PLATFORMS.md and
+M5-HARDENING.md.)HELP"},
+        {"build", R"HELP(Build and install
+From sleela-terminal:
+  make                 build CLI and smoke binary
+  make test            run layered and M5 smoke tests
+  make install-smoke   stage install, run installed CLI, then uninstall
+  make sanitize        build/run AddressSanitizer and UBSan smoke checks
+  make fuzz            compile the Clang/libFuzzer target
+  make gui             optional GTK4/VTE GUI build
+  make all-gui         build CLI, tests, and GUI
+  make install         install CLI to PREFIX/bin (default /usr/local/bin)
+  make install-all     install CLI, GUI, and desktop entry
+Use PREFIX=/usr for /usr installs and DESTDIR for packaging/staging.)HELP"}
+    };
+    const auto it = pages.find(topic);
+    if (it == pages.end()) {
+        std::cerr << "help: unknown topic '" << topic << "'\n"
+                  << "Available topics: expansion control jobs io process traps select prompt footerbar soros options portability build all\n";
+        return 2;
+    }
+    std::cout << it->second << "\n";
     std::cout.flush();
     return 0;
 }
@@ -465,7 +594,7 @@ const std::map<std::string, Builtin>& builtins() {
         {"break", biBreak}, {"continue", biContinue},
         {"jobs", biJobs}, {"wait", biWait}, {"fg", biFg}, {"bg", biBg},
         {"test", biTest}, {"[", biTest},
-        {"read", biRead}, {"getopts", biGetopts},
+        {"read", biRead}, {"getopts", biGetopts}, {"help", biHelp},
     };
     return table;
 }
@@ -497,6 +626,52 @@ Resolved resolveSimple(const Node& node, Environment& env) {
     return r;
 }
 
+// execvpe is a GNU extension and is unavailable on macOS. Provide the
+// small PATH-searching equivalent using portable POSIX execve so the shell
+// can pass its own exported environment on Linux and macOS.
+int execWithEnvironment(const char* file, char* const argv[], char* const envp[]) {
+    if (std::strchr(file, '/') != nullptr) {
+        ::execve(file, argv, envp);
+        return -1;
+    }
+
+    const char* path = nullptr;
+    for (char* const* entry = envp; entry && *entry; ++entry) {
+        if (std::strncmp(*entry, "PATH=", 5) == 0) {
+            path = *entry + 5;
+            break;
+        }
+    }
+    if (!path) path = "/usr/bin:/bin";
+
+    bool access_denied = false;
+    const char* component = path;
+    for (;;) {
+        const char* separator = std::strchr(component, ':');
+        const std::size_t length = separator
+            ? static_cast<std::size_t>(separator - component)
+            : std::strlen(component);
+        std::string candidate;
+        if (length == 0) {
+            candidate = file;
+        } else {
+            candidate.assign(component, length);
+            candidate += '/';
+            candidate += file;
+        }
+        ::execve(candidate.c_str(), argv, envp);
+        if (errno == EACCES) {
+            access_denied = true;
+        } else if (errno != ENOENT && errno != ENOTDIR) {
+            return -1;
+        }
+        if (!separator) break;
+        component = separator + 1;
+    }
+    errno = access_denied ? EACCES : ENOENT;
+    return -1;
+}
+
 // Run an external program with the given argv/redirs in a child process.
 // Returns the child's exit status.
 int runExternal(const std::vector<std::string>& argv,
@@ -519,7 +694,7 @@ int runExternal(const std::vector<std::string>& argv,
     if (pid < 0) { std::perror("fork"); return 127; }
     if (pid == 0) {
         if (applyRedirs(redirs) != 0) _exit(1);
-        ::execvpe(cargv[0], cargv.data(), cenv.data());
+        execWithEnvironment(cargv[0], cargv.data(), cenv.data());
         std::fprintf(stderr, "slsh: %s: %s\n", cargv[0], std::strerror(errno));
         _exit(127);
     }
@@ -593,7 +768,11 @@ int execPipeline(const Node& node, Environment& env) {
     const std::size_t n = cmds.size();
     std::vector<int> pipes((n - 1) * 2, -1);
     for (std::size_t i = 0; i + 1 < n; ++i) {
-        if (::pipe(&pipes[i * 2]) != 0) { std::perror("pipe"); return 1; }
+        if (::pipe(&pipes[i * 2]) != 0) {
+            std::perror("pipe");
+            for (int fd : pipes) if (fd >= 0) ::close(fd);
+            return 1;
+        }
     }
 
     std::vector<pid_t> pids(n, -1);
@@ -611,7 +790,20 @@ int execPipeline(const Node& node, Environment& env) {
         }
 
         pid_t pid = ::fork();
-        if (pid < 0) { std::perror("fork"); return 1; }
+        if (pid < 0) {
+            std::perror("fork");
+            for (int fd : pipes) if (fd >= 0) ::close(fd);
+            // Reap every stage already started before returning from a partial
+            // pipeline launch; otherwise children can be orphaned/zombified.
+            for (pid_t started : pids) {
+                if (started <= 0) continue;
+                int ignored = 0;
+                pid_t wr;
+                do { wr = ::waitpid(started, &ignored, 0); }
+                while (wr < 0 && errno == EINTR);
+            }
+            return 1;
+        }
         if (pid == 0) {
             // wire stdin from previous pipe, stdout to next pipe
             if (i > 0) ::dup2(pipes[(i - 1) * 2], 0);
@@ -636,7 +828,7 @@ int execPipeline(const Node& node, Environment& env) {
                 std::vector<char*> cenv;
                 for (auto& s : envv) cenv.push_back(const_cast<char*>(s.c_str()));
                 cenv.push_back(nullptr);
-                ::execvpe(cargv[0], cargv.data(), cenv.data());
+                execWithEnvironment(cargv[0], cargv.data(), cenv.data());
                 std::fprintf(stderr, "slsh: %s: %s\n", cargv[0], std::strerror(errno));
                 _exit(127);
             } else {
@@ -652,8 +844,14 @@ int execPipeline(const Node& node, Environment& env) {
     int last = 0;
     for (std::size_t i = 0; i < n; ++i) {
         int status = 0;
-        ::waitpid(pids[i], &status, 0);
-        int rc = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+        pid_t wr;
+        do { wr = ::waitpid(pids[i], &status, 0); }
+        while (wr < 0 && errno == EINTR);
+        int rc = 1;
+        if (wr == pids[i]) {
+            if (WIFEXITED(status)) rc = WEXITSTATUS(status);
+            else if (WIFSIGNALED(status)) rc = 128 + WTERMSIG(status);
+        }
         if (i == n - 1) last = rc;
     }
     return node.negated ? (last == 0 ? 1 : 0) : last;
@@ -865,7 +1063,16 @@ std::string captureCommand(const std::string& src, Environment& env) {
     while ((r = ::read(fds[0], buf, sizeof buf)) > 0) out.append(buf, static_cast<std::size_t>(r));
     ::close(fds[0]);
     int st = 0;
-    ::waitpid(pid, &st, 0);
+    pid_t wr;
+    do { wr = ::waitpid(pid, &st, 0); }
+    while (wr < 0 && errno == EINTR);
+    if (wr == pid) {
+        if (WIFEXITED(st)) env.setLastStatus(WEXITSTATUS(st));
+        else if (WIFSIGNALED(st)) env.setLastStatus(128 + WTERMSIG(st));
+        else env.setLastStatus(1);
+    } else {
+        env.setLastStatus(1);
+    }
     return out;
 }
 
