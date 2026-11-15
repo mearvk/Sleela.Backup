@@ -1,0 +1,128 @@
+<< lib/cpu/components/SLMotherboard.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLMotherboard — the board a Sleela executor is built on:
+     the CPU socket, the platform chipset, the memory topology (channel count
+     and DIMM slots), the number of PCIe lanes the platform exposes and their
+     generation, and the system-bus generation the board carries. These are the
+     "motherboard-pertinent settings" that bound a build: a CPU only drops into
+     a matching socket, memory can only populate as many channels as the board
+     routes, and no card can use more PCIe lanes than the platform provides.
+   
+   The board is nameful and spec-first: every field states a real platform
+   property (sTR5 socket, TRX50/WRX90 chipset, 4- vs 8-channel memory, PCIe 5.0
+   lane budget) rather than assuming a generic machine. SLExecutorBuild mounts a
+   board and can check that the chosen CPU socket and memory channels fit it.
+   
+   Family: cpu.components. Selected via SLComponentCatalog; mounted in
+     SLExecutorBuild; partners SLMemoryModule and SLSystemBus. >>
+#sleela 2.5
+material;
+class SLMotherboard {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11270;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Socket ids (the mechanical/electrical CPU interface). >
+  static final int SOCKET_UNKNOWN = 0;
+  < AMD sTR5 (Threadripper 9000) >
+  static final int SOCKET_STR5    = 1;
+  < AMD AM5 (Ryzen desktop) >
+  static final int SOCKET_AM5     = 2;
+  < AMD SP5 (EPYC) >
+  static final int SOCKET_SP5     = 3;
+  < Intel LGA1700 >
+  static final int SOCKET_LGA1700 = 4;
+  < non-specific / legacy >
+  static final int SOCKET_GENERIC = 5;
+
+  < nameful: "ASRock WRX90 WS EVO", "TRX50 reference", ... >
+  String partName;
+  < one of SOCKET_* >
+  int socket;
+  < "TRX50", "WRX90", ... >
+  String chipset;
+  < routed memory channels (4 HEDT, 8 PRO WX, ...) >
+  int memoryChannels;
+  < physical DIMM slots >
+  int dimmSlots;
+  < total CPU-attached PCIe lanes the board exposes >
+  int pcieLanes;
+  < PCIe generation (5 = PCIe 5.0) >
+  int pcieGen;
+  < the SLSystemBus type the board's primary slot is >
+  int busType;
+
+  void configure(String name, int socketId, String chipsetName,
+                 int channels, int slots, int lanes, int gen, int systemBusType) {
+    partName = name; socket = socketId; chipset = chipsetName;
+    memoryChannels = (channels < 1) ? 1 : channels;
+    dimmSlots = (slots < 1) ? 1 : slots;
+    pcieLanes = (lanes < 0) ? 0 : lanes;
+    pcieGen = (gen < 1) ? 1 : gen;
+    busType = systemBusType;
+  }
+
+  < Does a CPU that reports socket `cpuSocket` drop into this board? >
+  boolean acceptsSocket(int cpuSocket) { return cpuSocket == socket; }
+
+  < Can this board populate a memory module that wants `wantChannels` channels? >
+  boolean supportsChannels(int wantChannels) { return wantChannels <= memoryChannels; }
+
+  < Can a card/device asking for `wantLanes` PCIe lanes be seated here? >
+  boolean supportsLanes(int wantLanes) { return wantLanes <= pcieLanes; }
+
+  String name()         { return partName; }
+  int socketId()        { return socket; }
+  String chipsetName()  { return chipset; }
+  int channels()        { return memoryChannels; }
+  int slots()           { return dimmSlots; }
+  int lanes()           { return pcieLanes; }
+  int pcieGeneration()  { return pcieGen; }
+  int systemBusType()   { return busType; }
+
+  String socketName() {
+    if (socket == SOCKET_STR5)    { return "sTR5"; }
+    if (socket == SOCKET_AM5)     { return "AM5"; }
+    if (socket == SOCKET_SP5)     { return "SP5"; }
+    if (socket == SOCKET_LGA1700) { return "LGA1700"; }
+    if (socket == SOCKET_GENERIC) { return "generic"; }
+    return "unknown";
+  }
+}
