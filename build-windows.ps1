@@ -13,9 +13,9 @@
 
 .NOTES
     Requirements:
-      * MinGW-w64 GCC/G++ (C11 + C++17), e.g. via MSYS2 (pacman -S
-        mingw-w64-ucrt-x86_64-gcc) or choco install mingw.
-      * GNU make (mingw32-make or make).
+      * MinGW-w64 GCC/G++ (C11 + C++20), preferably the MSYS2 UCRT64 environment.
+      * GNU make plus the MSYS2 POSIX shell and core utilities (sh, bash, sed, grep, awk).
+      * For the full repository `make all`: OpenSSL development files, pkgconf, and JDK 28.
       * Python 3 on PATH (the SHA-256 verify gate runs it as 'py -3' or
         'python').
     MSVC is not supported by this script: the pthread compatibility shim
@@ -39,6 +39,8 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ImplDir = Join-Path $RepoRoot "impl"
 $BuildDir = Join-Path $ImplDir "build"
+$XltDir = Join-Path $ImplDir "xlt"
+$XltBuildDir = Join-Path $XltDir "build"
 
 Write-Host "=========================================="
 Write-Host "SLeeLa Windows Build (MinGW)"
@@ -47,6 +49,7 @@ Write-Host "C Compiler:   $Cc"
 Write-Host "C++ Compiler: $Cxx"
 Write-Host "Repo root:    $RepoRoot"
 Write-Host "Build dir:    $BuildDir"
+Write-Host "Make program: $MakeProg"
 Write-Host ""
 
 function Require-Command($name) {
@@ -65,6 +68,7 @@ if (-not $MakeProg) { throw "Neither 'mingw32-make' nor 'make' was found on PATH
 
 Require-Command $Cc
 Require-Command $Cxx
+Require-Command "sh"
 
 # The verify-security gate needs Python. Prefer the 'py' launcher, else 'python'.
 $Py = $null
@@ -101,10 +105,25 @@ finally {
     Pop-Location
 }
 
+Write-Host ""
+Write-Host "Building XLT compiler..."
+Push-Location $XltDir
+try {
+    & $MakeProg clean
+    & $MakeProg all
+    if ($LASTEXITCODE -ne 0) { throw "XLT make failed with exit code $LASTEXITCODE" }
+}
+finally {
+    Pop-Location
+}
+
 $SleelaExe = Join-Path $BuildDir "sleela.exe"
+$SleelavcExe = Join-Path $BuildDir "sleelvac.exe"
 $NordshriftExe = Join-Path $BuildDir "nordshrift.exe"
-if (-not (Test-Path $SleelaExe) -or -not (Test-Path $NordshriftExe)) {
-    throw "Build did not produce sleela.exe and nordshrift.exe in $BuildDir."
+$XltcExe = Join-Path $XltBuildDir "xltc.exe"
+$MissingProducts = @(@($SleelaExe, $SleelavcExe, $NordshriftExe, $XltcExe) | Where-Object { -not (Test-Path $_ -PathType Leaf) })
+if ($MissingProducts.Count -gt 0) {
+    throw "Build did not produce every required Windows product. Missing: $($MissingProducts -join ', ')"
 }
 $StageDir = Join-Path $BuildDir "SLeeLa"
 $StageConfig = Join-Path $StageDir "Config"
@@ -116,18 +135,22 @@ if (-not (Test-Path $StageConfigFile) -or -not (Test-Path $StageOptions)) {
 
 Write-Host ""
 Write-Host "Build completed successfully!"
-Get-Item $SleelaExe, $NordshriftExe | Format-Table Length, FullName -AutoSize
+Get-Item $SleelaExe, $SleelavcExe, $NordshriftExe, $XltcExe | Format-Table Length, FullName -AutoSize
 
 if ($BinDir -ne "") {
     if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir | Out-Null }
     Copy-Item $SleelaExe (Join-Path $BinDir "sleela.exe") -Force
+    Copy-Item $SleelavcExe (Join-Path $BinDir "sleelvac.exe") -Force
     Copy-Item $NordshriftExe (Join-Path $BinDir "nordshrift.exe") -Force
+    Copy-Item $XltcExe (Join-Path $BinDir "xltc.exe") -Force
     Write-Host "Installed to $BinDir"
     Write-Host "Verify: $(Join-Path $BinDir 'sleela.exe') version"
+    Write-Host "XLT compiler: $(Join-Path $BinDir 'xltc.exe')"
 } else {
     Write-Host "Binaries remain in: $BuildDir"
     Write-Host "Staged runtime: $StageDir"
     Write-Host "Consolidated config: $StageConfigFile"
+    Write-Host "XLT compiler: $XltcExe"
     Write-Host "Verify: $SleelaExe version"
 }
 Write-Host ""

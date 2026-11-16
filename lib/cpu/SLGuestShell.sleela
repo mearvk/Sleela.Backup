@@ -1,21 +1,61 @@
-/*
- * lib/cpu/SLGuestShell.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLGuestShell — a minimal interactive shell for the guest
- *   OS, spawned by init (SLGuestInit) as its first child. It reads a command
- *   line, parses the leading word as a builtin, and executes it through the
- *   guest syscall ABI: writing output to the console, reading files from the
- *   guest filesystem, listing/inspecting tasks via the scheduler. This is the
- *   guest's first real user program — the thing a person "sees" after boot.
- *
- * Builtins: help, echo, ls, cat, ps, exit. Commands are issued as guest
- * syscalls (write/read/open/close/getpid/exit), so the shell exercises the full
- * user->kernel boundary built in the previous steps.
- *
- * Family: cpu. Composes SLGuestSyscall (its only kernel interface).
- */
-#sleela 1.3
+<< lib/cpu/SLGuestShell.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuestShell — a minimal interactive shell for the guest
+     OS, spawned by init (SLGuestInit) as its first child. It reads a command
+     line, parses the leading word as a builtin, and executes it through the
+     guest syscall ABI: writing output to the console, reading files from the
+     guest filesystem, listing/inspecting tasks via the scheduler. This is the
+     guest's first real user program — the thing a person "sees" after boot.
+   
+   Builtins: help, echo, ls, cat, ps, exit. Commands are issued as guest
+   syscalls (write/read/open/close/getpid/exit), so the shell exercises the full
+   user->kernel boundary built in the previous steps.
+   
+   Family: cpu. Composes SLGuestSyscall (its only kernel interface). >>
+#sleela 2.5
+material;
 class SLGuestShell {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10238;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-06";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
   static final int CMD_UNKNOWN = 0;
   static final int CMD_HELP    = 1;
   static final int CMD_ECHO    = 2;
@@ -30,38 +70,48 @@ class SLGuestShell {
 
   void configure(SLGuestSyscall syscalls) { sys = syscalls; commandsRun = 0; running = 1; }
 
-  // Write a string (as a sequence of char codes carried in a small helper) to
-  // stdout via SYS_WRITE. The caller passes already-encoded bytes; here we
-  // expose a single-char and a terminator convenience.
+  < Write a string (as a sequence of char codes carried in a small helper) to >
+  < stdout via SYS_WRITE. The caller passes already-encoded bytes; here we >
+  < expose a single-char and a terminator convenience. >
   void putc(int ch) { sys.dispatch(sys.SYS_WRITE, 1, ch, 0); }
   void newline() { putc(10); }
 
-  // Classify a command word given its leading char code (a compact dispatch
-  // sufficient for the builtin set: h/e/l/c/p/x).
+  < Classify a command word given its leading char code (a compact dispatch >
+  < sufficient for the builtin set: h/e/l/c/p/x). >
   int classify(int leadChar) {
-    if (leadChar == 104) { return CMD_HELP; }  // 'h'
-    if (leadChar == 101) { return CMD_ECHO; }  // 'e'
-    if (leadChar == 108) { return CMD_LS; }    // 'l'
-    if (leadChar == 99)  { return CMD_CAT; }   // 'c'
-    if (leadChar == 112) { return CMD_PS; }    // 'p'
-    if (leadChar == 120) { return CMD_EXIT; }  // 'x'
+    < 'h' >
+    if (leadChar == 104) { return CMD_HELP; }
+    < 'e' >
+    if (leadChar == 101) { return CMD_ECHO; }
+    < 'l' >
+    if (leadChar == 108) { return CMD_LS; }
+    < 'c' >
+    if (leadChar == 99)  { return CMD_CAT; }
+    < 'p' >
+    if (leadChar == 112) { return CMD_PS; }
+    < 'x' >
+    if (leadChar == 120) { return CMD_EXIT; }
     return CMD_UNKNOWN;
   }
 
-  // Run one command, identified by its leading char and a single integer
-  // argument (a file id for cat, a char for echo). Returns the command code.
+  < Run one command, identified by its leading char and a single integer >
+  < argument (a file id for cat, a char for echo). Returns the command code. >
   int run(int leadChar, int arg) {
     int cmd = classify(leadChar);
     commandsRun = commandsRun + 1;
 
     if (cmd == CMD_HELP) {
-      // print "help" marker code
-      putc(63); newline();                 // '?'
+      < print "help" marker code >
+      < '?' >
+      putc(63); newline();
     } else if (cmd == CMD_ECHO) {
-      putc(arg); newline();                // echo the argument char
+      < echo the argument char >
+      putc(arg); newline();
     } else if (cmd == CMD_LS) {
-      int n = (sys.currentPipe() != null) ? 1 : 0; // placeholder listing size
-      putc(48 + n); newline();             // print a digit count
+      < placeholder listing size >
+      int n = (sys.currentPipe() != null) ? 1 : 0;
+      < print a digit count >
+      putc(48 + n); newline();
     } else if (cmd == CMD_CAT) {
       int fd = sys.dispatch(sys.SYS_OPEN, arg, 0, 0);
       if (fd >= 0) {
@@ -72,12 +122,14 @@ class SLGuestShell {
       newline();
     } else if (cmd == CMD_PS) {
       int pid = sys.dispatch(sys.SYS_GETPID, 0, 0, 0);
-      putc(48 + (pid % 10)); newline();    // print our PID digit
+      < print our PID digit >
+      putc(48 + (pid % 10)); newline();
     } else if (cmd == CMD_EXIT) {
       running = 0;
       sys.dispatch(sys.SYS_EXIT, arg, 0, 0);
     } else {
-      putc(63); newline();                 // '?' for unknown
+      < '?' for unknown >
+      putc(63); newline();
     }
     return cmd;
   }
