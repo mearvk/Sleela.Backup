@@ -46,31 +46,51 @@ static void on_value(SLUIWidget* w, double v, void* user) {
 }
 
 int main(void) {
-    /* --- theme presets ------------------------------------------------- */
-    SLUITheme black, graphite;
-    slui_theme_preset(&black, SLUI_THEME_SLICK_BLACK);
+    /* --- five named theme presets -------------------------------------- */
+    SLUITheme black, graphite, base, white, blue, gray;
+    slui_theme_preset(&black, SLUI_THEME_BLACK);
     slui_theme_preset(&graphite, SLUI_THEME_GRAPHITE);
-    CHECK(black.id == SLUI_THEME_SLICK_BLACK, "slick black preset id");
-
-    /* --- Sleela base colour (#2B1608) is the default theme ------------- */
-    SLUITheme base;
     slui_theme_preset(&base, SLUI_THEME_SLEELA_BASE);
-    CHECK(base.id == SLUI_THEME_SLEELA_BASE, "sleela base preset id");
-    CHECK(((base.bg >> 24) & 0xFF) == 0x2B && ((base.bg >> 16) & 0xFF) == 0x16 &&
-              ((base.bg >> 8) & 0xFF) == 0x08,
-          "base colour floor is #2B1608");
-    /* surfaces are lighter warm tints of the floor */
-    CHECK(((base.surface >> 24) & 0xFF) > 0x2B, "surface lighter than base");
-    /* configurable: re-derive from a different base in place */
+    slui_theme_preset(&white, SLUI_THEME_WHITE);
+    slui_theme_preset(&blue, SLUI_THEME_BLUE);
+    slui_theme_preset(&gray, SLUI_THEME_GRAY);
+    CHECK(base.id == SLUI_THEME_SLEELA_BASE, "default preset id");
+    CHECK(((base.bg >> 24) & 0xFF) == 0x1D &&
+          ((base.bg >> 16) & 0xFF) == 0x20 &&
+          ((base.bg >> 8) & 0xFF) == 0x25,
+          "default palette is graphite #1D2025, not brown");
+    CHECK(base.accent == slui_rgb(0x4F, 0x8C, 0xFF), "default accent is steel blue");
+    CHECK(white.bg != blue.bg && blue.bg != black.bg && black.bg != gray.bg,
+          "white, blue, black and gray presets are distinct");
+    CHECK(((black.fg >> 24) & 0xFF) >= 0xDE, "black preset primary text is light");
+    CHECK(base.control_height >= 32, "control height clears 32px hit target");
+    CHECK(base.unit == 4, "spacing unit is 4px");
+
+    /* Custom base colours remain supported and use the neutral blue accent. */
     SLUITheme recol;
     slui_theme_preset(&recol, SLUI_THEME_SLEELA_BASE);
     slui_theme_set_base_color(&recol, 0x113355FFu);
     CHECK(((recol.bg >> 24) & 0xFF) == 0x11 && ((recol.bg >> 8) & 0xFF) == 0x55,
           "base colour reconfigured in place");
-    CHECK(black.control_height >= 32, "control height clears 32px hit target");
-    CHECK(black.unit == 4, "spacing unit is 4px");
-    CHECK(black.fg == slui_rgb(0xff, 0xff, 0xff), "slick black primary text is white");
-    CHECK(black.bg != graphite.bg, "presets differ");
+    CHECK(recol.accent == slui_rgb(0x4F, 0x8C, 0xFF), "custom base keeps steel-blue accent");
+
+    /* Config selection is explicit: theme=blue selects the named preset. */
+    const char* theme_cfg_path = "sleela-theme-smoke.conf";
+    FILE* theme_cfg = fopen(theme_cfg_path, "w");
+    CHECK(theme_cfg != NULL, "temporary theme config created");
+    if (theme_cfg) {
+        fputs("theme=blue\nfont_size=12\nradius=9\n", theme_cfg);
+        fclose(theme_cfg);
+        SLUITheme configured;
+        slui_theme_preset(&configured, SLUI_THEME_SLEELA_BASE);
+        CHECK(slui_theme_load_config(&configured, theme_cfg_path) == SLUI_OK,
+              "runtime theme config loads");
+        CHECK(configured.id == SLUI_THEME_BLUE && configured.bg == blue.bg,
+              "theme=blue selects the blue preset");
+        CHECK(configured.font_size == 12 && configured.radius == 9,
+              "config metrics override selected preset");
+        remove(theme_cfg_path);
+    }
 
     /* --- app + window -------------------------------------------------- */
     SLUIApp* app = slui_app_create("com.mearvk.SleelaUI.Smoke");
@@ -87,6 +107,25 @@ int main(void) {
     CHECK(win != NULL, "window created");
     SLUIWidget* root = slui_window_root(win);
     CHECK(root != NULL, "root widget present");
+
+    /* Native resize guards use client-area pixels, with 10px root padding. */
+    SLUISize min_size = {0, 0}, max_size = {0, 0};
+    CHECK(slui_window_get_min_size(win, &min_size) == SLUI_OK && min_size.w >= 20 && min_size.h >= 20,
+          "automatic minimum includes 10px padding on each edge");
+    CHECK(slui_window_set_size_limits(win, 100, 90, 500, 400) == SLUI_OK,
+          "valid window size limits accepted");
+    CHECK(slui_window_get_min_size(win, &min_size) == SLUI_OK && min_size.w >= 100 && min_size.h >= 90,
+          "effective minimum respects explicit size");
+    CHECK(slui_window_get_max_size(win, &max_size) == SLUI_OK && max_size.w == 500 && max_size.h == 400,
+          "maximum size limits round-trip");
+    CHECK(slui_window_set_max_size(win, 80, 50) == SLUI_ERR_INVALID,
+          "maximum below the minimum is rejected");
+    CHECK(slui_window_get_max_size(win, &max_size) == SLUI_OK && max_size.w == 500 && max_size.h == 400,
+          "failed size-limit change is atomic");
+    CHECK(slui_window_set_min_size(win, -1, 20) == SLUI_ERR_INVALID,
+          "negative minimum size is rejected");
+    CHECK(slui_window_set_size_limits(win, 0, 0, 0, 0) == SLUI_OK,
+          "zero limits restore automatic minimum and unbounded maximum");
 
     /* --- build a representative tree ----------------------------------- */
     SLUIWidget* header = slui_header_bar(root);
@@ -106,6 +145,7 @@ int main(void) {
     SLUIWidget* btn = slui_button(col, "Click");
     slui_widget_on_activate(btn, on_click, NULL);
     slui_widget_set_suggested(btn, 1);
+    slui_widget_set_icon(btn, "icons/wifi.jpg", "Wifi"); /* exercise JPEG icons */
 
     SLUIWidget* tog = slui_toggle(col, "Flag", 0);
     CHECK(slui_widget_get_toggle(tog) == 0, "toggle starts off");
@@ -167,6 +207,54 @@ int main(void) {
     CHECK(slui_info_bar(col, "note", 0) != NULL, "info bar created");
     CHECK(slui_scroll_bar(col, SLUI_ORIENT_VERTICAL, 0.0, 0.3) != NULL,
           "scroll bar created");
+
+    /* --- scrolled view: overflow detection + clamped offset ------------ */
+    {
+        SLUIWidget* sv = slui_scrolled_view(col, 0, 0); /* auto/auto */
+        CHECK(sv != NULL, "scrolled view created");
+        /* Pin the viewport small, then add a tall content box so it overflows. */
+        slui_widget_set_size_request(sv, 200, 100);
+        SLUIWidget* content = slui_box(sv, SLUI_ORIENT_VERTICAL, 4);
+        for (int i = 0; i < 40; ++i) slui_label(content, "scrolling line");
+        slui_window_show(win);
+        slui_window_render(win); /* force a layout+paint so arrange() runs */
+        /* Programmatic scroll clamps into range and is read back. */
+        slui_scrolled_view_scroll_to(sv, 0, 100000);
+        CHECK(slui_scrolled_view_scroll_y(sv) > 0, "scrolled view scrolls on overflow");
+        slui_scrolled_view_scroll_to(sv, 0, -50);
+        CHECK(slui_scrolled_view_scroll_y(sv) == 0, "scroll offset clamps at zero");
+        slui_scrolled_view_scroll_by(sv, 0, 30);
+        CHECK(slui_scrolled_view_scroll_y(sv) == 30, "scroll_by advances the offset");
+    }
+
+    /* --- scrolled view: horizontal overflow of a wide row ------------- */
+    {
+        SLUIWidget* sh = slui_scrolled_view(col, 0, 0); /* auto/auto */
+        CHECK(sh != NULL, "wide scrolled view created");
+        slui_widget_set_size_request(sh, 200, 60);      /* narrow viewport */
+        SLUIWidget* row = slui_box(sh, SLUI_ORIENT_HORIZONTAL, 8);
+        for (int i = 0; i < 20; ++i) slui_button(row, "a wide button label");
+        slui_window_show(win);
+        slui_window_render(win);
+        slui_scrolled_view_scroll_to(sh, 100000, 0);
+        CHECK(slui_scrolled_view_scroll_x(sh) > 0, "wide content scrolls horizontally");
+    }
+
+    /* --- presentation buffering: default + mode round-trip --------------- */
+    /* Triple buffering is the native default (smoother rapid redraws/resize/
+     * animation); see slui_window.cpp. Applications may select single/double. */
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_TRIPLE,
+          "window defaults to triple buffering");
+    slui_window_set_buffering(win, SLUI_BUFFERING_DOUBLE);
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_DOUBLE,
+          "buffering set to double");
+    slui_window_set_buffering(win, SLUI_BUFFERING_SINGLE);
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_SINGLE,
+          "buffering set to single");
+    slui_window_set_buffering(win, 99); /* out of range -> clamped to triple */
+    CHECK(slui_window_buffering(win) == SLUI_BUFFERING_TRIPLE,
+          "out-of-range buffering clamps to triple");
+    slui_window_render(win); /* present once under triple to exercise the ring */
 
     /* The activation latch returns an activation at most once. */
     slui_widget_set_toggle(chk, 0); /* state change, not an activation */

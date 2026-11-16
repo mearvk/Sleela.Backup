@@ -1,42 +1,89 @@
-/*
- * lib/user-interface/SLLayout.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLLayout — a flow/layout manager for the SleelaUI. It
- *   treats a UI as an ORTHOGONAL CONFLATION of unit parts (what each item
- *   measures) and organizations (how items are grouped and flowed): items have
- *   NAMES, groups have NAMES, and you adjust a single named item, a whole named
- *   group, or an N-ARY selection (any subset of a group of some size). Several
- *   flow solutions arrange a group: STACK, WRAP, GRID, DOCK, and CENTRAL
- *   (weight/mass packing). Placement is Named for the ergonomics of publics —
- *   MEDIUM implies CENTER and CENTRAL implies weight/mass — and named ergonomic
- *   presets tune a group for a common public use. Each method bottoms out in a
- *   `layout*` SLVM built-in calling the C ABI (sleela_ui_layout.h).
- *
- * A layout is a VM-local handle (-1 = none). Sizes are SLMeasure values
- * (US/metric/px). After adjustment call arrange(), then read item rects.
- *
- * Family: user-interface. Native VM/UI work crosses the explicit `layout*` SLVM
- * bridge.
- */
-#sleela 1.5
+<< lib/user-interface/SLLayout.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLLayout — a flow/layout manager for the SleelaUI. It
+     treats a UI as an ORTHOGONAL CONFLATION of unit parts (what each item
+     measures) and organizations (how items are grouped and flowed): items have
+     NAMES, groups have NAMES, and you adjust a single named item, a whole named
+     group, or an N-ARY selection (any subset of a group of some size). Several
+     flow solutions arrange a group: STACK, WRAP, GRID, DOCK, and CENTRAL
+     (weight/mass packing). Placement is Named for the ergonomics of publics —
+     MEDIUM implies CENTER and CENTRAL implies weight/mass — and named ergonomic
+     presets tune a group for a common public use. Each method bottoms out in a
+     `layout*` SLVM built-in calling the C ABI (sleela_ui_layout.h).
+   
+   A layout is a VM-local handle (-1 = none). Sizes are SLMeasure values
+   (US/metric/px). After adjustment call arrange(), then read item rects.
+   
+   Family: user-interface. Native VM/UI work crosses the explicit `layout*` SLVM
+   bridge. >>
+#sleela 2.5
+material;
 class SLLayout {
-  // Flow ordinals (mirror SLUIFlowKind) — several layout solutions.
-  static final int FLOW_STACK   = 0;  // one row/column (the box model)
-  static final int FLOW_WRAP    = 1;  // wraps to new lines when full
-  static final int FLOW_GRID    = 2;  // fixed-column grid
-  static final int FLOW_DOCK    = 3;  // edges dock, centre fills
-  static final int FLOW_CENTRAL = 4;  // weight/mass packing
-  // Axis ordinals (mirror SLUIAxis).
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10375;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-07";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Flow ordinals (mirror SLUIFlowKind) — several layout solutions. >
+  < one row/column (the box model) >
+  static final int FLOW_STACK   = 0;
+  < wraps to new lines when full >
+  static final int FLOW_WRAP    = 1;
+  < fixed-column grid >
+  static final int FLOW_GRID    = 2;
+  < edges dock, centre fills >
+  static final int FLOW_DOCK    = 3;
+  < weight/mass packing >
+  static final int FLOW_CENTRAL = 4;
+  < Axis ordinals (mirror SLUIAxis). >
   static final int AXIS_HORIZONTAL = 0;
   static final int AXIS_VERTICAL   = 1;
-  // Placement ordinals (mirror SLUIPlacement). The ergonomics of publics,
-  // Named: MEDIUM is center; CENTRAL is weight/mass.
+  < Placement ordinals (mirror SLUIPlacement). The ergonomics of publics, >
+  < Named: MEDIUM is center; CENTRAL is weight/mass. >
   static final int START   = 0;
-  static final int MEDIUM  = 1;  // implies CENTER
+  < implies CENTER >
+  static final int MEDIUM  = 1;
   static final int END     = 2;
   static final int FILL    = 3;
-  static final int CENTRAL = 4;  // implies weight/mass
-  // Named ergonomic presets (mirror SLUIErgonomics).
+  < implies weight/mass >
+  static final int CENTRAL = 4;
+  < Named ergonomic presets (mirror SLUIErgonomics). >
   static final int ERGO_READING   = 0;
   static final int ERGO_GALLERY   = 1;
   static final int ERGO_DASHBOARD = 2;
@@ -44,7 +91,8 @@ class SLLayout {
   static final int ERGO_PORTRAIT  = 4;
   static final int ERGO_TOOLBAR   = 5;
 
-  int layout;   // VM-local handle (-1 = none)
+  < VM-local handle (-1 = none) >
+  int layout;
 
   void create() { layout = layoutCreate(); }
   int handle() { return layout; }
@@ -54,7 +102,7 @@ class SLLayout {
   void setDpi(double dpi) { if (layout >= 0) { layoutSetDpi(layout, dpi); } }
   void setEm(double emPx) { if (layout >= 0) { layoutSetEm(layout, emPx); } }
 
-  // ---- groups (named) -----------------------------------------------------
+  < ---- groups (named) ----------------------------------------------------- >
   int group(String groupName, int flow, int axis) {
     if (layout < 0) { return -1; }
     return layoutGroup(layout, groupName, flow, axis);
@@ -79,14 +127,14 @@ class SLLayout {
   void setColumns(String groupName, int columns) {
     if (layout >= 0) { groupSetColumns(layout, groupName, columns); }
   }
-  // A named ergonomic preset for the ergonomics of publics.
+  < A named ergonomic preset for the ergonomics of publics. >
   void setErgonomics(String groupName, int ergo) {
     if (layout >= 0) { groupSetErgonomics(layout, groupName, ergo); }
   }
 
-  // ---- items (named) ------------------------------------------------------
-  // Add a named item (an optional widget handle, -1 for a pure placeholder)
-  // into a named group, with a main-axis size (fr makes it flexible).
+  < ---- items (named) ------------------------------------------------------ >
+  < Add a named item (an optional widget handle, -1 for a pure placeholder) >
+  < into a named group, with a main-axis size (fr makes it flexible). >
   int item(String groupName, String itemName, int widgetHandle, SLMeasure size) {
     if (layout < 0 || size == null) { return -1; }
     return layoutItem(layout, groupName, itemName, widgetHandle, size.value,
@@ -97,7 +145,7 @@ class SLLayout {
     return groupItemCount(layout, groupName);
   }
 
-  // ---- adjustment: single ------------------------------------------------
+  < ---- adjustment: single ------------------------------------------------ >
   void setItemSize(String itemName, SLMeasure size) {
     if (layout >= 0 && size != null) {
       itemSetSize(layout, itemName, size.value, size.unit);
@@ -110,7 +158,7 @@ class SLLayout {
     if (layout >= 0) { itemSetAlign(layout, itemName, crossAlign); }
   }
 
-  // ---- adjustment: whole group -------------------------------------------
+  < ---- adjustment: whole group ------------------------------------------- >
   void setGroupSize(String groupName, SLMeasure size) {
     if (layout >= 0 && size != null) {
       groupSetSize(layout, groupName, size.value, size.unit);
@@ -120,8 +168,8 @@ class SLLayout {
     if (layout >= 0) { groupSetMass(layout, groupName, mass); }
   }
 
-  // ---- adjustment: n-ary (a subset of a group of some size) --------------
-  // `itemNames` is an array of the names to adjust; count its length.
+  < ---- adjustment: n-ary (a subset of a group of some size) -------------- >
+  < `itemNames` is an array of the names to adjust; count its length. >
   void setNarySize(String[] itemNames, int count, SLMeasure size) {
     if (layout >= 0 && size != null) {
       narySetSize(layout, itemNames, count, size.value, size.unit);
@@ -134,9 +182,9 @@ class SLLayout {
     if (layout >= 0) { narySetAlign(layout, itemNames, count, crossAlign); }
   }
 
-  // ---- resolution ---------------------------------------------------------
-  // Lay a named group out within a device-pixel rectangle; then read item
-  // rects with itemX/itemY/itemWidth/itemHeight.
+  < ---- resolution --------------------------------------------------------- >
+  < Lay a named group out within a device-pixel rectangle; then read item >
+  < rects with itemX/itemY/itemWidth/itemHeight. >
   void arrange(String groupName, int x, int y, int w, int h) {
     if (layout >= 0) { layoutArrange(layout, groupName, x, y, w, h); }
   }

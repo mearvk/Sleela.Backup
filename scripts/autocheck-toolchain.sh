@@ -6,23 +6,57 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 fail=0
 echo "== SLeeLa autocheck: root and toolchain =="
-for p in tools/verify-before-execution.py security/sha256-manifest.json impl/Makefile; do
+for p in tools/verify-before-execution.py security/sha256-manifest.json impl/Makefile \
+         impl/xlt/Makefile lib/xlt/README.md lib/xlt/examples/epyc-ddr2.xlt; do
   if [ -f "$p" ]; then echo "PASS: $p"; else echo "FAIL: missing $p"; fail=1; fi
 done
-if [ -x impl/build/sleela ]; then
-  echo "INFO: local executable: $ROOT/impl/build/sleela"
+if [ -x impl/build/sleela ] || [ -x impl/build/sleela.exe ]; then
+  if [ -x impl/build/sleela.exe ]; then local_sleela="$ROOT/impl/build/sleela.exe"; else local_sleela="$ROOT/impl/build/sleela"; fi
+  echo "INFO: local executable: $local_sleela"
 else
   echo "WARN: impl/build/sleela is not built yet"
 fi
-if command -v python3 >/dev/null 2>&1; then
-  python3 -m json.tool security/sha256-manifest.json >/dev/null 2>&1 && echo "PASS: manifest JSON parses" || { echo "FAIL: manifest JSON invalid"; fail=1; }
+if [ -x impl/xlt/build/xltc ] || [ -x impl/xlt/build/xltc.exe ]; then
+  if [ -x impl/xlt/build/xltc.exe ]; then local_xltc="$ROOT/impl/xlt/build/xltc.exe"; else local_xltc="$ROOT/impl/xlt/build/xltc"; fi
+  echo "INFO: local executable: $local_xltc"
 else
-  echo "WARN: python3 not found; skipped manifest JSON parse"
+  echo "WARN: impl/xlt/build/xltc is not built yet (run scripts/clean-build.sh)"
+fi
+echo "== GUI version lines: each line carries an SLPackage.sleela manifest =="
+for g in lib/gui/version-mual lib/gui/version-gual lib/gui/version-thual lib/gui/version-dual lib/gui/version-military; do
+  if [ -d "$g" ]; then
+    if [ -f "$g/SLPackage.sleela" ]; then echo "PASS: $g/SLPackage.sleela"; else echo "FAIL: missing $g/SLPackage.sleela"; fail=1; fi
+  else
+    echo "WARN: GUI version line not present: $g"
+  fi
+done
+PYTHON=${PYTHON:-}
+if [ -z "$PYTHON" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON=python
+  elif command -v py >/dev/null 2>&1; then
+    PYTHON="py -3"
+  fi
+fi
+if [ -n "$PYTHON" ] && command -v "${PYTHON%% *}" >/dev/null 2>&1; then
+  # PYTHON may intentionally contain launcher arguments (for example "py -3").
+  $PYTHON -m json.tool security/sha256-manifest.json >/dev/null 2>&1 && echo "PASS: manifest JSON parses" || { echo "FAIL: manifest JSON invalid"; fail=1; }
+else
+  echo "FAIL: Python is required for manifest JSON validation (set PYTHON=python3, python, or py -3)"
+  fail=1
 fi
 echo "== Search: stale verifier-discovery diagnostics and hard-coded paths =="
-if grep -R -n --include='Makefile' --include='*.mk' --include='*.cpp' --include='*.h' --include='*.py'   -E 'searched upward from|verification tool not found|SLEELA_HOME.*security/sha256-manifest' impl tools . 2>/dev/null; then
-  echo "INFO: matches above; review for stale path assumptions"
+# Search the repository once (not overlapping impl/tools/. roots), and only flag
+# obsolete discovery wording or verifier diagnostics that embed fixed paths.
+# A generic runtime message such as "verification tool not found: <computed path>"
+# is valid and must not be treated as a stale hard-coded path.
+if grep -R -n --exclude-dir=.git --exclude-dir=build \
+    --include='Makefile' --include='*.mk' --include='*.cpp' --include='*.h' --include='*.py' \
+    -E 'searched upward from|verification tool not found: (/home/|/usr/local/|/path/to/)|SLEELA_HOME.*security/sha256-manifest' . 2>/dev/null; then
+  echo "WARN: matches above may contain obsolete verifier-path assumptions"
 else
-  echo "INFO: no matching stale verifier diagnostics found"
+  echo "PASS: no stale verifier diagnostics or hard-coded verifier paths found"
 fi
 exit "$fail"
