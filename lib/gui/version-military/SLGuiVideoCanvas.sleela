@@ -1,0 +1,154 @@
+<< lib/gui/version-military/SLGuiVideoCanvas.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuiVideoCanvas — the 4.0 video surface for playing
+     movies with a full set of transport controls: a source asset, play / pause
+     / stop / seek, a position and duration (ms), volume + mute, loop, playback
+     rate, and a fullscreen flag. SLeeLa owns the player STATE and the meaning of
+     each control; the host decodes and presents the frames onto the canvas
+     widget and reports position back. Every setting is validated/clamped so a
+     seek or volume is never out of range.
+   
+   Family: gui. A canvas node's backing model; the host renders video + audio
+   and reports playback position/buffering to this object. >>
+#sleela 2.5
+material;
+class SLGuiVideoCanvas {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11265;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < no source loaded >
+  static final int STATE_EMPTY   = 0;
+  < loaded, not playing >
+  static final int STATE_READY   = 1;
+  static final int STATE_PLAYING = 2;
+  static final int STATE_PAUSED  = 3;
+  static final int STATE_ENDED   = 4;
+
+  int state;
+  < host-resolvable movie asset / URL >
+  String source;
+  < total length (host-reported on load; 0 until known) >
+  int durationMs;
+  < current playback position >
+  int positionMs;
+  < 0..100 >
+  int volumePct;
+  < 1 = muted (volume preserved) >
+  int muted;
+  < 1 = restart at end >
+  int loop;
+  < playback rate x100 (100 = 1.0x), 25..400 >
+  int ratePctx100;
+  < 1 = presented fullscreen >
+  int fullscreen;
+  < 0..100 host-reported buffer fill >
+  int bufferedPct;
+
+  void configure(String src) {
+    state = (src == null || src == "") ? STATE_EMPTY : STATE_READY;
+    source = (src == null) ? "" : src;
+    durationMs = 0; positionMs = 0; volumePct = 80; muted = 0;
+    loop = 0; ratePctx100 = 100; fullscreen = 0; bufferedPct = 0;
+  }
+
+  int clamp(int v, int lo, int hi) { if (v < lo) { return lo; } if (v > hi) { return hi; } return v; }
+
+  void load(String src) {
+    source = (src == null) ? "" : src;
+    state = (source == "") ? STATE_EMPTY : STATE_READY;
+    durationMs = 0; positionMs = 0; bufferedPct = 0;
+  }
+
+  < ---- transport ---------------------------------------------------------- >
+  boolean play() { if (state == STATE_READY || state == STATE_PAUSED || state == STATE_ENDED) { state = STATE_PLAYING; if (state == STATE_ENDED) { positionMs = 0; } return true; } return false; }
+  boolean pause() { if (state == STATE_PLAYING) { state = STATE_PAUSED; return true; } return false; }
+  boolean stop()  { if (state == STATE_PLAYING || state == STATE_PAUSED) { state = STATE_READY; positionMs = 0; return true; } return false; }
+  < Seek to an absolute millisecond position (clamped to [0, duration]). >
+  boolean seek(int ms) {
+    if (state == STATE_EMPTY) { return false; }
+    int hi = (durationMs > 0) ? durationMs : ms;
+    positionMs = clamp(ms, 0, hi);
+    if (state == STATE_ENDED) { state = STATE_PAUSED; }
+    return true;
+  }
+  void seekRelative(int deltaMs) { seek(positionMs + deltaMs); }
+
+  < ---- audio / rate / view ------------------------------------------------ >
+  void setVolume(int pct) { volumePct = clamp(pct, 0, 100); }
+  void setMuted(boolean on) { muted = on ? 1 : 0; }
+  void setLoop(boolean on) { loop = on ? 1 : 0; }
+  void setRatePct(int pct) { ratePctx100 = clamp(pct, 25, 400); }
+  void setFullscreen(boolean on) { fullscreen = on ? 1 : 0; }
+
+  < Host callbacks while playing. >
+  void onDuration(int ms) { if (ms >= 0) { durationMs = ms; } }
+  void onPosition(int ms) {
+    positionMs = (durationMs > 0) ? clamp(ms, 0, durationMs) : (ms < 0 ? 0 : ms);
+    if (durationMs > 0 && positionMs >= durationMs) {
+      if (loop == 1) { positionMs = 0; } else { state = STATE_ENDED; }
+    }
+  }
+  void onBuffered(int pct) { bufferedPct = clamp(pct, 0, 100); }
+
+  < ---- readers ------------------------------------------------------------ >
+  int getState() { return state; }
+  boolean isPlaying() { return state == STATE_PLAYING; }
+  boolean hasSource() { return source != ""; }
+  String getSource() { return source; }
+  int duration() { return durationMs; }
+  int position() { return positionMs; }
+  int getVolume() { return volumePct; }
+  boolean isMuted() { return muted == 1; }
+  boolean looping() { return loop == 1; }
+  int ratePct() { return ratePctx100; }
+  boolean isFullscreen() { return fullscreen == 1; }
+  int buffered() { return bufferedPct; }
+  < Progress 0..100 for a scrubber (0 when the duration is unknown). >
+  int progressPct() { if (durationMs <= 0) { return 0; } return (positionMs * 100) / durationMs; }
+
+  String stateName() {
+    if (state == STATE_READY)   { return "ready"; }
+    if (state == STATE_PLAYING) { return "playing"; }
+    if (state == STATE_PAUSED)  { return "paused"; }
+    if (state == STATE_ENDED)   { return "ended"; }
+    return "empty";
+  }
+}
