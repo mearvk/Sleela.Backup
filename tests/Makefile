@@ -1,73 +1,137 @@
+CC ?= cc
+CFLAGS ?= -std=c11 -O2 -Wall -Wextra -pedantic
 CXX ?= c++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pedantic
+LDLIBS ?= -lm
+PYTHON ?= python3
+OPENSSL_CFLAGS ?= $(shell pkg-config --cflags openssl 2>/dev/null)
+OPENSSL_LIBS ?= $(shell pkg-config --libs openssl 2>/dev/null)
+ifeq ($(strip $(OPENSSL_LIBS)),)
+  OPENSSL_LIBS := -lcrypto
+endif
+ifeq ($(OS),Windows_NT)
+  NETWORK_PLATFORM_LIBS := -lws2_32
+else
+  NETWORK_PLATFORM_LIBS :=
+endif
 
-.PHONY: all clean check jdk28-conformance jdk28-functional jdk28-signatures java-source-equivalence java-conversions java-flow java-exceptions java-api-dependencies java-constraints java-signature-comparison java-platform-qualification
+ifeq ($(OS),Windows_NT)
+  EXE := .exe
+  THREADFLAGS := -pthread
+else
+  EXE :=
+  THREADFLAGS := -pthread
+endif
 
-all: memory reflection nordshrift runtime network-security
+.PHONY: all check-deps clean check ai-neural-nets-xor neural-nets-xor ai-character-recognition character-recognition-smoke character-recognition-cli jdk28-conformance jdk28-functional jdk28-signatures java-source-equivalence java-conversions java-flow java-exceptions java-api-dependencies java-constraints java-signature-comparison java-platform-qualification
 
-memory: native_memory_smoke.cpp ../api/native/memory/sleela_memory_manager.cpp
-	$(CXX) $(CXXFLAGS) -I../api/native/memory $^ -o $@
+all: check-deps memory$(EXE) reflection$(EXE) nordshrift$(EXE) runtime$(EXE) network-security$(EXE) neural-nets-xor$(EXE) character-recognition-smoke$(EXE) character-recognition-cli$(EXE)
 
-reflection: reflection_smoke.cpp ../api/native/reflection/sleela_reflection.cpp
+# The network/security smoke target uses OpenSSL SHA-256. Fail early with an
+# actionable message rather than a later opaque linker error.
+check-deps:
+	@printf '%s\n' '#include <openssl/sha.h>' 'int main(void) { unsigned char d[SHA256_DIGEST_LENGTH]; return SHA256((const unsigned char*)"x", 1, d) ? 0 : 1; }' | $(CXX) $(CXXFLAGS) $(OPENSSL_CFLAGS) -x c++ - $(OPENSSL_LIBS) $(NETWORK_PLATFORM_LIBS) -o .openssl-probe$(EXE) >/dev/null 2>&1 || { rm -f .openssl-probe .openssl-probe.exe; echo "tests: OpenSSL SHA-256 headers and library are required for network-security (set OPENSSL_CFLAGS/OPENSSL_LIBS if installed outside the default path)." >&2; exit 1; }
+
+memory$(EXE): native_memory_smoke.cpp ../api/native/memory/sleela_memory_manager.cpp
+	$(CXX) $(CXXFLAGS) $(THREADFLAGS) -I../api/native/memory $^ -o $@
+
+reflection$(EXE): reflection_smoke.cpp ../api/native/reflection/sleela_reflection.cpp
 	$(CXX) $(CXXFLAGS) -I../api/native/reflection $^ -o $@
 
-nordshrift: nordshrift_complete_smoke.cpp ../impl/nordshrift/complete/class_bindings.cpp
+nordshrift$(EXE): nordshrift_complete_smoke.cpp ../impl/nordshrift/complete/class_bindings.cpp
 	$(CXX) $(CXXFLAGS) -I../impl/nordshrift/complete $^ -o $@
 
-runtime: runtime_smoke.cpp ../api/native/runtime/sleela_runtime.cpp
-	$(CXX) $(CXXFLAGS) -pthread -I../api/native/runtime $^ -o $@
+runtime$(EXE): runtime_smoke.cpp ../api/native/runtime/sleela_runtime.cpp
+	$(CXX) $(CXXFLAGS) $(THREADFLAGS) -I../api/native/runtime $^ -o $@
 
-network-security: network_security_smoke.cpp ../api/native/network/sleela_network.cpp ../api/native/security/sleela_security.cpp
-	$(CXX) $(CXXFLAGS) $^ -lcrypto -o $@
+network-security$(EXE): network_security_smoke.cpp ../api/native/network/sleela_network.cpp ../api/native/security/sleela_security.cpp | check-deps
+	$(CXX) $(CXXFLAGS) $(OPENSSL_CFLAGS) $^ $(OPENSSL_LIBS) $(NETWORK_PLATFORM_LIBS) -o $@
+
+neural-nets-xor$(EXE): ../artificial-intelligence/neural-nets/xor_example.c ../artificial-intelligence/neural-nets/neural_nets.c ../artificial-intelligence/neural-nets/neural_nets.h
+	$(CC) $(CFLAGS) -I../artificial-intelligence/neural-nets ../artificial-intelligence/neural-nets/xor_example.c ../artificial-intelligence/neural-nets/neural_nets.c $(LDLIBS) -o $@
+
+ai-neural-nets-xor: neural-nets-xor$(EXE)
+	./neural-nets-xor$(EXE)
+
+character-recognition-smoke$(EXE): character_recognition_smoke.c ../artificial-intelligence/character-recognition/character_recognition.c ../artificial-intelligence/character-recognition/character_recognition.h
+	$(CC) $(CFLAGS) -I../artificial-intelligence/character-recognition $< ../artificial-intelligence/character-recognition/character_recognition.c $(LDLIBS) -o $@
+
+ai-character-recognition: character-recognition-smoke$(EXE)
+	./character-recognition-smoke$(EXE)
+
+character-recognition-cli$(EXE): ../artificial-intelligence/character-recognition/character_recognition_main.c ../artificial-intelligence/character-recognition/character_recognition.c ../artificial-intelligence/character-recognition/character_recognition.h
+	$(CC) $(CFLAGS) -I../artificial-intelligence/character-recognition ../artificial-intelligence/character-recognition/character_recognition_main.c ../artificial-intelligence/character-recognition/character_recognition.c $(LDLIBS) -o $@
+	./character-recognition-cli$(EXE) --help
 
 check: all
-	./memory
-	./reflection
-	./nordshrift
-	./runtime
-	./network-security
+	./memory$(EXE)
+	./reflection$(EXE)
+	./nordshrift$(EXE)
+	./runtime$(EXE)
+	./network-security$(EXE)
+	./neural-nets-xor$(EXE)
+	./character-recognition-smoke$(EXE)
 
 jdk28-conformance:
-	python3 jdk28_functional_equivalence.py
+	$(PYTHON) jdk28_functional_equivalence.py
 
 jdk28-functional:
-	python3 jdk28_functional_equivalence.py --functional
+	$(PYTHON) jdk28_functional_equivalence.py --functional
 
 jdk28-signatures:
-	python3 ../lib/java/tools/jdk28_signature_sync.py --check
+	$(PYTHON) ../lib/java/tools/jdk28_signature_sync.py --check
 
 java-source-equivalence:
-	python3 java_source_equivalence.py --java java_equivalence/EquivalenceBasic.java --sleela java_equivalence/EquivalenceBasic.sleela --json java_equivalence/report.json
-	python3 java_source_equivalence.py --java java_equivalence/ExpressionSurface.java --sleela java_equivalence/ExpressionSurface.sleela --json java_equivalence/expression-report.json
+	$(PYTHON) java_source_equivalence.py --java java_equivalence/EquivalenceBasic.java --sleela java_equivalence/EquivalenceBasic.sleela --json java_equivalence/report.json
+	$(PYTHON) java_source_equivalence.py --java java_equivalence/ExpressionSurface.java --sleela java_equivalence/ExpressionSurface.sleela --json java_equivalence/expression-report.json
 
 clean:
-	rm -f memory reflection nordshrift runtime network-security
+	rm -f .openssl-probe .openssl-probe.exe java-conversions java-conversions.exe java-overload java-overload.exe memory memory.exe reflection reflection.exe nordshrift nordshrift.exe runtime runtime.exe network-security network-security.exe neural-nets-xor neural-nets-xor.exe character-recognition-smoke character-recognition-smoke.exe character-recognition-cli character-recognition-cli.exe character-recognition-smoke.txt character-recognition-smoke.jsonl
 
-java-conversions:
-	$(CXX) $(CXXFLAGS) -I../impl/frontend java_conversion_semantics.cpp ../impl/frontend/java_equivalence.cpp -o java-conversions
-	./java-conversions
+java-conversions$(EXE):
+	$(CXX) $(CXXFLAGS) -I../impl/frontend -I../impl/frontend/java java_conversion_semantics.cpp ../impl/frontend/java/java_equivalence.cpp -o java-conversions$(EXE)
+	./java-conversions$(EXE)
 
-java-overload:
-	$(CXX) $(CXXFLAGS) -I../impl/frontend java_overload_override.cpp ../impl/frontend/java_equivalence.cpp -o java-overload
-	./java-overload
+java-overload$(EXE):
+	$(CXX) $(CXXFLAGS) -I../impl/frontend -I../impl/frontend/java java_overload_override.cpp ../impl/frontend/java/java_equivalence.cpp -o java-overload$(EXE)
+	./java-overload$(EXE)
 
 java-flow:
-	python3 java_flow_suite.py
+	$(PYTHON) java_flow_suite.py
 
 java-exceptions:
-	python3 java_exceptions_suite.py
+	$(PYTHON) java_exceptions_suite.py
 
 java-api-dependencies:
-	python3 java_api_dependency_suite.py
+	$(PYTHON) java_api_dependency_suite.py
 
 java-constraints:
-	python3 java_constraints_suite.py
+	$(PYTHON) java_constraints_suite.py
 
 java-signature-comparison:
-	python3 java_signature_comparison_suite.py
+	$(PYTHON) java_signature_comparison_suite.py
 
 java-platform-qualification:
-	python3 java_platform_qualification_suite.py
+	$(PYTHON) java_platform_qualification_suite.py
 
 java-qualification:
-	python3 java_qualification_manifest.py
+	$(PYTHON) java_qualification_manifest.py
+
+.PHONY: java-api-dependency-graph java-api-member-dependencies java-api-visibility-constructor java-source-implementation-audit java-lang-native
+
+java-api-dependency-graph:
+	$(PYTHON) java_api_dependency_graph_suite.py
+
+java-api-member-dependencies:
+	$(PYTHON) java_api_member_dependencies_suite.py
+
+java-api-visibility-constructor:
+	$(PYTHON) java_api_visibility_constructor_suite.py
+
+java-source-implementation-audit:
+	$(PYTHON) java_source_implementation_audit_suite.py
+	$(PYTHON) java_source_implementation_audit.py --top 40
+
+java-lang-native:
+	$(PYTHON) java_object_identity_native_suite.py
+	$(PYTHON) java_string_native_suite.py
