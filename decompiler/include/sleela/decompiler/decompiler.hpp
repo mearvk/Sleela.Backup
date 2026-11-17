@@ -16,6 +16,7 @@ struct Instruction {
     std::uint64_t address{};
     std::vector<std::uint8_t> bytes;
     std::string mnemonic;
+    std::string text;                 // fully rendered form, e.g. "mov rbp, rsp" (operand-level recovery)
     std::vector<Operand> operands;
     Provenance provenance;
     bool is_branch{};
@@ -66,6 +67,12 @@ struct KernelModuleMetadata {
 
 struct ArchiveMember { std::string name; std::uint64_t header_offset{}; std::uint64_t data_offset{}; std::uint64_t size{}; Format format{Format::Unknown}; };
 
+// ARM ELF mapping symbols ($a/$t/$d) partition executable sections into regions of A32
+// code, Thumb code, and inline data. Recording them lets the decoder choose the correct
+// instruction state per region instead of guessing a single state for the whole file.
+enum class CodeKind { Arm, Thumb, Data };
+struct CodeMapping { std::uint64_t address{}; CodeKind kind{CodeKind::Arm}; };
+
 struct NativeInterfaces {
     std::vector<Section> sections;
     std::vector<ProgramSegment> segments;
@@ -74,6 +81,7 @@ struct NativeInterfaces {
     std::vector<Import> imports;
     std::vector<Export> exports;
     std::vector<Relocation> relocations;
+    std::vector<CodeMapping> code_mappings;   // ARM $a/$t/$d, sorted by address
 };
 
 class Artifact {
@@ -102,9 +110,17 @@ private:
     NativeInterfaces interfaces_;
 };
 
+// Decoding mode selects the instruction set for architectures that have more than one
+// encoding at the same machine type. ARM, in particular, has A32 (fixed 32-bit) and
+// Thumb/T32 (variable 16/32-bit) states. Auto preserves the historical default (A32 for
+// ARM); callers that know the state — e.g. from an odd entry point or $t mapping symbols —
+// can request ArmThumb explicitly.
+enum class DecodeMode { Auto, ArmA32, ArmThumb };
+
 class Decoder {
 public:
     std::vector<Instruction> decode(const Artifact&, std::uint64_t address, std::size_t length) const;
+    std::vector<Instruction> decode(const Artifact&, std::uint64_t address, std::size_t length, DecodeMode mode) const;
 };
 
 class ControlFlowGraph {
