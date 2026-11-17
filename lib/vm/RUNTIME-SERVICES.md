@@ -15,7 +15,7 @@ This document is the common runtime-services construction for SLVM/1 through SLV
 | Sockets | Sockets are resources with states: NEW, BOUND, LISTENING, CONNECTING, CONNECTED, HALF_CLOSED, CLOSING, CLOSED, FAILED. Native descriptors/handles never escape the VM. |
 | OS system calls | Host System API access (environment, identity, working directory, filesystem metadata, and process execution) through the `OP_OS_*` opcodes / `os*` built-ins, serviced by `impl/core/sleela_os.c` on Windows (Win32), Linux, and macOS (POSIX). A spawned child process is a resource with states NEW, RUNNING, EXITED, FAILED, tracked as a VM-local bounded handle (never a raw PID/HANDLE); it is reaped by `osWait`/`osProcessClose` and force-released at VM teardown. |
 | Threading | Structured concurrency: every spawned execution has an owner/scope, cancellation token, join/detach policy, deadline, and terminal result. Unowned threads are rejected. |
-| Garbage Collection | VM-managed heap objects use tracing reachability as the semantic baseline. Collection is incremental/generational where practical, with safepoints and write barriers. Native resources are not reclaimed by GC alone. |
+| Garbage Collection | VM-managed heap objects use tracing reachability as the semantic baseline. Collection is incremental/generational where practical, with safepoints and write barriers. Native resources are not reclaimed by GC alone. Implemented in `runtime/garbage_collector.c`; verified and open points are in `impl/RUNTIME-AUDIT.md`. |
 | Teardown | Shutdown is idempotent and ordered: stop admission, cancel child work, quiesce I/O, close sockets/files, join owned threads, drain deferred work, run finalizers for language objects, then release VM memory. |
 | Recovery | Stale handles and resources from an invalidated epoch fail closed and must be reacquired. Recovery never silently resurrects a native descriptor. |
 
@@ -97,7 +97,7 @@ Any unrecoverable lifecycle violation moves to `QUARANTINED` rather than reopeni
 
 The sequence is idempotent: repeated shutdown requests observe the current state and do not execute destruction twice.
 
-## Mapping to the 124-opcode ISA
+## Mapping to the 156-opcode ISA
 
 The existing ISA already contains direct primitives for:
 
@@ -106,9 +106,9 @@ The existing ISA already contains direct primitives for:
 - pipes/FIFOs: `PIPE`, `PIPEPEER`, `FIFO_MK`;
 - files: `FILEOPEN`, `FILEREAD`, `FILEWRITE`, `FILECLOSE`, `FILEUNLINK`;
 - asynchronous/synchronization facilities: `SYN_*`, `MUN_*`;
-- OS system calls: `OS_PLATFORM`, `OS_CAPABILITY`, `OS_GETENV`, `OS_SETENV`, `OS_CWD`, `OS_CHDIR`, `OS_HOSTNAME`, `OS_USERNAME`, `OS_TEMPDIR`, `OS_PID`, `OS_EXISTS`, `OS_ISDIR`, `OS_FILESIZE`, `OS_MKDIR`, `OS_REMOVE`, `OS_RENAME`, `OS_RUN`, `OS_SPAWN`, `OS_WAIT`, `OS_KILL`, `OS_PCLOSE` (the `OP_OS_*` group, codes 103–123).
+- OS system calls: `OS_PLATFORM`, `OS_CAPABILITY`, `OS_GETENV`, `OS_SETENV`, `OS_CWD`, `OS_CHDIR`, `OS_HOSTNAME`, `OS_USERNAME`, `OS_TEMPDIR`, `OS_PID`, `OS_EXISTS`, `OS_ISDIR`, `OS_FILESIZE`, `OS_MKDIR`, `OS_REMOVE`, `OS_RENAME`, `OS_RUN`, `OS_SPAWN`, `OS_WAIT`, `OS_KILL`, `OS_PCLOSE` (the `OP_OS_*` group, codes 103–123), plus OSLS metadata/inspection bindings through `OP_OSLS_CALL` (155).
 
-The OS process opcodes (`OS_SPAWN`/`OS_WAIT`/`OS_KILL`/`OS_PCLOSE`) reuse the same resource-ownership discipline as sockets and files: a spawned child is a VM-local bounded handle with an explicit terminal lifecycle, reaped on wait/close and released during teardown. GC, cancellation, ownership, deadlines, resource epochs, and teardown remain runtime services rather than one opcode per concept. This avoids bloating the ISA while allowing the native implementation and every VM generation to evolve.
+The OSLS call opcode dispatches 12 typed `osls_*` functions through a stable operation-ID table and returns bounded JSON Strings; C pointers and native record layouts never enter VM values. The OS process opcodes (`OS_SPAWN`/`OS_WAIT`/`OS_KILL`/`OS_PCLOSE`) reuse the same resource-ownership discipline as sockets and files: a spawned child is a VM-local bounded handle with an explicit terminal lifecycle, reaped on wait/close and released during teardown. GC, cancellation, ownership, deadlines, resource epochs, and teardown remain runtime services rather than one opcode per concept. This avoids bloating the ISA while allowing the native implementation and every VM generation to evolve.
 
 ## Generation responsibilities
 
