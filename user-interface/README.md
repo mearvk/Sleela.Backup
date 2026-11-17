@@ -1,4 +1,4 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
 # SleelaUI™
 
@@ -6,17 +6,18 @@
 widget library with a software rasterizer and native per-OS backends. It is
 **not** GTK, Qt, wxWidgets, or a wrapper around any of them: SleelaUI draws its
 own widgets with its own 2D rasterizer, so its look is pixel-identical on every
-target. Its base colour is a deep warm **`#2B1608`** (configurable at code or
-config time); the whole palette is derived from it. It talks to the real host
+target. Its default is graphite/charcoal **`#1D2025`** with a steel-blue accent. Five
+named presets are available: Default, White, Blue, Black, and Gray; selection is
+explicit in source or through a runtime `.conf` file. It talks to the real host
 window system through one small backend interface with three implementations.
 
 > SleelaUI™ — MEARVK LLC. Original SLeeLa work.
 
-![SleelaUI preview on the #2B1608 base](docs/preview.png)
+![SleelaUI preview on the graphite default theme](docs/preview.png)
 
-*The default warm theme (base colour #2B1608), rendered by the toolkit's own
-software rasterizer. Regenerate with `make snapshot` (no display required). The
-schematic text is the headless preview font; real backends render system glyphs.*
+*The default graphite/charcoal theme with a steel-blue accent, rendered by the
+toolkit's own software rasterizer. Regenerate with `make snapshot` (no display
+required). The schematic text is the headless preview font; real backends render system glyphs.*
 
 ## Status & platform support
 
@@ -44,7 +45,7 @@ theming — builds and smoke-tests on CI with **no display on any OS**.
      ┌───────────────┴────────────────┐
      │        portable core            │  no OS calls, identical everywhere
      │  Widget tree · box layout       │
-     │  Theme (Slick Black default)    │
+     │  Theme (graphite/charcoal default)    │
      │  Software rasterizer (Canvas)   │
      └───────────────┬────────────────┘
                      │  Backend interface (slui_backend.hpp)
@@ -91,6 +92,14 @@ The interactive controls are keyboard-navigable (Tab/Shift-Tab focus ring,
 Enter/Space activate, arrows for ranges) and expose their state through the C
 ABI. The full catalogue — C constructor, SLeeLa class, description, and focus
 behaviour per widget — is in [`WIDGETS.DESCRIPTION.md`](WIDGETS.DESCRIPTION.md).
+
+### Button icons
+
+Buttons can display a JPEG image asset beside their label and retain a named,
+backend-independent vector fallback for when the image is unavailable. In C,
+use `slui_widget_set_icon(button, "icons/wifi.jpg", "Wifi")`; in SLeeLa, use
+`uiWidgetSetIcon(button, "user-interface/icons/wifi.jpg", "Wifi")` or
+`SLButton.setIcon(SLIcon)`. The current asset decoder supports baseline JPEG.
 
 ### Layout & flow manager
 
@@ -145,7 +154,7 @@ int main(void) {
     SLUIApp *app = slui_app_create("com.example.App");
 
     SLUITheme theme;
-    slui_theme_preset(&theme, SLUI_THEME_SLICK_BLACK);   /* the default */
+    slui_theme_preset(&theme, SLUI_THEME_SLEELA_BASE);   /* the default */
 
     SLUIWindowConfig cfg = {0};
     cfg.title = "Hello"; cfg.width = 480; cfg.height = 320;
@@ -202,3 +211,9 @@ desktop platforms instead of inheriting three different native themes. The
 rules are written down and enforced in [`UI-PRINCIPLES.md`](UI-PRINCIPLES.md).
 
 — SleelaUI™ · MEARVK LLC · 2026
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>

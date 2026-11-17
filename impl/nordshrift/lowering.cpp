@@ -38,7 +38,19 @@ struct Lowerer {
             expr(x->receiver.get()); for (const auto& a:x->args) expr(a.get());
             out.ops.push_back("expr.method.end"); return;
         }
-        if (auto x=dynamic_cast<const NewExpr*>(e)) { out.ops.push_back("expr.new:"+x->typeName); return; }
+        if (auto x=dynamic_cast<const AssignmentExpr*>(e)) {
+            out.ops.push_back("expr.assign:"+x->op); expr(x->target.get()); expr(x->value.get()); out.ops.push_back("expr.assign.end"); return;
+        }
+        if (auto x=dynamic_cast<const ConditionalExpr*>(e)) {
+            out.ops.push_back("expr.cond"); expr(x->cond.get()); expr(x->thenE.get()); expr(x->elseE.get()); out.ops.push_back("expr.cond.end"); return;
+        }
+        if (dynamic_cast<const ThisExpr*>(e)) { out.ops.push_back("expr.this"); return; }
+        if (dynamic_cast<const SuperExpr*>(e)) { out.ops.push_back("expr.super"); return; }
+        if (auto x=dynamic_cast<const NewExpr*>(e)) {
+            out.ops.push_back("expr.new:"+x->typeName+":"+std::to_string(x->args.size()));
+            for (const auto& a:x->args) expr(a.get());   /* arguments are validated too: none may be dropped */
+            out.ops.push_back("expr.new.end"); return;
+        }
         if (auto x=dynamic_cast<const MemberAccess*>(e)) { out.ops.push_back("expr.member:"+x->field); expr(x->base.get()); out.ops.push_back("expr.member.end"); return; }
         fail(std::string("unsupported expression node: ")+typeid(*e).name());
     }
@@ -60,6 +72,7 @@ struct Lowerer {
         if (auto x=dynamic_cast<const ReturnStmt*>(s)) { out.ops.push_back("stmt.return"); if(x->value) expr(x->value.get()); out.ops.push_back("stmt.return.end"); return; }
         if (auto x=dynamic_cast<const IfStmt*>(s)) { out.ops.push_back("stmt.if"); expr(x->cond.get()); stmt(x->thenS.get()); if(x->elseS) stmt(x->elseS.get()); out.ops.push_back("stmt.if.end"); return; }
         if (auto x=dynamic_cast<const WhileStmt*>(s)) { out.ops.push_back("stmt.while"); expr(x->cond.get()); stmt(x->body.get()); out.ops.push_back("stmt.while.end"); return; }
+        if (auto x=dynamic_cast<const ForEachStmt*>(s)) { out.ops.push_back("stmt.foreach"); expr(x->iterable.get()); stmt(x->body.get()); out.ops.push_back("stmt.foreach.end"); return; }
         if (auto x=dynamic_cast<const ForStmt*>(s)) { out.ops.push_back("stmt.for"); if(x->init) stmt(x->init.get()); if(x->cond) expr(x->cond.get()); if(x->update) stmt(x->update.get()); stmt(x->body.get()); out.ops.push_back("stmt.for.end"); return; }
         fail(std::string("unsupported statement node: ")+typeid(*s).name());
     }
