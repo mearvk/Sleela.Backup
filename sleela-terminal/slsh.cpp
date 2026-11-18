@@ -16,11 +16,16 @@
 #include <cerrno>
 #include <csignal>
 #include <ctime>
+#include <chrono>
+#include <cctype>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <termios.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -86,6 +91,20 @@ void writeBytes(const std::string& s) {
     }
 }
 
+std::string colourPrompt(const std::string& prompt) {
+    // Colour the conventional username@computername: prompt without changing
+    // the plain prompt stored by Environment or reported by the prompt command.
+    const std::size_t at = prompt.find('@');
+    const std::size_t colon = prompt.find(':', at == std::string::npos ? 0 : at + 1);
+    if (at == std::string::npos || colon == std::string::npos ||
+        colon + 1 >= prompt.size() || prompt[colon + 1] != ' ') {
+        return prompt;
+    }
+    return "\033[1;32m" + prompt.substr(0, at) + "\033[0m@" +
+           "\033[1;34m" + prompt.substr(at + 1, colon - at - 1) +
+           "\033[0m:\033[0m ";
+}
+
 void redrawLine(const std::string& prompt, const std::string& line, std::size_t cursor) {
     writeBytes("\r\x1b[2K" + prompt + line + "\x1b[K");
     const std::size_t right = line.size() - cursor;
@@ -105,6 +124,139 @@ bool readByte(char& c) {
 // (non-tty EOF, Ctrl+D on an empty line, or a read failure) so the caller can
 // terminate the REPL instead of spinning on repeated empty results. A Ctrl+C
 // cancel is NOT end-of-input: it returns an empty line with eof left false.
+// Tab completion for the interactive line editor. Command-position completion
+// combines shell builtins with executable files found on PATH; other positions
+// complete filesystem entries, including directory traversal.
+struct CompletionCandidate {
+    std::string text;
+    bool is_directory = false;
+};
+
+bool startsWith(const std::string& value, const std::string& prefix) {
+    return value.size() >= prefix.size() && value.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::string escapeCompletion(const std::string& value) {
+    std::string escaped;
+    for (char c : value) {
+        if (c == ' ' || c == '\t' || c == '\\' || c == '$' || c == '&' ||
+            c == '(' || c == ')' || c == '[' || c == ']' || c == '{' ||
+            c == '}' || c == ';' || c == '|' || c == '<' || c == '>' ||
+            c == '*' || c == '?' || c == '\'' || c == '"') escaped.push_back('\\');
+        escaped.push_back(c);
+    }
+    return escaped;
+}
+
+std::vector<CompletionCandidate> completionCandidates(const std::string& line,
+                                                       std::size_t cursor,
+                                                       std::size_t token_start) {
+    const std::string token = line.substr(token_start, cursor - token_start);
+    const std::string before_token = line.substr(0, token_start);
+    const std::size_t separator = before_token.find_last_of(";|&\n");
+    const std::string command_prefix = separator == std::string::npos
+        ? before_token : before_token.substr(separator + 1);
+    const bool command_position =
+        command_prefix.find_first_not_of(" \t") == std::string::npos &&
+        token.find('/') == std::string::npos;
+    std::vector<std::string> names;
+    if (command_position) {
+        static const std::vector<std::string> builtins = {
+            ":", "[", "bg", "break", "cd", "continue", "echo", "eval", "exec",
+            "exit", "export", "false", "fg", "getopts", "help", "jobs", "pwd",
+            "read", "return", "set", "shift", "test", "times", "trap", "true",
+            "type", "umask", "unalias", "unset", "wait", "footerbar", "prompt",
+            "soros", "select"
+        };
+        for (const auto& name : builtins)
+            if (startsWith(name, token)) names.push_back(name);
+
+        const char* path_env = std::getenv("PATH");
+        std::istringstream paths(path_env ? path_env : "");
+        std::string path_entry;
+        while (std::getline(paths, path_entry, ':')) {
+            if (path_entry.empty()) path_entry = ".";
+            std::error_code ec;
+            for (std::filesystem::directory_iterator it(path_entry, ec), end;
+                 !ec && it != end; it.increment(ec)) {
+                const std::string name = it->path().filename().string();
+                if (!startsWith(name, token) || name.empty() || name[0] == '.') continue;
+                std::error_code type_ec;
+                if (::access(it->path().c_str(), X_OK) == 0 &&
+                    !std::filesystem::is_directory(it->path(), type_ec)) names.push_back(name);
+            }
+        }
+    } else {
+        const std::size_t slash = token.find_last_of('/');
+        const std::string directory_part = slash == std::string::npos ? "" : token.substr(0, slash + 1);
+        const std::string base = slash == std::string::npos ? token : token.substr(slash + 1);
+        const std::filesystem::path directory = directory_part.empty()
+            ? std::filesystem::path(".") : std::filesystem::path(directory_part);
+        std::error_code ec;
+        for (std::filesystem::directory_iterator it(directory, ec), end;
+             !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            if (!startsWith(name, base)) continue;
+            if ((base.empty() || base[0] != '.') && !name.empty() && name[0] == '.') continue;
+            std::error_code type_ec;
+            const bool is_dir = std::filesystem::is_directory(it->path(), type_ec);
+            names.push_back(directory_part + name + (is_dir ? "/" : ""));
+        }
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    std::vector<CompletionCandidate> found;
+    for (const auto& name : names) {
+        std::error_code ec;
+        found.push_back({name, std::filesystem::is_directory(std::filesystem::path(name), ec)});
+    }
+    return found;
+}
+
+void applyTabCompletion(std::string& line, std::size_t& cursor, const std::string& prompt) {
+    std::size_t token_start = cursor;
+    while (token_start > 0) {
+        const char c = line[token_start - 1];
+        if (c == ' ' || c == '\t' || c == ';' || c == '|' || c == '&' ||
+            c == '(' || c == ')' || c == '<' || c == '>') break;
+        --token_start;
+    }
+    const std::string prefix = line.substr(token_start, cursor - token_start);
+    if (prefix.empty()) return;
+    const auto matches = completionCandidates(line, cursor, token_start);
+    if (matches.empty()) return;
+
+    std::string replacement;
+    std::string suffix;
+    if (matches.size() == 1) {
+        replacement = matches.front().text;
+        if (matches.front().is_directory) {
+            if (replacement.empty() || replacement.back() != '/') suffix = "/";
+        } else suffix = " ";
+    } else {
+        replacement = matches.front().text;
+        for (std::size_t i = 1; i < matches.size(); ++i) {
+            std::size_t n = 0;
+            while (n < replacement.size() && n < matches[i].text.size() &&
+                   replacement[n] == matches[i].text[n]) ++n;
+            replacement.resize(n);
+        }
+        if (replacement.size() <= prefix.size()) {
+            writeBytes("\r\n");
+            for (std::size_t i = 0; i < matches.size(); ++i) {
+                writeBytes(matches[i].text);
+                writeBytes((i + 1) % 4 == 0 || i + 1 == matches.size() ? "\r\n" : "\t");
+            }
+            redrawLine(prompt, line, cursor);
+            return;
+        }
+    }
+    replacement = escapeCompletion(replacement) + suffix;
+    line.replace(token_start, cursor - token_start, replacement);
+    cursor = token_start + replacement.size();
+    redrawLine(prompt, line, cursor);
+}
+
 std::string readInteractiveLine(const std::string& prompt,
                                 std::vector<std::string>& history,
                                 bool& eof) {
@@ -123,10 +275,18 @@ std::string readInteractiveLine(const std::string& prompt,
     bool have_history_buffer = false;
     std::string saved_line;
 
-    writeBytes(prompt);
+    // Paint the complete prompt through the same positioning path used for edits.
+    // With an empty input line, cursor == line.size() == 0, so the insertion
+    // point is deterministically just after the prompt's trailing colon/space.
+    redrawLine(prompt, line, cursor);
     for (;;) {
         char c = 0;
         if (!readByte(c)) { eof = true; return {}; }
+
+        if (c == '\t') { // Tab: command or filesystem completion.
+            applyTabCompletion(line, cursor, prompt);
+            continue;
+        }
 
         if (c == '\n' || c == '\r') {
             writeBytes("\r\n");
@@ -295,6 +455,195 @@ bool runPromptCommand(const std::string& line, Environment& env) {
     return true;
 }
 
+
+const std::vector<std::string>& footerbarTopicCatalog() {
+    static const std::vector<std::string> topics = {
+        "academia",
+        "agriculture",
+        "ai-research",
+        "anatomy",
+        "anthropology",
+        "archaeology",
+        "astronomy",
+        "astrophysics",
+        "artificial-intelligence",
+        "behavioral-science",
+        "biochemistry",
+        "biodiversity",
+        "bioinformatics",
+        "biology",
+        "biomedical-engineering",
+        "biophysics",
+        "biotechnology",
+        "botany",
+        "business",
+        "cancer-research",
+        "chemistry",
+        "climate-science",
+        "cognitive-science",
+        "computational-biology",
+        "computer-science",
+        "conservation",
+        "data-science",
+        "dentistry",
+        "developmental-biology",
+        "drug-discovery",
+        "ecology",
+        "economics",
+        "education",
+        "electrical-engineering",
+        "energy",
+        "engineering",
+        "environmental-science",
+        "epidemiology",
+        "ethics",
+        "evolution",
+        "finance",
+        "food-science",
+        "forensic-science",
+        "genetics",
+        "geochemistry",
+        "geography",
+        "geology",
+        "global-health",
+        "health-policy",
+        "history",
+        "immunology",
+        "infectious-disease",
+        "information-security",
+        "materials-science",
+        "mathematics",
+        "mechanical-engineering",
+        "medicine",
+        "microbiology",
+        "molecular-biology",
+        "nanotechnology",
+        "neuroscience",
+        "nuclear-physics",
+        "nutrition",
+        "oceanography",
+        "oncology",
+        "optics",
+        "paleontology",
+        "pharmacology",
+        "pharmacy",
+        "philosophy",
+        "physics",
+        "physiology",
+        "plant-science",
+        "political-science",
+        "psychology",
+        "public-health",
+        "quantum-computing",
+        "quantum-physics",
+        "robotics",
+        "science-policy",
+        "software-engineering",
+        "statistics",
+        "sustainability",
+        "systems-biology",
+        "toxicology",
+        "veterinary-medicine",
+        "virology",
+        "volcanology",
+        "water-resources",
+        "wildlife",
+        "anxiety-research",
+        "clinical-trials",
+        "digital-health",
+        "medical-devices",
+        "mental-health",
+        "pharmacogenomics",
+        "regenerative-medicine",
+        "stem-cells",
+        "surgery",
+        "vaccinology"
+    };
+    return topics;
+}
+
+std::filesystem::path footerbarTopicsPath() {
+    const char *xdg = std::getenv("XDG_CONFIG_HOME");
+    const char *home = std::getenv("HOME");
+    std::filesystem::path base = (xdg && *xdg) ? xdg :
+        ((home && *home) ? (std::filesystem::path(home) / ".config").string() : ".config");
+    return base / "sleela" / "footerbar-topics.conf";
+}
+
+std::string lowerTopic(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+bool runFooterbarCommand(const std::string& line, Environment& env) {
+    if (line != "footerbar" && line.rfind("footerbar ", 0) != 0) return false;
+    std::istringstream input(line);
+    std::string command, arg;
+    input >> command;
+    std::vector<std::string> requested;
+    while (input >> arg) requested.push_back(lowerTopic(arg));
+    const auto &catalog = footerbarTopicCatalog();
+    const auto path = footerbarTopicsPath();
+    std::vector<std::string> current;
+    {
+        std::ifstream in(path);
+        while (in >> arg) current.push_back(lowerTopic(arg));
+    }
+    if (requested.empty() || requested.front() == "status") {
+        std::cout << "footerbar topics:";
+        if (current.empty()) std::cout << " (none; feed inactive)";
+        for (const auto &topic : current) std::cout << " " << topic;
+        std::cout << "\nUse: footerbar chemistry pharmacology\n"
+                     "Use 'footerbar list' to show the 100 supported topics, or 'footerbar clear' to disable.\n";
+        env.setLastStatus(0);
+        return true;
+    }
+    if (requested.size() == 1 && requested[0] == "list") {
+        for (std::size_t i = 0; i < catalog.size(); ++i)
+            std::cout << catalog[i] << ((i + 1) % 5 == 0 ? "\n" : "\t");
+        if (catalog.size() % 5 != 0) std::cout << "\n";
+        env.setLastStatus(0);
+        return true;
+    }
+    if (requested.size() == 1 && requested[0] == "clear") {
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        std::cout << "footerbar: topic feed disabled\n";
+        env.setLastStatus(0);
+        return true;
+    }
+    std::vector<std::string> selected;
+    for (const auto &topic : requested) {
+        if (std::find(catalog.begin(), catalog.end(), topic) == catalog.end()) {
+            std::cerr << "footerbar: unsupported topic '" << topic
+                      << "'; use 'footerbar list' to see supported topics\n";
+            env.setLastStatus(2);
+            return true;
+        }
+        if (std::find(selected.begin(), selected.end(), topic) == selected.end()) selected.push_back(topic);
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) {
+        std::cerr << "footerbar: cannot create config directory: " << ec.message() << "\n";
+        env.setLastStatus(1);
+        return true;
+    }
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) {
+        std::cerr << "footerbar: cannot write " << path << "\n";
+        env.setLastStatus(1);
+        return true;
+    }
+    for (const auto &topic : selected) out << topic << "\n";
+    std::cout << "footerbar: RSS topic feed enabled for";
+    for (const auto &topic : selected) std::cout << " " << topic;
+    std::cout << "\n";
+    env.setLastStatus(0);
+    return true;
+}
+
 bool runSorosTimeCommand(const std::string& line, Environment& env) {
     if (line != "soros time") return false;
 
@@ -345,6 +694,7 @@ int runNormalScript(const std::string& src, Environment& env) {
 
 int runScript(const std::string& src, Environment& env) {
     if (runPromptCommand(src, env)) return env.lastStatus();
+    if (runFooterbarCommand(src, env)) return env.lastStatus();
     if (runSorosTimeCommand(src, env)) return env.lastStatus();
 
     int status = 0;
@@ -355,13 +705,79 @@ int runScript(const std::string& src, Environment& env) {
     return runNormalScript(src, env);
 }
 
+void printCommandSummary(const std::string& command) {
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    char timestamp[64] = "unknown local time";
+    if (::localtime_r(&now, &local) != nullptr) {
+        std::strftime(timestamp, sizeof timestamp, "%Y-%m-%d %H:%M:%S %Z", &local);
+    }
+    // VTE ANSI background is a text-cell rectangle, not a separate GTK panel.
+    // The workspace/terminal base colours remain unchanged.
+    std::cout << "\033[48;2;112;91;69m\033[38;2;252;248;240m  "
+              << command << "   \xC2\xB7   " << timestamp
+              << "  \033[0m\n" << std::flush;
+}
+
 int repl(Environment& env) {
     std::vector<std::string> history;
-    std::cout << "SleelaTerminal(TM) slsh -- original SLeeLa shell. Type 'exit' to leave.\n";
+    const std::string startup_banner = "SleelaTerminal(TM) slsh -- original SLeeLa shell. Type 'exit' to leave.";
+    const std::string initial_prompt = colourPrompt(env.prompt());
+    // Count visible prompt columns, excluding ANSI colour/control sequences.
+    std::size_t prompt_columns = 0;
+    bool in_escape = false;
+    bool in_csi = false;
+    for (unsigned char ch : initial_prompt) {
+        if (!in_escape && ch == 0x1b) {
+            in_escape = true;
+            continue;
+        }
+        if (in_escape) {
+            if (!in_csi && ch == '[') {
+                in_csi = true;
+                continue;
+            }
+            if (in_csi && ch >= 0x40 && ch <= 0x7e) {
+                in_escape = false;
+                in_csi = false;
+            } else if (!in_csi) {
+                in_escape = false;
+            }
+            continue;
+        }
+        ++prompt_columns;
+    }
+    std::cout << startup_banner << '\n' << std::flush;
+
+    // Fade the one-line welcome banner after five seconds without blocking the
+    // REPL. Each fade frame repaints only row 1 and saves/restores the live cursor.
+    // Deleting row 1 promotes the prompt row; put the cursor after the prompt,
+    // not at column 1, so the empty input line starts in the normal position.
+    std::thread([startup_banner, prompt_columns]() {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        static const char *const fade_colours[] = {
+            "\033[38;5;250m", "\033[38;5;244m",
+            "\033[38;5;238m", "\033[38;5;232m"
+        };
+        for (const char *colour : fade_colours) {
+            const std::string frame = std::string("\033[s\033[1;1H\033[2K")
+                + colour + startup_banner + "\033[0m\033[u";
+            (void)::write(STDOUT_FILENO, frame.data(), frame.size());
+            std::this_thread::sleep_for(std::chrono::milliseconds(180));
+        }
+        const std::string clear_and_promote =
+            "\033[1;1H\033[2K\033[1;1H\033[M\033[1;1H";
+        (void)::write(STDOUT_FILENO, clear_and_promote.data(), clear_and_promote.size());
+        if (prompt_columns > 0) {
+            const std::string move_to_input =
+                "\033[" + std::to_string(prompt_columns) + "C";
+            (void)::write(STDOUT_FILENO, move_to_input.data(), move_to_input.size());
+        }
+    }).detach();
 
     for (;;) {
         bool eof = false;
-        const std::string line = readInteractiveLine(env.prompt(), history, eof);
+        const std::string line = readInteractiveLine(colourPrompt(env.prompt()), history, eof);
         if (g_interrupted) {
             g_interrupted = 0;
             continue;
@@ -370,6 +786,7 @@ int repl(Environment& env) {
         if (line.empty()) continue;
 
         if (history.empty() || history.back() != line) history.push_back(line);
+        printCommandSummary(line);
         runScript(line, env);
         if (env.shouldExit()) return env.exitCode();
     }
