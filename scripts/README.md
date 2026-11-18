@@ -1,6 +1,6 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="SLeeLa">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa">
 
 
 
@@ -15,6 +15,8 @@ This directory contains build and installation scripts for SLeeLa.
 
 ### `build-linux.sh` — Linux Build & Install
 Builds SLeeLa for Linux (gcc/g++) and installs to `/bin` or a custom directory.
+This builds three binaries: `sleela`, `nordshrift`, and the XLT CPU-model
+compiler `xltc` (from `impl/xlt`). When `BIN_DIR` is set, all three are installed.
 
 **Usage:**
 ```bash
@@ -45,6 +47,8 @@ CC=clang CXX=clang++ ./build-linux.sh
 
 ### `build-macos.sh` — macOS Build & Install
 Builds SLeeLa for macOS (clang/clang++) and installs to `/usr/local/bin` or custom directory.
+Like the Linux script, this builds and installs `sleela`, `nordshrift`, and the
+XLT compiler `xltc`.
 
 **Usage:**
 ```bash
@@ -78,6 +82,109 @@ Performs a complete clean rebuild from scratch, with optional test suite executi
 **Environment variables:**
 - `CC` — C compiler (default: `gcc`)
 - `CXX` — C++ compiler (default: `g++`)
+
+In addition to the full clean rebuild, this script clean-builds the XLT compiler
+(`xltc`) and runs an XLT smoke test in both directions: a congruent model
+(`epyc-ddr2.xlt`) must compile, and a deliberately bad model (`bad-model.xlt`)
+must be rejected.
+
+---
+
+### `xlt-check.sh` — XLT & GUI Inventory Check
+Fail-closed verifier for the XLT front-end and the GUI version lines. Verifies
+the `impl/xlt` sources and Makefile, the `lib/xlt` README and `.xlt` examples,
+that `xltc` (when built) accepts a congruent model and rejects a bad one, and
+that each `lib/gui/version-*` line ships an `SLPackage.sleela` manifest, a
+`gui-demo.sleela`, and — where present — a valid `preview/` directory.
+
+**Usage:**
+```bash
+./scripts/xlt-check.sh
+```
+Building `xltc` is not required to run the check; the live-compile step is
+skipped (not failed) when `impl/xlt/build/xltc` is absent.
+
+---
+
+### `autocheck-toolchain.sh` — Toolchain Autocheck
+Verifies core toolchain assets (verifier tool, SHA-256 manifest, `impl/Makefile`,
+the XLT Makefile and examples) and that every GUI version line carries its
+`SLPackage.sleela` manifest, then scans build files for stale path assumptions.
+
+### `tutorial-check.sh` — Tutorial & Examples Check
+Verifies the `tutorial/` lesson inventory and the `examples/*.xml` projects
+(well-formedness and expected-evidence pairing).
+
+### `validate-config.py` — Configuration Validator
+Validates the SLeeLa configuration policy (`config/*.conf`) and the
+`*.properties.example` templates without modifying them.
+
+### `regen-manifest.sh` — Regenerate / Check the SHA-256 Manifest
+Convenience wrapper around `tools/generate-sha256-manifest.py`.
+
+**Usage:**
+```bash
+./scripts/regen-manifest.sh            # regenerate security/sha256-manifest.json
+./scripts/regen-manifest.sh --check    # drift check only; never rewrites
+```
+Equivalent `make` targets (run from `impl/`):
+```bash
+make regen-manifest    # rewrite the manifest from current source
+make check-manifest    # fail if the committed manifest is out of sync (no rewrite)
+```
+
+---
+
+## The SHA-256 build gate and manifest
+
+The verified build fails closed: `make all` runs `verify-security` first and
+refuses to build unless every file in `security/sha256-manifest.json` matches
+its recorded SHA-256. This protects the interpreter/toolchain source (not the
+arbitrary programs it runs) from unexpected changes.
+
+When you **intentionally** edit verified source (the interpreter core, front
+end, Nordshrift driver, catalog, xclass, subject libraries, and the extra files
+the build consumes), regenerate the manifest so source and manifest agree again,
+then commit both together:
+
+```bash
+git status                 # confirm the only changed files are ones you meant to change
+git diff impl/frontend/    # review the actual edits
+./scripts/regen-manifest.sh
+```
+
+If you add a brand-new source file/directory that the build compiles, add it to
+`DEFAULT_SOURCE_DIRS`/`DEFAULT_EXTRA_FILES` in
+`tools/generate-sha256-manifest.py` before regenerating.
+
+Use `make check-manifest` (or `./scripts/regen-manifest.sh --check`) in CI or a
+pre-commit hook to catch a stale manifest *before* it blocks a build — it
+reports drift without rewriting anything, so the fail-closed guarantee is
+preserved. Regenerating blindly to silence a verification failure defeats the
+gate; regenerate because the edits were intended.
+
+---
+
+## XLT CPU-model compiler (`xltc`)
+
+The XLT front-end lives in `impl/xlt` (lexer, parser, resolver, and the `xltc`
+CLI) and compiles `.xlt` CPU-model sheets found in `lib/xlt/examples`. It is
+self-contained — its own `Makefile`, no dependency on the Nordshrift build — and
+produces `impl/xlt/build/xltc`.
+
+```bash
+# Build just the XLT compiler
+make -C impl/xlt
+
+# Compile a model sheet
+./impl/xlt/build/xltc lib/xlt/examples/epyc-ddr2.xlt
+
+# Built-in smoke check (compiles the bundled EPYC+DDR2 model)
+make -C impl/xlt check
+```
+
+The build scripts above build and install `xltc` alongside `sleela` and
+`nordshrift`, so after a `BIN_DIR` install you can run `xltc` directly.
 
 ---
 
@@ -128,6 +235,7 @@ After installation, verify the build:
 ```bash
 sleela version
 nordshrift version
+xltc lib/xlt/examples/epyc-ddr2.xlt   # compiles a sample CPU-model sheet
 ```
 
 Run example programs:
@@ -177,8 +285,17 @@ make clean        # Remove all build artifacts
 
 # Binaries appear in build/
 ls -lh build/{sleela,nordshrift}
+
+# Build the XLT compiler separately (self-contained)
+make -C xlt       # produces impl/xlt/build/xltc
 ```
 
 ---
 
 *For more information, see the main [README.md](../README.md) and [impl/README.md](../impl/README.md).*
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>

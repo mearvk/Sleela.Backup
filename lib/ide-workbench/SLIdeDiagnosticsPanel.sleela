@@ -1,0 +1,139 @@
+<< lib/ide-workbench/SLIdeDiagnosticsPanel.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLIdeDiagnosticsPanel — the surface that renders compiler
+     diagnostics inside the IDE. The compile pipeline (lib/compiler,
+     lib/nordshrift) produces diagnostics; nothing in lib/gui or the widget
+     packages shows them in an editor. This panel records category, severity,
+     a 1-based (line, column) origin, the owning document id, and a message,
+     honoring the /ide SLEELA.IDE.CONTRACT.md rule that compiler failures stay
+     IDE-visible failures (a failed compile must not read back as success). >>
+#sleela 2.5
+material;
+< Family: ide-workbench. The problems list bound to a status/list widget. >
+class SLIdeDiagnosticsPanel {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11057;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-13";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int MAX_DIAGNOSTICS = 65536;
+
+  < Severity scale (ascending). ERROR fails the compile result. >
+  static final int SEV_INFO = 0;
+  static final int SEV_WARNING = 1;
+  static final int SEV_ERROR = 2;
+
+  String[] documentIds;
+  int[] severities;
+  < 1-based line (compiler boundary is 1-based) >
+  int[] lines;
+  < 1-based column >
+  int[] columns;
+  String[] messages;
+  int count;
+  int errorCount;
+  int warningCount;
+
+  void init() {
+    documentIds = new String[MAX_DIAGNOSTICS];
+    severities = new int[MAX_DIAGNOSTICS];
+    lines = new int[MAX_DIAGNOSTICS];
+    columns = new int[MAX_DIAGNOSTICS];
+    messages = new String[MAX_DIAGNOSTICS];
+    count = 0; errorCount = 0; warningCount = 0;
+  }
+
+  < Clear everything (called at the start of each compile run). >
+  void clear() { count = 0; errorCount = 0; warningCount = 0; }
+
+  < Clear just the diagnostics owned by one document (incremental recompile). >
+  void clearDocument(String documentId) {
+    int w = 0;
+    int err = 0; int warn = 0;
+    for (int i = 0; i < count; i = i + 1) {
+      if (documentIds[i] != documentId) {
+        documentIds[w] = documentIds[i];
+        severities[w] = severities[i];
+        lines[w] = lines[i];
+        columns[w] = columns[i];
+        messages[w] = messages[i];
+        if (severities[w] == SEV_ERROR) { err = err + 1; }
+        if (severities[w] == SEV_WARNING) { warn = warn + 1; }
+        w = w + 1;
+      }
+    }
+    count = w; errorCount = err; warningCount = warn;
+  }
+
+  < Publish one diagnostic from the compiler/Nordshrift output. >
+  boolean publish(String documentId, int severity, int line, int column, String message) {
+    if (count >= MAX_DIAGNOSTICS) { return false; }
+    documentIds[count] = documentId;
+    severities[count] = severity;
+    lines[count] = line;
+    columns[count] = column;
+    messages[count] = message;
+    count = count + 1;
+    if (severity == SEV_ERROR) { errorCount = errorCount + 1; }
+    if (severity == SEV_WARNING) { warningCount = warningCount + 1; }
+    return true;
+  }
+
+  int size() { return count; }
+  int errors() { return errorCount; }
+  int warnings() { return warningCount; }
+
+  < The IDE contract's failure rule: a run with any error is a failed run. >
+  boolean compileSucceeded() { return errorCount == 0; }
+
+  < A short status line for the status bar (SLStatusBar in lib/user-interface). >
+  String statusLine() {
+    if (count == 0) { return "No problems"; }
+    return "" + errorCount + " error(s), " + warningCount + " warning(s)";
+  }
+
+  String messageAt(int index) {
+    if (index < 0 || index >= count) { return ""; }
+    return messages[index];
+  }
+  int severityAt(int index) {
+    if (index < 0 || index >= count) { return SEV_INFO; }
+    return severities[index];
+  }
+}
