@@ -1,0 +1,136 @@
+<< lib/cpu/SLVoltageRail.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLVoltageRail — one adjustable supply rail with ACTUAL
+     voltages expressed in millivolts (mV). A real CPU, its buses, its I/O ring,
+     and its memory each sit on named rails (Vcore, Vsoc, Vddq, Vio, ...). The
+     rail carries a nominal operating point, hard floor/ceiling limits, a
+     per-rail load-line droop (how far the voltage sags under current), and an
+     offset the operator dials in. The settled voltage a timing budget must
+     survive is `effective()` = nominal + offset - droopAtLoad.
+   
+   Voltages are kept careful and nameful: every rail has a name, a reason for
+   its limits, and a settle point you can read back and reason about. Nothing
+   here assumes a "confidence" about how a part behaves — it states the actual
+   electrical operating point the timings below are proven against.
+   
+   Family: cpu. Pure Sleela electrical model (millivolt integer arithmetic). >>
+#sleela 2.5
+material;
+class SLVoltageRail {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11089;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-13";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < nameful rail: "Vcore", "Vsoc", "Vddq", "Vio", ... >
+  String name;
+  < nominal operating voltage in millivolts >
+  int nominalMv;
+  < operator-dialed adjustment (may be negative = undervolt) >
+  int offsetMv;
+  < hard lower limit; below this the part is unstable >
+  int floorMv;
+  < hard upper limit; above this the part is unsafe >
+  int ceilingMv;
+  < load-line resistance in micro-ohms (droop = I * R) >
+  int loadLineUohm;
+  < present current draw in milliamps >
+  int loadMa;
+  < 1 = limits enforced, adjustments clamped into range >
+  int locked;
+
+  < Configure a rail with its name, nominal point, and safe window. >
+  void configure(String railName, int nominal, int floor, int ceiling) {
+    name = railName; nominalMv = nominal; offsetMv = 0;
+    floorMv = floor; ceilingMv = ceiling;
+    loadLineUohm = 0; loadMa = 0; locked = 1;
+  }
+
+  < Give the rail a load line (micro-ohms) so droop can be computed from draw. >
+  void setLoadLine(int microOhms) { if (microOhms >= 0) { loadLineUohm = microOhms; } }
+
+  < Declare the present current draw (milliamps) the rail is sourcing. >
+  void setLoad(int milliamps) { if (milliamps >= 0) { loadMa = milliamps; } }
+
+  < Dial an adjustment. When locked, the resulting effective voltage is held >
+  < inside [floor, ceiling]; the offset is clamped so a settled rail is safe. >
+  void adjust(int deltaMv) {
+    offsetMv = offsetMv + deltaMv;
+    if (locked == 1) { clampToWindow(); }
+  }
+
+  < Set the adjustment to an absolute value (relative to nominal). >
+  void setOffset(int deltaMv) { offsetMv = deltaMv; if (locked == 1) { clampToWindow(); } }
+
+  void lock() { locked = 1; clampToWindow(); }
+  < bench/expert mode: adjustments uncapped >
+  void unlock() { locked = 0; }
+
+  < Droop in millivolts from the load line at the present draw: >
+  < droop(mV) = loadMa (mA) * loadLineUohm (uOhm) / 1_000_000 >
+  int droopMv() { return (loadMa * loadLineUohm) / 1000000; }
+
+  < The voltage the rail actually settles at under load — what every timing >
+  < budget on this rail is proven against. >
+  int effectiveMv() { return nominalMv + offsetMv - droopMv(); }
+
+  < Keep the dialed offset such that effective() stays within the safe window. >
+  void clampToWindow() {
+    int eff = effectiveMv();
+    if (eff < floorMv)   { offsetMv = offsetMv + (floorMv - eff); }
+    if (effectiveMv() > ceilingMv) { offsetMv = offsetMv - (effectiveMv() - ceilingMv); }
+  }
+
+  < Is the settled rail inside its stated safe window? >
+  boolean withinLimits() {
+    int eff = effectiveMv();
+    return eff >= floorMv && eff <= ceilingMv;
+  }
+
+  < Headroom (mV) between the settled point and the floor — the margin a slow >
+  < corner has before it browns out. Negative means a violation. >
+  int headroomMv() { return effectiveMv() - floorMv; }
+
+  String railName() { return name; }
+  int nominal() { return nominalMv; }
+  int offset() { return offsetMv; }
+  int floor() { return floorMv; }
+  int ceiling() { return ceilingMv; }
+  int load() { return loadMa; }
+}
