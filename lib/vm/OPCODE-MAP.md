@@ -4,7 +4,37 @@ Max Rupplin - MEARVK LLC - 2026
 
 This is the human-readable support map for the canonical source-defined SLeeLa ISA in `lib/vm/InstructionSet.sleela`.
 
-**Verified master-tree state:** 124 source ISA entries, 124 native `SLOp` entries, and 124 native dispatch cases. There are no missing native dispatch cases. The tail groups are the array ops (98–102) and the operating-system system calls (103–123, `OP_OS_*`), both appended to the end of the enum so earlier opcode numbers are unchanged.
+## Canonical ordering and allocation catalog
+
+`lib/vm/InstructionSet.sleela` is the sole authoritative ordered source registry; the native
+`SLOp` enum in `impl/core/sleela_core.h` must match it exactly by mnemonic and numeric
+position. `tools/isa/opcode-registry-3.0.json` is the machine-readable allocation/status
+catalog, not a second source of opcode assignments. Its verifier checks the
+source registry, native enum, contiguous family allocations, and the complete
+reserved tail through 281:
+
+```sh
+python3 tools/verify-opcode-registry.py
+make -C impl test-opcode-registry
+```
+
+The standard `make -C impl test` suite runs this verifier. The `sleela-build.py inventory-lib`
+gate also runs it before accepting the library inventory. Do not reorder or
+renumber existing entries to make a family look tidier: preserve IDs and add
+new executable instructions only through the append-only registry workflow.
+Reserved IDs are family-owned and remain absent from the executable enum and
+source opcode records until the full implementation is ready.
+
+**Compatibility contract (CI-gated):** the frozen pre-OSLS ISA contains 155 opcodes (0..154), including the original OS-call range 103–123. `OP_OSLS_CALL` is the append-only 156th entry (155). `tools/verify-osls-isa-extension.py` compares the complete source and native enum sequences against `tools/isa/osls-isa-baseline-155.txt`; the cross-platform workflow also builds and executes the OSLS native registry and VM binding tests. The tail groups are the array ops (98–102), the operating-system system calls (103–123, `OP_OS_*`), the GC/system ops (124 `OP_GC_HINT`, 125 `OP_RAN_MEM`), the idea-canvas native-bridge ops (126–147, `OP_IC_*`, from `idea/realtime`), the VM-selection service op (148, `OP_VM_SELECT`), the Modium file-resolution scan op (149, `OP_MODIUM_SCAN`), `OP_UI_CALL` (150), `OP_SSEND` (151), and runtime type/stack ops `OP_CHECKCAST` (152), `OP_INSTANCEOF` (153), `OP_DUP2` (154), and `OP_OSLS_CALL` (155) — all appended to the end of the enum so earlier opcode numbers are unchanged.
+
+> Sync note: the source registry, native enum, and map now cover the appended
+> `OP_IC_*` group (126–147), `OP_VM_SELECT` (148), `OP_MODIUM_SCAN` (149),
+> and opcodes 150–155. OP_OSLS_CALL (155) dispatches the typed osls_* ABI binding table. The coverage checks compare the ordered source records
+> against the native enum; CI remains the final build-level verification.
+> `OP_VM_SELECT` (148) is the service-exit seam the Sleela VM selector
+> (`virtual-machine/vm-version/SLVmRegistry` + the `SLVmVersionNNN` manifests)
+> binds to, so choosing a VM parks a VM-exit the host services by building and
+> booting the chosen version's native main.
 
 | Code | Opcode | Runtime status | Native dispatch |
 |---:|---|---|---|
@@ -132,6 +162,82 @@ This is the human-readable support map for the canonical source-defined SLeeLa I
 121 | `OP_OS_WAIT` | Implemented | `impl/core/sleela_core.c` (`sleela_os.c`)
 122 | `OP_OS_KILL` | Implemented | `impl/core/sleela_core.c` (`sleela_os.c`)
 123 | `OP_OS_PCLOSE` | Implemented | `impl/core/sleela_core.c` (`sleela_os.c`)
+124 | `OP_GC_HINT` | Implemented | `impl/core/sleela_core.c`
+125 | `OP_RAN_MEM` | Implemented | `impl/core/sleela_core.c`
+126 | `OP_IC_CREATE` | Implemented | `impl/core/sleela_core.c`
+127 | `OP_IC_DESTROY` | Implemented | `impl/core/sleela_core.c`
+128 | `OP_IC_COLS` | Implemented | `impl/core/sleela_core.c`
+129 | `OP_IC_ROWS` | Implemented | `impl/core/sleela_core.c`
+130 | `OP_IC_COUNT` | Implemented | `impl/core/sleela_core.c`
+131 | `OP_IC_SETPARAMS` | Implemented | `impl/core/sleela_core.c`
+132 | `OP_IC_EXCITE` | Implemented | `impl/core/sleela_core.c`
+133 | `OP_IC_STEP` | Implemented | `impl/core/sleela_core.c`
+134 | `OP_IC_ADVANCE` | Implemented | `impl/core/sleela_core.c`
+135 | `OP_IC_TIMESTEP` | Implemented | `impl/core/sleela_core.c`
+136 | `OP_IC_INTENSITY` | Implemented | `impl/core/sleela_core.c`
+137 | `OP_IC_HASREND` | Implemented | `impl/core/sleela_core.c`
+138 | `OP_IC_OPENWIN` | Implemented | `impl/core/sleela_core.c`
+139 | `OP_IC_SHOULDCLOSE` | Implemented | `impl/core/sleela_core.c`
+140 | `OP_IC_PRESENT` | Implemented | `impl/core/sleela_core.c`
+141 | `OP_IC_RUN` | Implemented | `impl/core/sleela_core.c`
+142 | `OP_IC_SETPOLICY` | Implemented | `impl/core/sleela_core.c`
+143 | `OP_IC_POLICY` | Implemented | `impl/core/sleela_core.c`
+144 | `OP_IC_BACKEND` | Implemented | `impl/core/sleela_core.c`
+145 | `OP_IC_GPUAVAIL` | Implemented | `impl/core/sleela_core.c`
+146 | `OP_IC_MEASHZ` | Implemented | `impl/core/sleela_core.c`
+147 | `OP_IC_MIGRATE` | Implemented | `impl/core/sleela_core.c`
+148 | `OP_VM_SELECT` | Implemented | `impl/core/sleela_core.c`
+149 | `OP_MODIUM_SCAN` | Implemented | `impl/core/sleela_core.c`
+150 | `OP_UI_CALL` | Implemented | `impl/core/sleela_core.c`
+151 | `OP_SSEND` | Implemented | `impl/core/sleela_core.c`
+152 | `OP_CHECKCAST` | Implemented | `impl/core/sleela_core.c`
+153 | `OP_INSTANCEOF` | Implemented | `impl/core/sleela_core.c`
+154 | `OP_DUP2` | Implemented | `impl/core/sleela_core.c`
+155 | `OP_OSLS_CALL` | Implemented | `impl/core/sleela_core.c` (`os-level-support/osls_vm_bridge.c`) — typed OSLS ABI registry; JSON result marshalling
+
+
+156 | `OP_BIGMUL` | Implemented | `impl/core/sleela_core.c`
+157 | `OP_SLEEP` | Implemented | `impl/core/sleela_core.c`
+158 | `OP_BIGADD` | Implemented | `impl/core/sleela_core.c`
+159 | `OP_BIGDIVMOD` | Implemented | `impl/core/sleela_core.c`
+160 | `OP_BIGSUB` | Implemented | `impl/core/sleela_core.c`
+161 | `OP_BIGDIV` | Implemented | `impl/core/sleela_core.c`
+162 | `OP_BIGISQRT` | Implemented | `impl/core/sleela_core.c`
+163 | `OP_NATIVE_CALL` | Implemented | `impl/core/sleela_core.c`
+164 | `OP_NATIVE_OPEN` | Implemented | `impl/core/sleela_core.c`
+165 | `OP_NATIVE_CLOSE` | Implemented | `impl/core/sleela_core.c`
+166 | `OP_JSTR_LENGTH` | Implemented | `impl/core/sleela_core.c`
+167 | `OP_JSTR_CHAR_AT` | Implemented | `impl/core/sleela_core.c`
+168 | `OP_JSTR_CODE_POINT_AT` | Implemented | `impl/core/sleela_core.c`
+169 | `OP_JSTR_CODE_POINT_COUNT` | Implemented | `impl/core/sleela_core.c`
+170 | `OP_JSTR_OFFSET_BY_CODE_POINTS` | Implemented | `impl/core/sleela_core.c`
+171 | `OP_JSTR_SUBSTRING` | Implemented | `impl/core/sleela_core.c`
+172 | `OP_JSTR_CONCAT` | Implemented | `impl/core/sleela_core.c`
+173 | `OP_JSTR_HASH_CODE` | Implemented | `impl/core/sleela_core.c`
+174 | `OP_JSTR_COMPARE_TO` | Implemented | `impl/core/sleela_core.c`
+175 | `OP_JSTR_FROM_UTF8` | Implemented | `impl/core/sleela_core.c`
+176 | `OP_TRY_PUSH` | Implemented | `impl/core/sleela_core.c`
+177 | `OP_TRY_POP` | Implemented | `impl/core/sleela_core.c`
+178 | `OP_THROW` | Implemented | `impl/core/sleela_core.c`
+179 | `OP_IPC_OPEN` | Reserved; fail-closed pending process supervisor and VM worker table | `impl/core/sleela_core.c`
+180 | `OP_IPC_CALL` | Reserved; fail-closed pending process supervisor and VM worker table | `impl/core/sleela_core.c`
+181 | `OP_IPC_CLOSE` | Reserved; fail-closed pending process supervisor and VM worker table | `impl/core/sleela_core.c`
+182 | `OP_REF` | Implemented | `impl/core/sleela_core.c`
+183 | `OP_JSTR_TO_UTF8` | Implemented | `impl/core/sleela_core.c`
+184 | `OP_JSTR_FROM_CODE_UNIT` | Implemented | `impl/core/sleela_core.c`
+185 | `OP_BAND` | Implemented | `impl/core/sleela_core.c`
+186 | `OP_BOR` | Implemented | `impl/core/sleela_core.c`
+187 | `OP_BXOR` | Implemented | `impl/core/sleela_core.c`
+188 | `OP_BSHL` | Implemented | `impl/core/sleela_core.c`
+189 | `OP_BSHR` | Implemented | `impl/core/sleela_core.c`
+190 | `OP_BUSHR` | Implemented | `impl/core/sleela_core.c`
+191 | `OP_BNOT` | Implemented | `impl/core/sleela_core.c`
+192 | `OP_CHARSTR` | Implemented | `impl/core/sleela_core.c`
+193 | `OP_ADDCHAR` | Implemented | `impl/core/sleela_core.c`
+194 | `OP_NEWARRAYND` | Implemented | `impl/core/sleela_core.c`
+195 | `OP_MATH_CALL` | Implemented | `impl/core/sleela_core.c` (`sl_math_kernel_*` C ABI; Core bytecode fallback)
+
+
 
 The operating-system opcodes (`OP_OS_*`) are the host System Call API: the `os*`
 built-ins (`osRun`/`osSpawn`/`osGetEnv`/`osExists`/...) lower to these opcodes,
@@ -142,6 +248,57 @@ discipline as sockets and files. Source-side they are mirrored by the
 `lib/vm/SleelaVMSystemCallBridge.sleela`. Because every VM generation (SLVM/1
 through SLVM/11) shares this one ISA, the system-call surface is available to
 all of them, not just the base VM.
+
+## Native IPC worker opcode reservation
+
+Opcodes 179–181 are append-only ABI reservations: `OP_IPC_OPEN`,
+`OP_IPC_CALL`, and `OP_IPC_CLOSE`. Their numeric IDs are fixed and included
+in the native/source ISA equality check. Artifact validation checks their
+operand shapes. The interpreter currently rejects all three with an explicit
+fail-closed diagnostic; they do not launch a worker or create a live handle yet.
+Runtime execution becomes available only after the native process supervisor,
+host capability authorizer, and VM-owned worker-handle table are integrated.
+
+## Object reference opcode
+
+Opcode 182 is the append-only `OP_REF`, the VM-level view of an object (the
+second tier of the two-tier object model; see `/POINTERS.md`). Its single
+operand packs a selector in the low 4 bits and, for `DEREF`, the class type
+index above them: `a = (typeIndex << 4) | selector`. Selectors: `OF`, `DEREF`,
+`VALID`, `ID`, `GEN`, `TYPE`, `FIELDS`, `BYTES`, `AGE`, `OLD`, `LIVE`, `LIMIT`.
+
+A ref is an ordinary `SL_INT` packed as `(generation << 32) | (slot + 1)`, so
+`0` is the null ref. It is a **weak, generation-checked handle**, never a
+machine address: every use validates the slot (in range, active, same
+generation) and a ref that fails validation reads as invalid rather than
+aliasing a different object. Artifact validation checks the selector and the
+class operand. The VM artifact ABI minor version advances to 7; artifact
+serialization layout is unchanged, and older runtimes reject artifacts that
+contain the new opcode.
+
+## Reserved native math opcode ranges
+
+The native-math ISA allocation is reserved by family so future additions do
+not fragment the instruction set. Opcode 195 is implemented; all remaining
+positions in these ranges are **allocation reservations only** and must be
+rejected as unsupported until each instruction is implemented and validated
+across the compiler, artifact loader, native VM, and supported VM generations.
+
+| Opcode range | Family | Allocation |
+|---:|---|---|
+| 195–199 | Shared native math | 195 `OP_MATH_CALL` implemented; 196 planned for `OP_MATH_ARRAY_CALL`; 197–199 reserved |
+| 200–207 | Vector | 8 positions |
+| 208–215 | Matrix | 8 positions |
+| 216–223 | Complex | 8 positions |
+| 224–231 | Decomposition | 8 positions |
+| 232–281 | Transform | 50 positions |
+
+All ranges are inclusive. Vacant positions remain reserved for their family;
+they are not general-purpose gaps. In particular, Transform begins at 232 and
+ends at 281. Existing opcode IDs 0–194, including IPC 179–181, are unchanged. Opcode 195 is the first executable math-family instruction.
+Do not create enum placeholders or source-registry entries for reserved IDs:
+the source/native ISA equality verifier must continue to describe executable
+instructions only.
 
 ## Runtime rule
 
@@ -178,3 +335,4 @@ A source opcode is not considered supported merely because it appears in the sou
 > `InstructionSet.sleela` (step 1), the native `SLOp` enum (step 2) and dispatch
 > (step 3), this map (step 4), and reflected in the SLVM/1–11 runtime-services
 > contract (step 6) via `RUNTIME-SERVICES.md`.
+
