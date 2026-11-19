@@ -1,0 +1,131 @@
+// java_to_sleela.h -- Java source -> functionally equivalent SLeeLa source.
+//
+// The translator is a single-pass, typed, recursive-descent converter. It holds
+// NO Java semantic rules of its own: operator widths, casts, promotions and
+// library result types are read from the conversion subject model
+// (impl/subjects/conversion/conversion.model) through conv_model.h.
+//
+// Contract (see .kiro/steering/java-to-sleela-conversion.md):
+//   * functional equivalence is the goal, not textual similarity;
+//   * anything the model does not cover FAILS CLOSED with a located diagnostic;
+//     the translator never emits a near-miss and never silently drops behaviour.
+#ifndef SLEELACTL_JAVA_TO_SLEELA_H
+#define SLEELACTL_JAVA_TO_SLEELA_H
+
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+extern "C" {
+#include "conv_model.h"
+}
+
+namespace javaconv {
+
+// Static type as the converter sees it: a Java simple name plus array rank.
+struct Ty {
+    std::string n = "?";  // "?" unknown; "null"; "type:<name>" for a type used as a qualifier
+    int dims = 0;
+    bool boxed = false; // wrapper reference type; emitted as its primitive representation
+    int wildcard = 0; // 0 exact, 1 ?, 2 ? extends, 3 ? super
+    std::vector<Ty> args; // invariant generic arguments; emitted with erasure
+    std::shared_ptr<Ty> bound; // wildcard bound, when present
+    bool operator==(const Ty& o) const {
+        if (n != o.n || dims != o.dims || boxed != o.boxed || wildcard != o.wildcard || args != o.args) return false;
+        if (bool(bound) != bool(o.bound)) return false;
+        return !bound || *bound == *o.bound;
+    }
+    bool known() const { return n != "?" && n.rfind("$T$", 0) != 0 && n.rfind("$C$", 0) != 0; }
+};
+
+struct MethodSig {
+    std::string name;
+    Ty ret;
+    std::vector<Ty> params;
+    std::vector<std::string> typeParams; // method-level type variables retained for invocation inference
+    bool hasTypeParamBounds = false; // true when one or more type parameters declare bounds
+    std::map<std::string, std::vector<std::string>> typeParamBounds; // every declared upper bound, including intersections
+    bool isStatic = false;
+    bool varargs = false;   // the last parameter is T... (its type is stored as T[])
+    bool isAbstract = false; // declared without a body (an interface method, or abstract)
+    std::string owner;       // the class that declares it
+    std::string visibility = "package";
+};
+struct FieldInfo { Ty ty; bool isStatic = false; std::string visibility = "package"; };
+struct ClassInfo {
+    std::string sourceName;           // source unit that contributed this declaration
+    std::string packageName;          // declared Java package (empty for the unnamed package)
+    std::string typeVisibility = "package";
+    bool ambiguous = false;           // duplicate simple name across project units: fail closed
+    std::map<std::string, FieldInfo> fields;
+    std::vector<MethodSig> methods;
+    std::vector<std::string> typeParams; // declared class type variables, in source order
+    std::map<std::string, std::vector<std::string>> typeParamBounds; // supported declared class upper bounds
+    std::string innerOf;               // for an inner (non-static) class: the hoisted name of its enclosing class
+    std::string enclosingType;         // hoisted enclosing type for every member type, including static nested types
+    bool isStaticNested = false;       // distinguishes static member types from non-static inner classes
+    bool isInterface = false;          // an interface (its bodiless methods are the functional-interface candidates)
+    bool isEnum = false;               // an enum type (constants are static fields of the class)
+    std::string super;                 // simple name of the superclass, "" if none
+    Ty superType;                       // parameterized superclass type, when declared
+    std::vector<std::string> ifaces;   // simple names of implemented / extended interfaces
+    std::vector<Ty> ifaceTypes;         // parameterized interface types, in declaration order
+};
+
+// Member signatures of every type seen so far. Collecting the whole JDK tree
+// first lets calls and field reads across files be typed (and inherited members
+// be found through the super chain).
+struct SymbolTable {
+    std::map<std::string, ClassInfo> classes;
+    // nested type simple name -> hoisted top-level name (Outer__Inner); "\x01" marks a name used by several nested types
+    std::map<std::string, std::string> nested;
+};
+
+struct Diagnostic {
+    int line = 0, col = 0;
+    std::string construct;   // model "unsupported" key, or "syntax"/"model"
+    std::string message;
+};
+
+struct OutFile {
+    std::string typeName;    // top-level Java type
+    std::string text;        // complete SLeeLa document
+};
+
+struct Options {
+    std::string sourceName;  // path shown in the generated header
+    std::string jdkVersion;  // presumed JDK version, e.g. "28"
+    std::string author = "unknown";
+    // true: all top-level types of the compilation unit go into ONE document named
+    // bundleName (what a runnable program needs: a user program does not auto-link
+    // sibling files). false: one document per type (library mode, as under lib/java).
+    bool bundle = false;
+    std::string bundleName;
+    // The converted program runs on one thread: Java synchronized and volatile are then plain
+    // (they only order accesses between threads). Off by default: without it they are refused.
+    bool singleThread = false;
+    // Java throws NegativeArraySizeException for a negative array size; the SLeeLa VM stops the program.
+    // The converter wraps every non-constant size in JavaChecks.size(n). (An out-of-range INDEX needs no
+    // wrapper: the VM throws it inside a try, SLEELA.syntax 37.5 and lib/java/support/SLJavaFaults.)
+    // --unchecked-sizes omits the wrapper (NOT equivalent for a program that reaches a negative size).
+    bool checkedArrays = true;
+};
+
+struct Result {
+    std::vector<OutFile> files;
+    std::vector<Diagnostic> diagnostics;   // empty => every member converted
+    bool ok() const { return diagnostics.empty(); }
+};
+
+// Convert one Java compilation unit. When any member fails, `files` is empty
+// (fail closed: a partly converted type is never emitted).
+Result convert(const std::string& javaSource, const cm_model& model, const Options& opt,
+               SymbolTable* shared = nullptr);
+
+// Pass 1 only: record the signatures of every type in the unit into `table`.
+void collect(const std::string& javaSource, const cm_model& model, const Options& opt, SymbolTable& table);
+
+}  // namespace javaconv
+
+#endif

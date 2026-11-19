@@ -95,9 +95,9 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     size.X = (SHORT)(cols > 32767 ? 32767 : cols);
     size.Y = (SHORT)(rows > 32767 ? 32767 : rows);
     hr = CreatePseudoConsole(size, child_in, child_out, 0, &hpc);
-    CloseHandle(child_in);
-    CloseHandle(child_out);
     if (FAILED(hr)) {
+        CloseHandle(child_in);
+        CloseHandle(child_out);
         CloseHandle(parent_in); CloseHandle(parent_out);
         return (int)hr;
     }
@@ -113,6 +113,7 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
             PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, hpc, sizeof(hpc), NULL, NULL)) {
         error_code = GetLastError();
         if (si.lpAttributeList) HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
+        CloseHandle(child_in); CloseHandle(child_out);
         CloseHandle(parent_in); CloseHandle(parent_out); ClosePseudoConsole(hpc);
         return (int)error_code;
     }
@@ -121,6 +122,7 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     if (!cmd) {
         DeleteProcThreadAttributeList(si.lpAttributeList);
         HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
+        CloseHandle(child_in); CloseHandle(child_out);
         CloseHandle(parent_in); CloseHandle(parent_out); ClosePseudoConsole(hpc);
         return ERROR_OUTOFMEMORY;
     }
@@ -132,9 +134,15 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
         free(cmd);
         DeleteProcThreadAttributeList(si.lpAttributeList);
         HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
+        CloseHandle(child_in); CloseHandle(child_out);
         CloseHandle(parent_in); CloseHandle(parent_out); ClosePseudoConsole(hpc);
         return (int)error_code;
     }
+    /* Keep the pipe endpoints supplied to CreatePseudoConsole alive until
+     * CreateProcess has attached the child, as required by the ConPTY setup
+     * sequence. Only then release this process's copies. */
+    CloseHandle(child_in);
+    CloseHandle(child_out);
     CloseHandle(pi.hThread);
     free(cmd);
     DeleteProcThreadAttributeList(si.lpAttributeList);
@@ -182,16 +190,88 @@ int slterminal_resize(SLTerminalHandle terminal, unsigned cols, unsigned rows) {
     return SUCCEEDED(hr) ? 0 : (int)hr;
 }
 
+/* Drain ConPTY output on a dedicated thread while ClosePseudoConsole runs.
+ * Windows 10/11 releases before 24H2 may emit a final frame during shutdown and
+ * wait indefinitely for the output pipe to be drained. Closing the reader
+ * before ClosePseudoConsole is documented as an alternative, but is not
+ * reliable for every hosted-runner process tree. A concurrent drain follows
+ * Microsoft's recommended multi-threaded pipe servicing model. */
+static DWORD WINAPI drain_conpty_output(LPVOID context) {
+    HANDLE output = (HANDLE)context;
+    char buffer[4096];
+    DWORD received = 0;
+    while (ReadFile(output, buffer, (DWORD)sizeof(buffer), &received, NULL) &&
+           received != 0) {
+        /* Discard terminal frames during teardown. */
+    }
+    return 0;
+}
+
 int slterminal_close(SLTerminalHandle terminal) {
     SLWinTerminal* t = as_terminal(terminal);
+    DWORD wait_result;
+    HANDLE drain_thread = NULL;
+    int rc = 0;
     if (!t) return EINVAL;
-    CloseHandle(t->input_write);
-    CloseHandle(t->output_read);
-    WaitForSingleObject(t->process, INFINITE);
-    CloseHandle(t->process);
-    ClosePseudoConsole(t->console);
+
+    if (t->input_write && !CloseHandle(t->input_write)) rc = (int)GetLastError();
+    t->input_write = NULL;
+
+    /* Reap the direct child first. A timeout is bounded and escalates to
+     * termination; descendants are then disconnected by ClosePseudoConsole. */
+    wait_result = WaitForSingleObject(t->process, 3000);
+    if (wait_result == WAIT_TIMEOUT) {
+        if (!TerminateProcess(t->process, ERROR_PROCESS_ABORTED)) {
+            DWORD error_code = GetLastError();
+            if (error_code != ERROR_ACCESS_DENIED && rc == 0) rc = (int)error_code;
+        }
+        wait_result = WaitForSingleObject(t->process, 2000);
+    }
+    if (wait_result != WAIT_OBJECT_0 && rc == 0) {
+        rc = wait_result == WAIT_FAILED ? (int)GetLastError() : ERROR_TIMEOUT;
+    }
+
+    if (t->output_read && t->console) {
+        drain_thread = CreateThread(NULL, 0, drain_conpty_output,
+                                    t->output_read, 0, NULL);
+        if (!drain_thread) {
+            DWORD error_code = GetLastError();
+            if (rc == 0) rc = (int)error_code;
+            /* Documented fallback for resource exhaustion: close the output
+             * reader before ClosePseudoConsole so legacy Windows can finish. */
+            if (!CloseHandle(t->output_read) && rc == 0)
+                rc = (int)GetLastError();
+            t->output_read = NULL;
+        }
+    }
+
+    if (t->console) {
+        /* Keep output_read open until the drain thread observes the broken pipe.
+         * This allows ClosePseudoConsole to emit and flush its final frame. */
+        ClosePseudoConsole(t->console);
+    }
+    t->console = NULL;
+
+    if (drain_thread) {
+        DWORD drain_wait = WaitForSingleObject(drain_thread, 5000);
+        if (drain_wait == WAIT_TIMEOUT) {
+            (void)CancelSynchronousIo(drain_thread);
+            drain_wait = WaitForSingleObject(drain_thread, 1000);
+            if (rc == 0) rc = ERROR_TIMEOUT;
+        }
+        if (drain_wait == WAIT_FAILED && rc == 0) rc = (int)GetLastError();
+        CloseHandle(drain_thread);
+    }
+
+    if (t->output_read && !CloseHandle(t->output_read) && rc == 0)
+        rc = (int)GetLastError();
+    t->output_read = NULL;
+
+    if (t->process && !CloseHandle(t->process) && rc == 0)
+        rc = (int)GetLastError();
+    t->process = NULL;
     free(t);
-    return 0;
+    return rc;
 }
 
 int slterminal_valid(SLTerminalHandle terminal) { return as_terminal(terminal) != NULL; }
@@ -213,6 +293,7 @@ int slterminal_last_error(void) { return (int)GetLastError(); }
 typedef struct {
     int master;
     pid_t child;
+    char slave_name[256];
 } SLLinuxTerminal;
 
 static SLLinuxTerminal* as_terminal(SLTerminalHandle h) {
@@ -243,6 +324,8 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     pid_t child;
     struct winsize ws;
     SLLinuxTerminal* t;
+    char slave_path[256];
+    char* slave_name;
     if (!terminal || cols == 0 || rows == 0) return EINVAL;
     *terminal = (SLTerminalHandle)0;
     master = posix_openpt(O_RDWR | O_NOCTTY);
@@ -250,20 +333,35 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     if (grantpt(master) < 0 || unlockpt(master) < 0) {
         int e = errno; close(master); return e;
     }
+    slave_name = ptsname(master);
+    if (!slave_name) { int e = errno; close(master); return e; }
+    if (strlen(slave_name) >= sizeof(slave_path)) { close(master); return ENAMETOOLONG; }
+    strcpy(slave_path, slave_name);
     memset(&ws, 0, sizeof(ws));
     ws.ws_col = (unsigned short)(cols > 65535 ? 65535 : cols);
     ws.ws_row = (unsigned short)(rows > 65535 ? 65535 : rows);
+#if defined(__APPLE__)
+    /* Darwin PTYs can reject TIOCSWINSZ on the master before the slave has
+     * been opened. Set the initial dimensions through the slave descriptor. */
+    {
+        int size_fd = open(slave_path, O_RDWR | O_NOCTTY);
+        if (size_fd < 0) { int e = errno; close(master); return e; }
+        if (ioctl(size_fd, TIOCSWINSZ, &ws) < 0) {
+            int e = errno; close(size_fd); close(master); return e;
+        }
+        close(size_fd);
+    }
+#else
     if (ioctl(master, TIOCSWINSZ, &ws) < 0) {
         int e = errno; close(master); return e;
     }
+#endif
     child = fork();
     if (child < 0) { int e = errno; close(master); return e; }
     if (child == 0) {
-        char* slave_name = ptsname(master);
         int slave;
-        if (!slave_name) _exit(127);
         setsid();
-        slave = open(slave_name, O_RDWR);
+        slave = open(slave_path, O_RDWR | O_NOCTTY);
         if (slave < 0) _exit(127);
         ioctl(slave, TIOCSCTTY, 0);
         dup2(slave, STDIN_FILENO);
@@ -278,6 +376,7 @@ int slterminal_spawn(SLTerminalHandle* terminal, const char* command,
     if (!t) { kill(child, SIGTERM); close(master); waitpid(child, NULL, 0); return ENOMEM; }
     t->master = master;
     t->child = child;
+    strcpy(t->slave_name, slave_path);
     *terminal = (SLTerminalHandle)(intptr_t)t;
     return 0;
 }
@@ -305,7 +404,19 @@ int slterminal_resize(SLTerminalHandle terminal, unsigned cols, unsigned rows) {
     memset(&ws, 0, sizeof(ws));
     ws.ws_col = (unsigned short)(cols > 65535 ? 65535 : cols);
     ws.ws_row = (unsigned short)(rows > 65535 ? 65535 : rows);
+#if defined(__APPLE__)
+    {
+        int size_fd = open(t->slave_name, O_RDWR | O_NOCTTY);
+        int rc, e;
+        if (size_fd < 0) return errno;
+        rc = ioctl(size_fd, TIOCSWINSZ, &ws);
+        e = errno;
+        close(size_fd);
+        return rc == 0 ? 0 : e;
+    }
+#else
     return ioctl(t->master, TIOCSWINSZ, &ws) == 0 ? 0 : errno;
+#endif
 }
 
 int slterminal_close(SLTerminalHandle terminal) {
