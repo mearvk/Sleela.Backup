@@ -1,9 +1,14 @@
 # SleelaTerminal™ Version
 
-**Current version: 1.1.0**
+**Current binary version identity: 1.0121**
+
+The historical SleelaTerminal feature-release line remains 1.1.0; the executable
+identity is now 1.0121 under the repository-wide binary identity policy. The GUI
+reports this through its compiled version constant, and the shell reports it via
+`slsh --version`.
 
 SleelaTerminal™ has advanced to its first incremental feature generation beyond
-the `1.0.0` baseline. Version `1.1.0` records a round of user-facing
+the `1.0.0` baseline. Feature release `1.1.0` records a round of user-facing
 functionality on the GTK 4 / VTE graphical terminal front end — a living
 title-bar throbber, recoloured window controls, the brand logo, a Settings
 subframe, the `sleela$` default prompt, and the gradient title bar — together
@@ -39,7 +44,7 @@ Current value: **0**
 ## Canonical Version
 
 ```text
-SleelaTerminal™ 1.1.0
+SleelaTerminal™ binary 1.0121 (feature line 1.1.0)
 ```
 
 The version applies to the `sleela-terminal` project as a whole, including:
@@ -98,9 +103,9 @@ The third component is intentionally named **Forgotten** for SLeeLa project term
 
 ## Version Source
 
-`VERSION.md` is the initial canonical human-readable version record for SleelaTerminal. Other project files should reference or reproduce `1.0.0` consistently rather than independently inventing a release number.
+`VERSION.md` is the canonical human-readable record for both the historical feature-release line (`1.1.0`) and the current binary identity (`1.0121`). The GUI executable embeds `1.0121`; the shell exposes the same identity through `slsh --version`. Product feature version and binary artifact identity are separate fields.
 
-When automated version propagation is introduced, it should use this document as the documented release baseline and establish a single machine-readable source without changing the meaning of the three components.
+Automated version propagation should read the binary identity from the machine-readable registry while preserving the meaning of the three-component feature-release line.
 
 ---
 
