@@ -1,7 +1,50 @@
-// SLeeLa VM Startup Definition
-// The SLeeLa source definition for bootstrapping a VM selected as a System Startup Module.
+< SLeeLa VM Startup Definition >
+< The SLeeLa source definition for bootstrapping a VM selected as a System Startup Module. >
 
+#sleela 2.5
+material;
 class SleelaVMStartup {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 79;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-02";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-02";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
     StartupModuleSelection startup_module;
     SystemHarnessConnection harness;
     VMExecutionMode execution_mode;
@@ -83,14 +126,14 @@ class SleelaVMStartup {
     }
 }
 
-// Bootstrap policy:
-// - The Startup Module is selected by the SLeeLa System configuration.
-// - Native C/C++ execution is selected only when both the compiled SLeeLa C ABI
-//   and required C++ runtime/orchestration path are present.
-// - Otherwise a compatible .sleela VM module is selected through the VM module loader.
-// - The System Harness is the controlled boundary for startup system calls.
-// - Bootstrap calls are capability-scoped and bounded; calls requiring a fully
-//   ready VM remain queued until readiness is published.
-// - The startup path does not grant unrestricted operating-system authority.
-// - A VM is READY only after its core, memory, scheduler, module graph, dispatch
-//   path, and System Harness connection have all reached the required state.
+< Bootstrap policy: >
+< - The Startup Module is selected by the SLeeLa System configuration. >
+< - Native C/C++ execution is selected only when both the compiled SLeeLa C ABI >
+< and required C++ runtime/orchestration path are present. >
+< - Otherwise a compatible .sleela VM module is selected through the VM module loader. >
+< - The System Harness is the controlled boundary for startup system calls. >
+< - Bootstrap calls are capability-scoped and bounded; calls requiring a fully >
+< ready VM remain queued until readiness is published. >
+< - The startup path does not grant unrestricted operating-system authority. >
+< - A VM is READY only after its core, memory, scheduler, module graph, dispatch >
+< path, and System Harness connection have all reached the required state. >

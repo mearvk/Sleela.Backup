@@ -205,6 +205,7 @@ void slmm_free(void* ptr) {
 void* slmm_realloc(void* ptr, size_t size) {
     SLMMHeader* oldh;
     size_t oldsize;
+    int oldcounted;
     void* np;
 
     if (!ptr) return slmm_alloc(size);
@@ -213,13 +214,31 @@ void* slmm_realloc(void* ptr, size_t size) {
     oldh = header_of(ptr);
     if (oldh->magic != SLMM_MAGIC) return NULL;
     oldsize = oldh->size;
+    oldcounted = oldh->counted ? 1 : 0;
 
-    /* Simplicity over in-place growth: allocate new, copy, free old. This keeps
-     * accounting exact and correct across an enable/disable boundary. */
-    np = slmm_alloc(size);
-    if (!np) return NULL;                 /* old block untouched, as realloc  */
+    /* The old block is about to be replaced, so its bytes do not count against
+     * the limit while the new size is checked: growing a block whose RESULT
+     * fits under the limit must not fail just because old + new would not.
+     * Allocate new, copy, then release old. On failure the old block is
+     * untouched and its accounting is restored, as with realloc(). */
+    lock();
+    if (oldcounted) g_live_bytes = g_live_bytes >= oldsize ? g_live_bytes - oldsize : 0;
+    np = alloc_locked(size);
+    if (!np) {
+        if (oldcounted) g_live_bytes += oldsize;
+        unlock();
+        return NULL;
+    }
+    if (oldcounted) {
+        if (g_live_allocs) g_live_allocs--;
+        g_total_frees++;
+    }
+    oldh->magic = 0;   /* poison so a double free is caught */
+    unlock();
+
+    /* Both blocks are private to this caller, so the copy needs no lock. */
     memcpy(np, ptr, oldsize < size ? oldsize : size);
-    slmm_free(ptr);
+    slmemory_free(oldh);
     return np;
 }
 
@@ -279,19 +298,37 @@ void slmm_reset(void) {
     unlock();
 }
 
+/* Group an unsigned value with thousands separators into `out` for the memory
+ * manager's own report lines (SYSTEM-side presentation; user print(...) output
+ * never routes through here). */
+static const char* slmm_group(unsigned long long v, char* out, size_t cap) {
+    char tmp[32];
+    int n = snprintf(tmp, sizeof tmp, "%llu", v);
+    size_t o = 0;
+    for (int i = 0; i < n; ++i) {
+        if (i > 0 && (n - i) % 3 == 0 && o + 1 < cap) out[o++] = ',';
+        if (o + 1 < cap) out[o++] = tmp[i];
+    }
+    out[o < cap ? o : cap - 1] = 0;
+    return out;
+}
+
 int slmm_format_report(char* buf, size_t cap) {
     SLMMStats s;
     slmm_stats(&s);
+    char gl[32], gv[32], gp[32], gla[32], ga[32], gf[32], gr[32];
     return snprintf(buf, cap,
-        "[memory-manager] backend=%s enabled=%s limit=%zu bytes\n"
-        "[memory-manager] live=%zu bytes  peak=%zu bytes  live-allocs=%zu\n"
-        "[memory-manager] allocs=%llu  frees=%llu  refused=%llu  last=%s\n",
+        "[memory-manager] backend=%s enabled=%s limit=%s bytes\n"
+        "[memory-manager] live=%s bytes  peak=%s bytes  live-allocs=%s\n"
+        "[memory-manager] allocs=%s  frees=%s  refused=%s  last=%s\n",
         slmemory_platform_name(),
         s.enabled ? "yes" : "no",
-        s.limit_bytes,
-        s.live_bytes, s.peak_bytes, s.live_allocs,
-        (unsigned long long)s.total_allocs,
-        (unsigned long long)s.total_frees,
-        (unsigned long long)s.refused,
+        slmm_group((unsigned long long)s.limit_bytes, gl, sizeof gl),
+        slmm_group((unsigned long long)s.live_bytes, gv, sizeof gv),
+        slmm_group((unsigned long long)s.peak_bytes, gp, sizeof gp),
+        slmm_group((unsigned long long)s.live_allocs, gla, sizeof gla),
+        slmm_group((unsigned long long)s.total_allocs, ga, sizeof ga),
+        slmm_group((unsigned long long)s.total_frees, gf, sizeof gf),
+        slmm_group((unsigned long long)s.refused, gr, sizeof gr),
         slmm_status_name(s.last_status));
 }
