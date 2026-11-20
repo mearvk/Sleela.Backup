@@ -1,0 +1,105 @@
+< SLeeLa example: enumerate the OS support catalogue and backend symbols. >
+#sleela 2.5
+material;
+
+class SLOsSupportCatalogExample {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override each record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 0;
+  String metaAuthor = "mearvk";
+  String metaDate = "2026-11-05";
+  String metaCopyright = "Copyright mearvk LLC";
+  String metaTrademark = "none";
+  String metaCorporation = "mearvk LLC";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-05";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 6;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String value) { metaVersion = value; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int value) { metaId = value; }
+  String getMetaAuthor() { return metaAuthor; }
+  void setMetaAuthor(String value) { metaAuthor = value; }
+  String getMetaDate() { return metaDate; }
+  void setMetaDate(String value) { metaDate = value; }
+  String getMetaCopyright() { return metaCopyright; }
+  void setMetaCopyright(String value) { metaCopyright = value; }
+  String getMetaTrademark() { return metaTrademark; }
+  void setMetaTrademark(String value) { metaTrademark = value; }
+  String getMetaCorporation() { return metaCorporation; }
+  void setMetaCorporation(String value) { metaCorporation = value; }
+  String getMetaOrigin() { return metaOrigin; }
+  void setMetaOrigin(String value) { metaOrigin = value; }
+  String getMetaBirthDate() { return metaBirthDate; }
+  void setMetaBirthDate(String value) { metaBirthDate = value; }
+  int getMetaScienceRating() { return metaScienceRating; }
+  void setMetaScienceRating(int value) { metaScienceRating = value; }
+  String getMetaNationalSchedule() { return metaNationalSchedule; }
+  void setMetaNationalSchedule(String value) { metaNationalSchedule = value; }
+
+  void printList(String heading, SLList values) {
+    print(heading);
+    int i = 0;
+    while (i < values.length()) {
+      print(values.get(i));
+      i = i + 1;
+    }
+  }
+
+  void main() {
+    SLOsSupportCatalog catalog = new SLOsSupportCatalog();
+    SLOsSupportVMBridge vm = new SLOsSupportVMBridge();
+    SLOsSupportVMElements vmElements = new SLOsSupportVMElements();
+    SLOsSupportOSLSElements oslsElements = new SLOsSupportOSLSElements();
+    SLOsSupportLinux linux = new SLOsSupportLinux();
+    SLOsSupportWindows windows = new SLOsSupportWindows();
+    SLOsSupportMacOS mac = new SLOsSupportMacOS();
+    SLOsSupportLinuxSource linuxSource = new SLOsSupportLinuxSource();
+    SLOsSupportWindowsSource windowsSource = new SLOsSupportWindowsSource();
+    SLOsSupportMacOSSource macSource = new SLOsSupportMacOSSource();
+    SLOsSupportPlatform platform = new SLOsSupportPlatform();
+    SLOsSupportNative nativeApi = new SLOsSupportNative();
+
+    printList("Capability groups", catalog.getGroupTerms());
+    printList("Common OSLS API", catalog.getCommonOSLSFunctions());
+    printList("Existing VM opcode bindings", vm.getExistingVMElementBindings());
+    printList("Linux native API", linux.getLinuxFunctions());
+    printList("Windows native API", windows.getWin32Functions());
+    printList("macOS native API", mac.getMacOSFunctions());
+    print("Detected source backend:");
+    print(platform.detect());
+    print("Linux facade matches host:");
+    print(linuxSource.isCurrentPlatform());
+    print("Windows facade matches host:");
+    print(windowsSource.isCurrentPlatform());
+    print("macOS facade matches host:");
+    print(macSource.isCurrentPlatform());
+    printList("Linux extension bindings (catalogued, not registered)", linuxSource.getNativeExtensionSymbols());
+    printList("Windows extension bindings (catalogued, not registered)", windowsSource.getNativeExtensionSymbols());
+    printList("macOS extension bindings (catalogued, not registered)", macSource.getNativeExtensionSymbols());
+
+    SLOsSupportElement platformElement = vmElements.platform();
+    SLOsSupportElement systemInfoElement = oslsElements.getSystemInfo();
+    print("VM platform element:");
+    print(platformElement.getVMOpcodeTerm());
+    print(platformElement.getNativeSymbol());
+    print("OSLS system-info element (registered):");
+    print(systemInfoElement.getVMOpcodeTerm());
+    print(systemInfoElement.getNativeSymbol());
+    print("OSLS system information JSON:");
+    print(nativeApi.systemInfo());
+
+    print("Core VM OS opcode bridge implemented:");
+    print(vm.isCoreOSOpcodeBridgeImplemented());
+    print("Separate osls C ABI adapter registered:");
+    print(vm.isOSLSAbiAdapterRegistered());
+  }
+}
