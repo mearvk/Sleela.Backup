@@ -1,0 +1,199 @@
+<< lib/ballum/SLBallumInterpreter.sleela
+   SLeeLa Standard Library Definition.
+   Definition: The Ballum interpreter, seen from SLeeLa: see what a hosted program
+   draws, and act on it through the 23 contact points. >>
+#sleela 2.5
+material;
+<< Family: ballum. SLBallumInterpreter configures and reads the stage between a
+   hosted program and the Ballum screen.
+
+   OBSERVE puts a relay between the program and its X11 display so the host can
+   see what the program draws (text with its characters, fills, images) as
+   ELEMENTS. MODE is a binary choice made before the session and fixed for it:
+   notation (watch only; the screen shows the program frame byte for byte) or
+   alteration (the frame is unchanged unless a rule alters an element, and only
+   inside that element). The FILTER BAND scores every alteration on morals,
+   cleanliness, throughput and confidence (0..1000 each) and refuses one outside
+   a window. RULES are standing alterations the host applies to each frame:
+   match a text exactly (or "*" for every text element), name a contact point,
+   give a value and a colour.
+
+   Contact points (23): color-fg color-bg opacity brightness contrast saturation
+   visibility effect blur underline strikethrough weight crypto-grade size slant
+   text spacing line-height font-family outline position-x position-y z-order.
+   Each has a design confidence rating. text and crypto-grade are not available as
+   rules (text needs a glyph source and a string; crypto-grade is a session
+   setting).
+
+   Typical use:
+     SLBallumInterpreter it = new SLBallumInterpreter();
+     it.create();
+     it.observe(true);
+     it.setMode(2);
+     it.rule("*", "weight", 1, 0);
+     < then start a session with SLBallumHost, and read it.elementCount() >
+
+   Configure before the session starts; reading works while it runs.
+
+   DECIDING EVERY FRAME FROM SLEELA. Native code cannot call back into the VM, and
+   it does not need to: the program drives the host one frame at a time with
+   SLBallumHost.step(). Between two steps this class can read what the last frame
+   showed (elementCount, elementText, ...) and change the rules, which apply to
+   the NEXT frame. So the loop is:
+     while (host.step() running) {
+       it.clearRules();
+       if (it.ruleIfSeen("secret", "visibility", 0, 0)) { < hide it while it is shown > }
+     }
+   One frame of delay is the price; a frame already shown is never changed
+   after the fact. Rules are limited in number, so clear them each frame when
+   they are decided per frame. >>
+class SLBallumInterpreter {
+
+  static final int MODE_OFF = 0;
+  static final int MODE_NOTATION = 1;
+  static final int MODE_ALTERATION = 2;
+
+  static final int AXIS_MORALS = 0;
+  static final int AXIS_CLEANLINESS = 1;
+  static final int AXIS_THROUGHPUT = 2;
+  static final int AXIS_CONFIDENCE = 3;
+
+  static final int KIND_TEXT = 0;
+  static final int KIND_FILL = 1;
+  static final int KIND_COPY = 2;
+  static final int KIND_IMAGE = 3;
+
+  < the status of the most recent operation >
+  int lastStatus;
+
+  void create() { lastStatus = 0; }
+
+  < ---- configuration, before a session ---- >
+
+  < Watch what the program draws through the X11 relay. >
+  int observe(boolean on) {
+    int v = 0;
+    if (on) { v = 1; }
+    lastStatus = uiBallumHostObserve(v);
+    return lastStatus;
+  }
+
+  < 0 off, 1 notation, 2 alteration. Fixed for the session. >
+  int setMode(int mode) {
+    lastStatus = uiBallumHostInterpret(mode);
+    return lastStatus;
+  }
+
+  < The window of one filter axis: an alteration passes only when its score is inside it. >
+  int band(int axis, int low, int high) {
+    lastStatus = uiBallumHostBand(axis, low, high);
+    return lastStatus;
+  }
+
+  < The four scores every rule is judged with (default 900 each). >
+  int scores(int morals, int cleanliness, int throughput, int confidence) {
+    lastStatus = uiBallumHostScores(morals, cleanliness, throughput, confidence);
+    return lastStatus;
+  }
+
+  < Add a standing rule. match is an exact text or "*"; point is a contact point name; rgb is 0xRRGGBB. >
+  int rule(String match, String point, int value, int rgb) {
+    lastStatus = uiBallumHostRule(match, point, value, rgb);
+    return lastStatus;
+  }
+
+  < Add the rule only while an element with exactly this text is in the last frame.
+    Returns true when it was seen (and the rule was added). Use with clearRules()
+    once per frame to decide from SLeeLa what to alter. >
+  boolean ruleIfSeen(String text, String point, int value, int rgb) {
+    int n = uiBallumHostElementCount();
+    int i = 0;
+    while (i < n) {
+      if (uiBallumHostElementText(i) == text) {
+        lastStatus = uiBallumHostRule(text, point, value, rgb);
+        return lastStatus == 0;
+      }
+      i = i + 1;
+    }
+    return false;
+  }
+
+  int clearRules() {
+    lastStatus = uiBallumHostRuleClear();
+    return lastStatus;
+  }
+
+  int ruleCount() { return uiBallumHostRuleCount(); }
+
+  < ---- the contact points ---- >
+  int contactCount() { return uiBallumContactCount(); }
+  String contactName(int index) { return uiBallumContactName(index); }
+  < design confidence of the point, 0..1000 >
+  int contactConfidence(int index) { return uiBallumContactConfidence(index); }
+
+  < ---- what the host saw, in the last interpreted frame ---- >
+  int elementCount() { return uiBallumHostElementCount(); }
+  < the characters of a text element, empty when unknown >
+  String elementText(int index) { return uiBallumHostElementText(index); }
+  int elementKind(int index) { return uiBallumHostElementKind(index); }
+  int elementX(int index) { return uiBallumHostElementX(index); }
+  int elementY(int index) { return uiBallumHostElementY(index); }
+  int elementWidth(int index) { return uiBallumHostElementW(index); }
+  int elementHeight(int index) { return uiBallumHostElementH(index); }
+  < true when every character of the element was identified >
+  boolean elementKnown(int index) { return uiBallumHostElementKnown(index) == 1; }
+
+  < ---- counters ---- >
+  int frames() { return uiBallumHostStat(0); }
+  int elementsSeen() { return uiBallumHostStat(1); }
+  int alterationsApplied() { return uiBallumHostStat(2); }
+  int alterationsBlocked() { return uiBallumHostStat(3); }
+  int pixelsAltered() { return uiBallumHostStat(4); }
+  boolean observing() { return uiBallumHostStat(5) == 1; }
+  int glyphsSeen() { return uiBallumHostStat(6); }
+  int glyphsKnown() { return uiBallumHostStat(7); }
+
+  int statusCode() { return lastStatus; }
+  boolean ok() { return lastStatus == 0; }
+  String lastMessage() { return uiBallumStatusName(lastStatus); }
+
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  < Eleven catalogued attributes with getter/setter pairs, so a GUI, loader, >
+  < or catalog can read and (where appropriate) override this record. >
+  < Values are faithful to the real origin of the subject where publicly known. >
+  String metaVersion = "1.0.0";
+  int metaId = 11804;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-11-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "Ballum";
+  String metaCorporation = "SLeeLa Project";
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-21";
+  < maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 5;
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+}

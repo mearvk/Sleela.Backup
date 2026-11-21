@@ -1,0 +1,944 @@
+<< lib/cpu/examples/circuit-grades.sleela
+   SLeeLa example: build, clock and grade the circuit model of every CPU in
+   lib/cpu and of every SKU entry (the EPYC and Threadripper models). Each
+   circuit is first linked to its CPU class (linkCpu), so a disagreement in
+   name, rated clock or data width counts as a violation. Prints one line per
+   circuit with its grade, score out of 10, total verification violations,
+   timing violations, CPU-link mismatches, the power network result (settled
+   die voltage, post-ramp ripple, peak supply current, settle time and its
+   violations) and the design (execution style, cores, total cache,
+   pipeline-stage slack and the share of a known transistor total that the
+   named blocks explain), then the grade totals.
+   See SLCircuitModel.circuitScore for how the grade is computed. >>
+#sleela 2.5
+import cpu;
+class SLCircuitGradesExample {
+  int gA;
+  int gB;
+  int gC;
+  int gD;
+  int gF;
+  int failing;
+  int unlinked;
+
+  String designOf(SLCircuitModel m) {
+    String stage = "stage=none";
+    if (m.hasStagePath()) { stage = "stage slack " + m.stageSlackPs() + "ps"; }
+    String budget = "budget unknown";
+    if (m.publishedTransistors() > 0) { budget = "budget " + m.budgetPerMille() + "/1000"; }
+    return "design " + m.styleName() + " cores=" + m.cores + " cache=" + m.cacheBytes() + "B " + stage + " " + budget;
+  }
+
+  void tally(String name, String dir, String grade, int score, int violations, int timing, SLPowerNetwork pdn, String design, int cpuBad) {
+    String pw = "power=none";
+    if (pdn != null) {
+      int mv = (int) (pdn.settledVolts() * 1000.0);
+      int ripple = (int) (pdn.rippleVolts() * 1000000.0);
+      int peak = (int) (pdn.peakAmps() * 1000.0);
+      int settleNs = (int) (pdn.settleSeconds() * 1000000000.0);
+      pw = "power " + mv + "mV ripple " + ripple + "uV peak " + peak + "mA settle " + settleNs + "ns v=" + pdn.violations();
+    }
+    print(grade + "  " + score + "/10  violations=" + violations + "  timing=" + timing + "  cpu=" + cpuBad + "  " + dir + "  " + name + "  " + pw + "  " + design);
+    if (grade == "A") { gA = gA + 1; }
+    if (grade == "B") { gB = gB + 1; }
+    if (grade == "C") { gC = gC + 1; }
+    if (grade == "D") { gD = gD + 1; }
+    if (grade == "F") { gF = gF + 1; }
+    if (violations > 0) { failing = failing + 1; }
+    if (cpuBad > 0) { unlinked = unlinked + 1; }
+  }
+
+  < One method per circuit, so each model and its CPU are released on return. >
+  void m0() {
+    SL6502Circuit m0 = new SL6502Circuit(); m0.build(); m0.linkCpu(); m0.runCycles(16);
+    tally(m0.name(), "6502", m0.circuitGrade(), m0.circuitScore(), m0.verifyAll(), m0.timingViolations(), m0.powerNetwork(), designOf(m0), m0.cpuMismatchCount());
+  }
+
+  void m1() {
+    SL68020Circuit m1 = new SL68020Circuit(); m1.build(); m1.linkCpu(); m1.runCycles(16);
+    tally(m1.name(), "68020", m1.circuitGrade(), m1.circuitScore(), m1.verifyAll(), m1.timingViolations(), m1.powerNetwork(), designOf(m1), m1.cpuMismatchCount());
+  }
+
+  void m2() {
+    SL68030Circuit m2 = new SL68030Circuit(); m2.build(); m2.linkCpu(); m2.runCycles(16);
+    tally(m2.name(), "68030", m2.circuitGrade(), m2.circuitScore(), m2.verifyAll(), m2.timingViolations(), m2.powerNetwork(), designOf(m2), m2.cpuMismatchCount());
+  }
+
+  void m3() {
+    SL68040Circuit m3 = new SL68040Circuit(); m3.build(); m3.linkCpu(); m3.runCycles(16);
+    tally(m3.name(), "68040", m3.circuitGrade(), m3.circuitScore(), m3.verifyAll(), m3.timingViolations(), m3.powerNetwork(), designOf(m3), m3.cpuMismatchCount());
+  }
+
+  void m4() {
+    SL68060Circuit m4 = new SL68060Circuit(); m4.build(); m4.linkCpu(); m4.runCycles(16);
+    tally(m4.name(), "68060", m4.circuitGrade(), m4.circuitScore(), m4.verifyAll(), m4.timingViolations(), m4.powerNetwork(), designOf(m4), m4.cpuMismatchCount());
+  }
+
+  void m5() {
+    SL6809Circuit m5 = new SL6809Circuit(); m5.build(); m5.linkCpu(); m5.runCycles(16);
+    tally(m5.name(), "6809", m5.circuitGrade(), m5.circuitScore(), m5.verifyAll(), m5.timingViolations(), m5.powerNetwork(), designOf(m5), m5.cpuMismatchCount());
+  }
+
+  void m6() {
+    SLAlphaCircuit m6 = new SLAlphaCircuit(); m6.build(); m6.linkCpu(); m6.runCycles(16);
+    tally(m6.name(), "alpha", m6.circuitGrade(), m6.circuitScore(), m6.verifyAll(), m6.timingViolations(), m6.powerNetwork(), designOf(m6), m6.cpuMismatchCount());
+  }
+
+  void m7() {
+    SLAMDAthlonCircuit m7 = new SLAMDAthlonCircuit(); m7.build(); m7.linkCpu(); m7.runCycles(16);
+    tally(m7.name(), "amd-athlon", m7.circuitGrade(), m7.circuitScore(), m7.verifyAll(), m7.timingViolations(), m7.powerNetwork(), designOf(m7), m7.cpuMismatchCount());
+  }
+
+  void m8() {
+    SLAMDEPYCCircuit m8 = new SLAMDEPYCCircuit(); m8.build(); m8.linkCpu(); m8.runCycles(16);
+    tally(m8.name(), "amd-epyc", m8.circuitGrade(), m8.circuitScore(), m8.verifyAll(), m8.timingViolations(), m8.powerNetwork(), designOf(m8), m8.cpuMismatchCount());
+  }
+
+  void m9() {
+    SLAMDOpteronCircuit m9 = new SLAMDOpteronCircuit(); m9.build(); m9.linkCpu(); m9.runCycles(16);
+    tally(m9.name(), "amd-opteron", m9.circuitGrade(), m9.circuitScore(), m9.verifyAll(), m9.timingViolations(), m9.powerNetwork(), designOf(m9), m9.cpuMismatchCount());
+  }
+
+  void m10() {
+    SLAMDRyzenCircuit m10 = new SLAMDRyzenCircuit(); m10.build(); m10.linkCpu(); m10.runCycles(16);
+    tally(m10.name(), "amd-ryzen", m10.circuitGrade(), m10.circuitScore(), m10.verifyAll(), m10.timingViolations(), m10.powerNetwork(), designOf(m10), m10.cpuMismatchCount());
+  }
+
+  void m11() {
+    SLAMDThreadripperCircuit m11 = new SLAMDThreadripperCircuit(); m11.build(); m11.linkCpu(); m11.runCycles(16);
+    tally(m11.name(), "amd-threadripper", m11.circuitGrade(), m11.circuitScore(), m11.verifyAll(), m11.timingViolations(), m11.powerNetwork(), designOf(m11), m11.cpuMismatchCount());
+  }
+
+  void m12() {
+    SLAMD29KCircuit m12 = new SLAMD29KCircuit(); m12.build(); m12.linkCpu(); m12.runCycles(16);
+    tally(m12.name(), "amd29k", m12.circuitGrade(), m12.circuitScore(), m12.verifyAll(), m12.timingViolations(), m12.powerNetwork(), designOf(m12), m12.cpuMismatchCount());
+  }
+
+  void m13() {
+    SLAmpereAltraCircuit m13 = new SLAmpereAltraCircuit(); m13.build(); m13.linkCpu(); m13.runCycles(16);
+    tally(m13.name(), "ampere-altra", m13.circuitGrade(), m13.circuitScore(), m13.verifyAll(), m13.timingViolations(), m13.powerNetwork(), designOf(m13), m13.cpuMismatchCount());
+  }
+
+  void m14() {
+    SLAppleASeriesCircuit m14 = new SLAppleASeriesCircuit(); m14.build(); m14.linkCpu(); m14.runCycles(16);
+    tally(m14.name(), "apple-a-series", m14.circuitGrade(), m14.circuitScore(), m14.verifyAll(), m14.timingViolations(), m14.powerNetwork(), designOf(m14), m14.cpuMismatchCount());
+  }
+
+  void m15() {
+    SLAppleM1Circuit m15 = new SLAppleM1Circuit(); m15.build(); m15.linkCpu(); m15.runCycles(16);
+    tally(m15.name(), "apple-m1", m15.circuitGrade(), m15.circuitScore(), m15.verifyAll(), m15.timingViolations(), m15.powerNetwork(), designOf(m15), m15.cpuMismatchCount());
+  }
+
+  void m16() {
+    SLAppleM2Circuit m16 = new SLAppleM2Circuit(); m16.build(); m16.linkCpu(); m16.runCycles(16);
+    tally(m16.name(), "apple-m2", m16.circuitGrade(), m16.circuitScore(), m16.verifyAll(), m16.timingViolations(), m16.powerNetwork(), designOf(m16), m16.cpuMismatchCount());
+  }
+
+  void m17() {
+    SLAppleM3Circuit m17 = new SLAppleM3Circuit(); m17.build(); m17.linkCpu(); m17.runCycles(16);
+    tally(m17.name(), "apple-m3", m17.circuitGrade(), m17.circuitScore(), m17.verifyAll(), m17.timingViolations(), m17.powerNetwork(), designOf(m17), m17.cpuMismatchCount());
+  }
+
+  void m18() {
+    SLAppleM4Circuit m18 = new SLAppleM4Circuit(); m18.build(); m18.linkCpu(); m18.runCycles(16);
+    tally(m18.name(), "apple-m4", m18.circuitGrade(), m18.circuitScore(), m18.verifyAll(), m18.timingViolations(), m18.powerNetwork(), designOf(m18), m18.cpuMismatchCount());
+  }
+
+  void m19() {
+    SLARMCircuit m19 = new SLARMCircuit(); m19.build(); m19.linkCpu(); m19.runCycles(16);
+    tally(m19.name(), "arm", m19.circuitGrade(), m19.circuitScore(), m19.verifyAll(), m19.timingViolations(), m19.powerNetwork(), designOf(m19), m19.cpuMismatchCount());
+  }
+
+  void m20() {
+    SLArmCortexACircuit m20 = new SLArmCortexACircuit(); m20.build(); m20.linkCpu(); m20.runCycles(16);
+    tally(m20.name(), "arm-cortex-a", m20.circuitGrade(), m20.circuitScore(), m20.verifyAll(), m20.timingViolations(), m20.powerNetwork(), designOf(m20), m20.cpuMismatchCount());
+  }
+
+  void m21() {
+    SLArmNeoverseCircuit m21 = new SLArmNeoverseCircuit(); m21.build(); m21.linkCpu(); m21.runCycles(16);
+    tally(m21.name(), "arm-neoverse", m21.circuitGrade(), m21.circuitScore(), m21.verifyAll(), m21.timingViolations(), m21.powerNetwork(), designOf(m21), m21.cpuMismatchCount());
+  }
+
+  void m22() {
+    SLAtari2600Circuit m22 = new SLAtari2600Circuit(); m22.build(); m22.linkCpu(); m22.runCycles(16);
+    tally(m22.name(), "atari-2600", m22.circuitGrade(), m22.circuitScore(), m22.verifyAll(), m22.timingViolations(), m22.powerNetwork(), designOf(m22), m22.cpuMismatchCount());
+  }
+
+  void m23() {
+    SLAtari5200Circuit m23 = new SLAtari5200Circuit(); m23.build(); m23.linkCpu(); m23.runCycles(16);
+    tally(m23.name(), "atari-5200", m23.circuitGrade(), m23.circuitScore(), m23.verifyAll(), m23.timingViolations(), m23.powerNetwork(), designOf(m23), m23.cpuMismatchCount());
+  }
+
+  void m24() {
+    SLAtari7800Circuit m24 = new SLAtari7800Circuit(); m24.build(); m24.linkCpu(); m24.runCycles(16);
+    tally(m24.name(), "atari-7800", m24.circuitGrade(), m24.circuitScore(), m24.verifyAll(), m24.timingViolations(), m24.powerNetwork(), designOf(m24), m24.cpuMismatchCount());
+  }
+
+  void m25() {
+    SLAtariJaguarCircuit m25 = new SLAtariJaguarCircuit(); m25.build(); m25.linkCpu(); m25.runCycles(16);
+    tally(m25.name(), "atari-jaguar", m25.circuitGrade(), m25.circuitScore(), m25.verifyAll(), m25.timingViolations(), m25.powerNetwork(), designOf(m25), m25.cpuMismatchCount());
+  }
+
+  void m26() {
+    SLAtariJaguarCDCircuit m26 = new SLAtariJaguarCDCircuit(); m26.build(); m26.linkCpu(); m26.runCycles(16);
+    tally(m26.name(), "atari-jaguar-cd", m26.circuitGrade(), m26.circuitScore(), m26.verifyAll(), m26.timingViolations(), m26.powerNetwork(), designOf(m26), m26.cpuMismatchCount());
+  }
+
+  void m27() {
+    SLAtariLynxCircuit m27 = new SLAtariLynxCircuit(); m27.build(); m27.linkCpu(); m27.runCycles(16);
+    tally(m27.name(), "atari-lynx", m27.circuitGrade(), m27.circuitScore(), m27.verifyAll(), m27.timingViolations(), m27.powerNetwork(), designOf(m27), m27.cpuMismatchCount());
+  }
+
+  void m28() {
+    SLAtariVCSCircuit m28 = new SLAtariVCSCircuit(); m28.build(); m28.linkCpu(); m28.runCycles(16);
+    tally(m28.name(), "atari-vcs", m28.circuitGrade(), m28.circuitScore(), m28.verifyAll(), m28.timingViolations(), m28.powerNetwork(), designOf(m28), m28.cpuMismatchCount());
+  }
+
+  void m29() {
+    SLAtariXEGSCircuit m29 = new SLAtariXEGSCircuit(); m29.build(); m29.linkCpu(); m29.runCycles(16);
+    tally(m29.name(), "atari-xegs", m29.circuitGrade(), m29.circuitScore(), m29.verifyAll(), m29.timingViolations(), m29.powerNetwork(), designOf(m29), m29.cpuMismatchCount());
+  }
+
+  void m30() {
+    SLClipperCircuit m30 = new SLClipperCircuit(); m30.build(); m30.linkCpu(); m30.runCycles(16);
+    tally(m30.name(), "clipper", m30.circuitGrade(), m30.circuitScore(), m30.verifyAll(), m30.timingViolations(), m30.powerNetwork(), designOf(m30), m30.cpuMismatchCount());
+  }
+
+  void m31() {
+    SLColdFireCircuit m31 = new SLColdFireCircuit(); m31.build(); m31.linkCpu(); m31.runCycles(16);
+    tally(m31.name(), "coldfire", m31.circuitGrade(), m31.circuitScore(), m31.verifyAll(), m31.timingViolations(), m31.powerNetwork(), designOf(m31), m31.cpuMismatchCount());
+  }
+
+  void m32() {
+    SLCortexMCircuit m32 = new SLCortexMCircuit(); m32.build(); m32.linkCpu(); m32.runCycles(16);
+    tally(m32.name(), "cortex-m", m32.circuitGrade(), m32.circuitScore(), m32.verifyAll(), m32.timingViolations(), m32.powerNetwork(), designOf(m32), m32.cpuMismatchCount());
+  }
+
+  void m33() {
+    SLCortexRCircuit m33 = new SLCortexRCircuit(); m33.build(); m33.linkCpu(); m33.runCycles(16);
+    tally(m33.name(), "cortex-r", m33.circuitGrade(), m33.circuitScore(), m33.verifyAll(), m33.timingViolations(), m33.powerNetwork(), designOf(m33), m33.cpuMismatchCount());
+  }
+
+  void m34() {
+    SLDSP56000Circuit m34 = new SLDSP56000Circuit(); m34.build(); m34.linkCpu(); m34.runCycles(16);
+    tally(m34.name(), "dsp56000", m34.circuitGrade(), m34.circuitScore(), m34.verifyAll(), m34.timingViolations(), m34.powerNetwork(), designOf(m34), m34.cpuMismatchCount());
+  }
+
+  void m35() {
+    SLdsPICCircuit m35 = new SLdsPICCircuit(); m35.build(); m35.linkCpu(); m35.runCycles(16);
+    tally(m35.name(), "dspic", m35.circuitGrade(), m35.circuitScore(), m35.verifyAll(), m35.timingViolations(), m35.powerNetwork(), designOf(m35), m35.cpuMismatchCount());
+  }
+
+  void m36() {
+    SLI860Circuit m36 = new SLI860Circuit(); m36.build(); m36.linkCpu(); m36.runCycles(16);
+    tally(m36.name(), "i860", m36.circuitGrade(), m36.circuitScore(), m36.verifyAll(), m36.timingViolations(), m36.powerNetwork(), designOf(m36), m36.cpuMismatchCount());
+  }
+
+  void m37() {
+    SLI960Circuit m37 = new SLI960Circuit(); m37.build(); m37.linkCpu(); m37.runCycles(16);
+    tally(m37.name(), "i960", m37.circuitGrade(), m37.circuitScore(), m37.verifyAll(), m37.timingViolations(), m37.powerNetwork(), designOf(m37), m37.cpuMismatchCount());
+  }
+
+  void m38() {
+    SLiAPX432Circuit m38 = new SLiAPX432Circuit(); m38.build(); m38.linkCpu(); m38.runCycles(16);
+    tally(m38.name(), "iapx432", m38.circuitGrade(), m38.circuitScore(), m38.verifyAll(), m38.timingViolations(), m38.powerNetwork(), designOf(m38), m38.cpuMismatchCount());
+  }
+
+  void m39() {
+    SLIBMPower10Circuit m39 = new SLIBMPower10Circuit(); m39.build(); m39.linkCpu(); m39.runCycles(16);
+    tally(m39.name(), "ibm-power10", m39.circuitGrade(), m39.circuitScore(), m39.verifyAll(), m39.timingViolations(), m39.powerNetwork(), designOf(m39), m39.cpuMismatchCount());
+  }
+
+  void m40() {
+    SLIBMPower9Circuit m40 = new SLIBMPower9Circuit(); m40.build(); m40.linkCpu(); m40.runCycles(16);
+    tally(m40.name(), "ibm-power9", m40.circuitGrade(), m40.circuitScore(), m40.verifyAll(), m40.timingViolations(), m40.powerNetwork(), designOf(m40), m40.cpuMismatchCount());
+  }
+
+  void m41() {
+    SLIBM801Circuit m41 = new SLIBM801Circuit(); m41.build(); m41.linkCpu(); m41.runCycles(16);
+    tally(m41.name(), "ibm801", m41.circuitGrade(), m41.circuitScore(), m41.verifyAll(), m41.timingViolations(), m41.powerNetwork(), designOf(m41), m41.cpuMismatchCount());
+  }
+
+  void m42() {
+    SLIntel80286Circuit m42 = new SLIntel80286Circuit(); m42.build(); m42.linkCpu(); m42.runCycles(16);
+    tally(m42.name(), "intel-80286", m42.circuitGrade(), m42.circuitScore(), m42.verifyAll(), m42.timingViolations(), m42.powerNetwork(), designOf(m42), m42.cpuMismatchCount());
+  }
+
+  void m43() {
+    SLIntel80386Circuit m43 = new SLIntel80386Circuit(); m43.build(); m43.linkCpu(); m43.runCycles(16);
+    tally(m43.name(), "intel-80386", m43.circuitGrade(), m43.circuitScore(), m43.verifyAll(), m43.timingViolations(), m43.powerNetwork(), designOf(m43), m43.cpuMismatchCount());
+  }
+
+  void m44() {
+    SLIntel80486Circuit m44 = new SLIntel80486Circuit(); m44.build(); m44.linkCpu(); m44.runCycles(16);
+    tally(m44.name(), "intel-80486", m44.circuitGrade(), m44.circuitScore(), m44.verifyAll(), m44.timingViolations(), m44.powerNetwork(), designOf(m44), m44.cpuMismatchCount());
+  }
+
+  void m45() {
+    SLIntel8080Circuit m45 = new SLIntel8080Circuit(); m45.build(); m45.linkCpu(); m45.runCycles(16);
+    tally(m45.name(), "intel-8080", m45.circuitGrade(), m45.circuitScore(), m45.verifyAll(), m45.timingViolations(), m45.powerNetwork(), designOf(m45), m45.cpuMismatchCount());
+  }
+
+  void m46() {
+    SLIntel8086Circuit m46 = new SLIntel8086Circuit(); m46.build(); m46.linkCpu(); m46.runCycles(16);
+    tally(m46.name(), "intel-8086", m46.circuitGrade(), m46.circuitScore(), m46.verifyAll(), m46.timingViolations(), m46.powerNetwork(), designOf(m46), m46.cpuMismatchCount());
+  }
+
+  void m47() {
+    SLIntelCeleronCircuit m47 = new SLIntelCeleronCircuit(); m47.build(); m47.linkCpu(); m47.runCycles(16);
+    tally(m47.name(), "intel-celeron", m47.circuitGrade(), m47.circuitScore(), m47.verifyAll(), m47.timingViolations(), m47.powerNetwork(), designOf(m47), m47.cpuMismatchCount());
+  }
+
+  void m48() {
+    SLIntelCoreCircuit m48 = new SLIntelCoreCircuit(); m48.build(); m48.linkCpu(); m48.runCycles(16);
+    tally(m48.name(), "intel-core", m48.circuitGrade(), m48.circuitScore(), m48.verifyAll(), m48.timingViolations(), m48.powerNetwork(), designOf(m48), m48.cpuMismatchCount());
+  }
+
+  void m49() {
+    SLIntelPentiumCircuit m49 = new SLIntelPentiumCircuit(); m49.build(); m49.linkCpu(); m49.runCycles(16);
+    tally(m49.name(), "intel-pentium", m49.circuitGrade(), m49.circuitScore(), m49.verifyAll(), m49.timingViolations(), m49.powerNetwork(), designOf(m49), m49.cpuMismatchCount());
+  }
+
+  void m50() {
+    SLIntelXeonCircuit m50 = new SLIntelXeonCircuit(); m50.build(); m50.linkCpu(); m50.runCycles(16);
+    tally(m50.name(), "intel-xeon", m50.circuitGrade(), m50.circuitScore(), m50.verifyAll(), m50.timingViolations(), m50.powerNetwork(), designOf(m50), m50.cpuMismatchCount());
+  }
+
+  void m51() {
+    SLIntel4004Circuit m51 = new SLIntel4004Circuit(); m51.build(); m51.linkCpu(); m51.runCycles(16);
+    tally(m51.name(), "intel4004", m51.circuitGrade(), m51.circuitScore(), m51.verifyAll(), m51.timingViolations(), m51.powerNetwork(), designOf(m51), m51.cpuMismatchCount());
+  }
+
+  void m52() {
+    SLItaniumCircuit m52 = new SLItaniumCircuit(); m52.build(); m52.linkCpu(); m52.runCycles(16);
+    tally(m52.name(), "itanium", m52.circuitGrade(), m52.circuitScore(), m52.verifyAll(), m52.timingViolations(), m52.powerNetwork(), designOf(m52), m52.cpuMismatchCount());
+  }
+
+  void m53() {
+    SLLINC8Circuit m53 = new SLLINC8Circuit(); m53.build(); m53.linkCpu(); m53.runCycles(16);
+    tally(m53.name(), "linc8", m53.circuitGrade(), m53.circuitScore(), m53.verifyAll(), m53.timingViolations(), m53.powerNetwork(), designOf(m53), m53.cpuMismatchCount());
+  }
+
+  void m54() {
+    SLM88KCircuit m54 = new SLM88KCircuit(); m54.build(); m54.linkCpu(); m54.runCycles(16);
+    tally(m54.name(), "m88k", m54.circuitGrade(), m54.circuitScore(), m54.verifyAll(), m54.timingViolations(), m54.powerNetwork(), designOf(m54), m54.cpuMismatchCount());
+  }
+
+  void m55() {
+    SLMediaTekDimensityCircuit m55 = new SLMediaTekDimensityCircuit(); m55.build(); m55.linkCpu(); m55.runCycles(16);
+    tally(m55.name(), "mediatek-dimensity", m55.circuitGrade(), m55.circuitScore(), m55.verifyAll(), m55.timingViolations(), m55.powerNetwork(), designOf(m55), m55.cpuMismatchCount());
+  }
+
+  void m56() {
+    SLMIPSCircuit m56 = new SLMIPSCircuit(); m56.build(); m56.linkCpu(); m56.runCycles(16);
+    tally(m56.name(), "mips", m56.circuitGrade(), m56.circuitScore(), m56.verifyAll(), m56.timingViolations(), m56.powerNetwork(), designOf(m56), m56.cpuMismatchCount());
+  }
+
+  void m57() {
+    SL6800Circuit m57 = new SL6800Circuit(); m57.build(); m57.linkCpu(); m57.runCycles(16);
+    tally(m57.name(), "motorola-6800", m57.circuitGrade(), m57.circuitScore(), m57.verifyAll(), m57.timingViolations(), m57.powerNetwork(), designOf(m57), m57.cpuMismatchCount());
+  }
+
+  void m58() {
+    SL68000Circuit m58 = new SL68000Circuit(); m58.build(); m58.linkCpu(); m58.runCycles(16);
+    tally(m58.name(), "motorola-68000", m58.circuitGrade(), m58.circuitScore(), m58.verifyAll(), m58.timingViolations(), m58.powerNetwork(), designOf(m58), m58.cpuMismatchCount());
+  }
+
+  void m59() {
+    SLNintendo64Circuit m59 = new SLNintendo64Circuit(); m59.build(); m59.linkCpu(); m59.runCycles(16);
+    tally(m59.name(), "nintendo-64", m59.circuitGrade(), m59.circuitScore(), m59.verifyAll(), m59.timingViolations(), m59.powerNetwork(), designOf(m59), m59.cpuMismatchCount());
+  }
+
+  void m60() {
+    SLGameCubeCircuit m60 = new SLGameCubeCircuit(); m60.build(); m60.linkCpu(); m60.runCycles(16);
+    tally(m60.name(), "nintendo-gamecube", m60.circuitGrade(), m60.circuitScore(), m60.verifyAll(), m60.timingViolations(), m60.powerNetwork(), designOf(m60), m60.cpuMismatchCount());
+  }
+
+  void m61() {
+    SLNESCircuit m61 = new SLNESCircuit(); m61.build(); m61.linkCpu(); m61.runCycles(16);
+    tally(m61.name(), "nintendo-nes", m61.circuitGrade(), m61.circuitScore(), m61.verifyAll(), m61.timingViolations(), m61.powerNetwork(), designOf(m61), m61.cpuMismatchCount());
+  }
+
+  void m62() {
+    SLSNESCircuit m62 = new SLSNESCircuit(); m62.build(); m62.linkCpu(); m62.runCycles(16);
+    tally(m62.name(), "nintendo-snes", m62.circuitGrade(), m62.circuitScore(), m62.verifyAll(), m62.timingViolations(), m62.powerNetwork(), designOf(m62), m62.cpuMismatchCount());
+  }
+
+  void m63() {
+    SLSwitchCircuit m63 = new SLSwitchCircuit(); m63.build(); m63.linkCpu(); m63.runCycles(16);
+    tally(m63.name(), "nintendo-switch", m63.circuitGrade(), m63.circuitScore(), m63.verifyAll(), m63.timingViolations(), m63.powerNetwork(), designOf(m63), m63.cpuMismatchCount());
+  }
+
+  void m64() {
+    SLSwitch2Circuit m64 = new SLSwitch2Circuit(); m64.build(); m64.linkCpu(); m64.runCycles(16);
+    tally(m64.name(), "nintendo-switch-2", m64.circuitGrade(), m64.circuitScore(), m64.verifyAll(), m64.timingViolations(), m64.powerNetwork(), designOf(m64), m64.cpuMismatchCount());
+  }
+
+  void m65() {
+    SLWiiCircuit m65 = new SLWiiCircuit(); m65.build(); m65.linkCpu(); m65.runCycles(16);
+    tally(m65.name(), "nintendo-wii", m65.circuitGrade(), m65.circuitScore(), m65.verifyAll(), m65.timingViolations(), m65.powerNetwork(), designOf(m65), m65.cpuMismatchCount());
+  }
+
+  void m66() {
+    SLWiiUCircuit m66 = new SLWiiUCircuit(); m66.build(); m66.linkCpu(); m66.runCycles(16);
+    tally(m66.name(), "nintendo-wii-u", m66.circuitGrade(), m66.circuitScore(), m66.verifyAll(), m66.timingViolations(), m66.powerNetwork(), designOf(m66), m66.cpuMismatchCount());
+  }
+
+  void m67() {
+    SLNS32000Circuit m67 = new SLNS32000Circuit(); m67.build(); m67.linkCpu(); m67.runCycles(16);
+    tally(m67.name(), "ns32000", m67.circuitGrade(), m67.circuitScore(), m67.verifyAll(), m67.timingViolations(), m67.powerNetwork(), designOf(m67), m67.cpuMismatchCount());
+  }
+
+  void m68() {
+    SLNvidiaGraceCircuit m68 = new SLNvidiaGraceCircuit(); m68.build(); m68.linkCpu(); m68.runCycles(16);
+    tally(m68.name(), "nvidia-grace", m68.circuitGrade(), m68.circuitScore(), m68.verifyAll(), m68.timingViolations(), m68.powerNetwork(), designOf(m68), m68.cpuMismatchCount());
+  }
+
+  void m69() {
+    SLOpenRISCCircuit m69 = new SLOpenRISCCircuit(); m69.build(); m69.linkCpu(); m69.runCycles(16);
+    tally(m69.name(), "openrisc", m69.circuitGrade(), m69.circuitScore(), m69.verifyAll(), m69.timingViolations(), m69.powerNetwork(), designOf(m69), m69.cpuMismatchCount());
+  }
+
+  void m70() {
+    SLPARISCCircuit m70 = new SLPARISCCircuit(); m70.build(); m70.linkCpu(); m70.runCycles(16);
+    tally(m70.name(), "pa-risc", m70.circuitGrade(), m70.circuitScore(), m70.verifyAll(), m70.timingViolations(), m70.powerNetwork(), designOf(m70), m70.cpuMismatchCount());
+  }
+
+  void m71() {
+    SLPDP1Circuit m71 = new SLPDP1Circuit(); m71.build(); m71.linkCpu(); m71.runCycles(16);
+    tally(m71.name(), "pdp1", m71.circuitGrade(), m71.circuitScore(), m71.verifyAll(), m71.timingViolations(), m71.powerNetwork(), designOf(m71), m71.cpuMismatchCount());
+  }
+
+  void m72() {
+    SLPDP10Circuit m72 = new SLPDP10Circuit(); m72.build(); m72.linkCpu(); m72.runCycles(16);
+    tally(m72.name(), "pdp10", m72.circuitGrade(), m72.circuitScore(), m72.verifyAll(), m72.timingViolations(), m72.powerNetwork(), designOf(m72), m72.cpuMismatchCount());
+  }
+
+  void m73() {
+    SLPDP11Circuit m73 = new SLPDP11Circuit(); m73.build(); m73.linkCpu(); m73.runCycles(16);
+    tally(m73.name(), "pdp11", m73.circuitGrade(), m73.circuitScore(), m73.verifyAll(), m73.timingViolations(), m73.powerNetwork(), designOf(m73), m73.cpuMismatchCount());
+  }
+
+  void m74() {
+    SLPDP12Circuit m74 = new SLPDP12Circuit(); m74.build(); m74.linkCpu(); m74.runCycles(16);
+    tally(m74.name(), "pdp12", m74.circuitGrade(), m74.circuitScore(), m74.verifyAll(), m74.timingViolations(), m74.powerNetwork(), designOf(m74), m74.cpuMismatchCount());
+  }
+
+  void m75() {
+    SLPDP14Circuit m75 = new SLPDP14Circuit(); m75.build(); m75.linkCpu(); m75.runCycles(16);
+    tally(m75.name(), "pdp14", m75.circuitGrade(), m75.circuitScore(), m75.verifyAll(), m75.timingViolations(), m75.powerNetwork(), designOf(m75), m75.cpuMismatchCount());
+  }
+
+  void m76() {
+    SLPDP15Circuit m76 = new SLPDP15Circuit(); m76.build(); m76.linkCpu(); m76.runCycles(16);
+    tally(m76.name(), "pdp15", m76.circuitGrade(), m76.circuitScore(), m76.verifyAll(), m76.timingViolations(), m76.powerNetwork(), designOf(m76), m76.cpuMismatchCount());
+  }
+
+  void m77() {
+    SLPDP4Circuit m77 = new SLPDP4Circuit(); m77.build(); m77.linkCpu(); m77.runCycles(16);
+    tally(m77.name(), "pdp4", m77.circuitGrade(), m77.circuitScore(), m77.verifyAll(), m77.timingViolations(), m77.powerNetwork(), designOf(m77), m77.cpuMismatchCount());
+  }
+
+  void m78() {
+    SLPDP5Circuit m78 = new SLPDP5Circuit(); m78.build(); m78.linkCpu(); m78.runCycles(16);
+    tally(m78.name(), "pdp5", m78.circuitGrade(), m78.circuitScore(), m78.verifyAll(), m78.timingViolations(), m78.powerNetwork(), designOf(m78), m78.cpuMismatchCount());
+  }
+
+  void m79() {
+    SLPDP6Circuit m79 = new SLPDP6Circuit(); m79.build(); m79.linkCpu(); m79.runCycles(16);
+    tally(m79.name(), "pdp6", m79.circuitGrade(), m79.circuitScore(), m79.verifyAll(), m79.timingViolations(), m79.powerNetwork(), designOf(m79), m79.cpuMismatchCount());
+  }
+
+  void m80() {
+    SLPDP7Circuit m80 = new SLPDP7Circuit(); m80.build(); m80.linkCpu(); m80.runCycles(16);
+    tally(m80.name(), "pdp7", m80.circuitGrade(), m80.circuitScore(), m80.verifyAll(), m80.timingViolations(), m80.powerNetwork(), designOf(m80), m80.cpuMismatchCount());
+  }
+
+  void m81() {
+    SLPDP8Circuit m81 = new SLPDP8Circuit(); m81.build(); m81.linkCpu(); m81.runCycles(16);
+    tally(m81.name(), "pdp8", m81.circuitGrade(), m81.circuitScore(), m81.verifyAll(), m81.timingViolations(), m81.powerNetwork(), designOf(m81), m81.cpuMismatchCount());
+  }
+
+  void m82() {
+    SLPDP9Circuit m82 = new SLPDP9Circuit(); m82.build(); m82.linkCpu(); m82.runCycles(16);
+    tally(m82.name(), "pdp9", m82.circuitGrade(), m82.circuitScore(), m82.verifyAll(), m82.timingViolations(), m82.powerNetwork(), designOf(m82), m82.cpuMismatchCount());
+  }
+
+  void m83() {
+    SLPlayStation1Circuit m83 = new SLPlayStation1Circuit(); m83.build(); m83.linkCpu(); m83.runCycles(16);
+    tally(m83.name(), "playstation-1", m83.circuitGrade(), m83.circuitScore(), m83.verifyAll(), m83.timingViolations(), m83.powerNetwork(), designOf(m83), m83.cpuMismatchCount());
+  }
+
+  void m84() {
+    SLPlayStation2Circuit m84 = new SLPlayStation2Circuit(); m84.build(); m84.linkCpu(); m84.runCycles(16);
+    tally(m84.name(), "playstation-2", m84.circuitGrade(), m84.circuitScore(), m84.verifyAll(), m84.timingViolations(), m84.powerNetwork(), designOf(m84), m84.cpuMismatchCount());
+  }
+
+  void m85() {
+    SLPlayStation3Circuit m85 = new SLPlayStation3Circuit(); m85.build(); m85.linkCpu(); m85.runCycles(16);
+    tally(m85.name(), "playstation-3", m85.circuitGrade(), m85.circuitScore(), m85.verifyAll(), m85.timingViolations(), m85.powerNetwork(), designOf(m85), m85.cpuMismatchCount());
+  }
+
+  void m86() {
+    SLPlayStation4Circuit m86 = new SLPlayStation4Circuit(); m86.build(); m86.linkCpu(); m86.runCycles(16);
+    tally(m86.name(), "playstation-4", m86.circuitGrade(), m86.circuitScore(), m86.verifyAll(), m86.timingViolations(), m86.powerNetwork(), designOf(m86), m86.cpuMismatchCount());
+  }
+
+  void m87() {
+    SLPlayStation5Circuit m87 = new SLPlayStation5Circuit(); m87.build(); m87.linkCpu(); m87.runCycles(16);
+    tally(m87.name(), "playstation-5", m87.circuitGrade(), m87.circuitScore(), m87.verifyAll(), m87.timingViolations(), m87.powerNetwork(), designOf(m87), m87.cpuMismatchCount());
+  }
+
+  void m88() {
+    SLPOWERCircuit m88 = new SLPOWERCircuit(); m88.build(); m88.linkCpu(); m88.runCycles(16);
+    tally(m88.name(), "power", m88.circuitGrade(), m88.circuitScore(), m88.verifyAll(), m88.timingViolations(), m88.powerNetwork(), designOf(m88), m88.cpuMismatchCount());
+  }
+
+  void m89() {
+    SLPowerPCCircuit m89 = new SLPowerPCCircuit(); m89.build(); m89.linkCpu(); m89.runCycles(16);
+    tally(m89.name(), "powerpc", m89.circuitGrade(), m89.circuitScore(), m89.verifyAll(), m89.timingViolations(), m89.powerNetwork(), designOf(m89), m89.cpuMismatchCount());
+  }
+
+  void m90() {
+    SLSnapdragonCircuit m90 = new SLSnapdragonCircuit(); m90.build(); m90.linkCpu(); m90.runCycles(16);
+    tally(m90.name(), "qualcomm-snapdragon", m90.circuitGrade(), m90.circuitScore(), m90.verifyAll(), m90.timingViolations(), m90.powerNetwork(), designOf(m90), m90.cpuMismatchCount());
+  }
+
+  void m91() {
+    SLRISCVCircuit m91 = new SLRISCVCircuit(); m91.build(); m91.linkCpu(); m91.runCycles(16);
+    tally(m91.name(), "riscv", m91.circuitGrade(), m91.circuitScore(), m91.verifyAll(), m91.timingViolations(), m91.powerNetwork(), designOf(m91), m91.cpuMismatchCount());
+  }
+
+  void m92() {
+    SLRockchipCircuit m92 = new SLRockchipCircuit(); m92.build(); m92.linkCpu(); m92.runCycles(16);
+    tally(m92.name(), "rockchip", m92.circuitGrade(), m92.circuitScore(), m92.verifyAll(), m92.timingViolations(), m92.powerNetwork(), designOf(m92), m92.cpuMismatchCount());
+  }
+
+  void m93() {
+    SLROMPCircuit m93 = new SLROMPCircuit(); m93.build(); m93.linkCpu(); m93.runCycles(16);
+    tally(m93.name(), "romp", m93.circuitGrade(), m93.circuitScore(), m93.verifyAll(), m93.timingViolations(), m93.powerNetwork(), designOf(m93), m93.cpuMismatchCount());
+  }
+
+  void m94() {
+    SLSega32XCircuit m94 = new SLSega32XCircuit(); m94.build(); m94.linkCpu(); m94.runCycles(16);
+    tally(m94.name(), "sega-32x", m94.circuitGrade(), m94.circuitScore(), m94.verifyAll(), m94.timingViolations(), m94.powerNetwork(), designOf(m94), m94.cpuMismatchCount());
+  }
+
+  void m95() {
+    SLDreamcastCircuit m95 = new SLDreamcastCircuit(); m95.build(); m95.linkCpu(); m95.runCycles(16);
+    tally(m95.name(), "sega-dreamcast", m95.circuitGrade(), m95.circuitScore(), m95.verifyAll(), m95.timingViolations(), m95.powerNetwork(), designOf(m95), m95.cpuMismatchCount());
+  }
+
+  void m96() {
+    SLGameGearCircuit m96 = new SLGameGearCircuit(); m96.build(); m96.linkCpu(); m96.runCycles(16);
+    tally(m96.name(), "sega-game-gear", m96.circuitGrade(), m96.circuitScore(), m96.verifyAll(), m96.timingViolations(), m96.powerNetwork(), designOf(m96), m96.cpuMismatchCount());
+  }
+
+  void m97() {
+    SLGenesisCircuit m97 = new SLGenesisCircuit(); m97.build(); m97.linkCpu(); m97.runCycles(16);
+    tally(m97.name(), "sega-genesis", m97.circuitGrade(), m97.circuitScore(), m97.verifyAll(), m97.timingViolations(), m97.powerNetwork(), designOf(m97), m97.cpuMismatchCount());
+  }
+
+  void m98() {
+    SLMarkIIICircuit m98 = new SLMarkIIICircuit(); m98.build(); m98.linkCpu(); m98.runCycles(16);
+    tally(m98.name(), "sega-mark-iii", m98.circuitGrade(), m98.circuitScore(), m98.verifyAll(), m98.timingViolations(), m98.powerNetwork(), designOf(m98), m98.cpuMismatchCount());
+  }
+
+  void m99() {
+    SLMasterSystemCircuit m99 = new SLMasterSystemCircuit(); m99.build(); m99.linkCpu(); m99.runCycles(16);
+    tally(m99.name(), "sega-master-system", m99.circuitGrade(), m99.circuitScore(), m99.verifyAll(), m99.timingViolations(), m99.powerNetwork(), designOf(m99), m99.cpuMismatchCount());
+  }
+
+  void m100() {
+    SLMegaCDCircuit m100 = new SLMegaCDCircuit(); m100.build(); m100.linkCpu(); m100.runCycles(16);
+    tally(m100.name(), "sega-mega-cd", m100.circuitGrade(), m100.circuitScore(), m100.verifyAll(), m100.timingViolations(), m100.powerNetwork(), designOf(m100), m100.cpuMismatchCount());
+  }
+
+  void m101() {
+    SLNomadCircuit m101 = new SLNomadCircuit(); m101.build(); m101.linkCpu(); m101.runCycles(16);
+    tally(m101.name(), "sega-nomad", m101.circuitGrade(), m101.circuitScore(), m101.verifyAll(), m101.timingViolations(), m101.powerNetwork(), designOf(m101), m101.cpuMismatchCount());
+  }
+
+  void m102() {
+    SLPicoCircuit m102 = new SLPicoCircuit(); m102.build(); m102.linkCpu(); m102.runCycles(16);
+    tally(m102.name(), "sega-pico", m102.circuitGrade(), m102.circuitScore(), m102.verifyAll(), m102.timingViolations(), m102.powerNetwork(), designOf(m102), m102.cpuMismatchCount());
+  }
+
+  void m103() {
+    SLSaturnCircuit m103 = new SLSaturnCircuit(); m103.build(); m103.linkCpu(); m103.runCycles(16);
+    tally(m103.name(), "sega-saturn", m103.circuitGrade(), m103.circuitScore(), m103.verifyAll(), m103.timingViolations(), m103.powerNetwork(), designOf(m103), m103.cpuMismatchCount());
+  }
+
+  void m104() {
+    SLSG1000Circuit m104 = new SLSG1000Circuit(); m104.build(); m104.linkCpu(); m104.runCycles(16);
+    tally(m104.name(), "sega-sg-1000", m104.circuitGrade(), m104.circuitScore(), m104.verifyAll(), m104.timingViolations(), m104.powerNetwork(), designOf(m104), m104.cpuMismatchCount());
+  }
+
+  void m105() {
+    SLSHARCCircuit m105 = new SLSHARCCircuit(); m105.build(); m105.linkCpu(); m105.runCycles(16);
+    tally(m105.name(), "sharc", m105.circuitGrade(), m105.circuitScore(), m105.verifyAll(), m105.timingViolations(), m105.powerNetwork(), designOf(m105), m105.cpuMismatchCount());
+  }
+
+  void m106() {
+    SLSiFiveU74Circuit m106 = new SLSiFiveU74Circuit(); m106.build(); m106.linkCpu(); m106.runCycles(16);
+    tally(m106.name(), "sifive-u74", m106.circuitGrade(), m106.circuitScore(), m106.verifyAll(), m106.timingViolations(), m106.powerNetwork(), designOf(m106), m106.cpuMismatchCount());
+  }
+
+  void m107() {
+    SLSparcCircuit m107 = new SLSparcCircuit(); m107.build(); m107.linkCpu(); m107.runCycles(16);
+    tally(m107.name(), "sparc", m107.circuitGrade(), m107.circuitScore(), m107.verifyAll(), m107.timingViolations(), m107.powerNetwork(), designOf(m107), m107.cpuMismatchCount());
+  }
+
+  void m108() {
+    SLSunUltraSPARCCircuit m108 = new SLSunUltraSPARCCircuit(); m108.build(); m108.linkCpu(); m108.runCycles(16);
+    tally(m108.name(), "sun-ultrasparc", m108.circuitGrade(), m108.circuitScore(), m108.verifyAll(), m108.timingViolations(), m108.powerNetwork(), designOf(m108), m108.cpuMismatchCount());
+  }
+
+  void m109() {
+    SLSuperHCircuit m109 = new SLSuperHCircuit(); m109.build(); m109.linkCpu(); m109.runCycles(16);
+    tally(m109.name(), "superh", m109.circuitGrade(), m109.circuitScore(), m109.verifyAll(), m109.timingViolations(), m109.powerNetwork(), designOf(m109), m109.cpuMismatchCount());
+  }
+
+  void m110() {
+    SLSystem360Circuit m110 = new SLSystem360Circuit(); m110.build(); m110.linkCpu(); m110.runCycles(16);
+    tally(m110.name(), "system-360", m110.circuitGrade(), m110.circuitScore(), m110.verifyAll(), m110.timingViolations(), m110.powerNetwork(), designOf(m110), m110.cpuMismatchCount());
+  }
+
+  void m111() {
+    SLSystem370Circuit m111 = new SLSystem370Circuit(); m111.build(); m111.linkCpu(); m111.runCycles(16);
+    tally(m111.name(), "system-370", m111.circuitGrade(), m111.circuitScore(), m111.verifyAll(), m111.timingViolations(), m111.powerNetwork(), designOf(m111), m111.cpuMismatchCount());
+  }
+
+  void m112() {
+    SLESAS390Circuit m112 = new SLESAS390Circuit(); m112.build(); m112.linkCpu(); m112.runCycles(16);
+    tally(m112.name(), "system-390", m112.circuitGrade(), m112.circuitScore(), m112.verifyAll(), m112.timingViolations(), m112.powerNetwork(), designOf(m112), m112.cpuMismatchCount());
+  }
+
+  void m113() {
+    SLTMS320Circuit m113 = new SLTMS320Circuit(); m113.build(); m113.linkCpu(); m113.runCycles(16);
+    tally(m113.name(), "tms320", m113.circuitGrade(), m113.circuitScore(), m113.verifyAll(), m113.timingViolations(), m113.powerNetwork(), designOf(m113), m113.cpuMismatchCount());
+  }
+
+  void m114() {
+    SLTransputerCircuit m114 = new SLTransputerCircuit(); m114.build(); m114.linkCpu(); m114.runCycles(16);
+    tally(m114.name(), "transputer", m114.circuitGrade(), m114.circuitScore(), m114.verifyAll(), m114.timingViolations(), m114.powerNetwork(), designOf(m114), m114.cpuMismatchCount());
+  }
+
+  void m115() {
+    SLTX0Circuit m115 = new SLTX0Circuit(); m115.build(); m115.linkCpu(); m115.runCycles(16);
+    tally(m115.name(), "tx0", m115.circuitGrade(), m115.circuitScore(), m115.verifyAll(), m115.timingViolations(), m115.powerNetwork(), designOf(m115), m115.cpuMismatchCount());
+  }
+
+  void m116() {
+    SLVAXCircuit m116 = new SLVAXCircuit(); m116.build(); m116.linkCpu(); m116.runCycles(16);
+    tally(m116.name(), "vax", m116.circuitGrade(), m116.circuitScore(), m116.verifyAll(), m116.timingViolations(), m116.powerNetwork(), designOf(m116), m116.cpuMismatchCount());
+  }
+
+  void m117() {
+    SL65C816Circuit m117 = new SL65C816Circuit(); m117.build(); m117.linkCpu(); m117.runCycles(16);
+    tally(m117.name(), "wdc-65c816", m117.circuitGrade(), m117.circuitScore(), m117.verifyAll(), m117.timingViolations(), m117.powerNetwork(), designOf(m117), m117.cpuMismatchCount());
+  }
+
+  void m118() {
+    SLWeitekPowerCircuit m118 = new SLWeitekPowerCircuit(); m118.build(); m118.linkCpu(); m118.runCycles(16);
+    tally(m118.name(), "weitek", m118.circuitGrade(), m118.circuitScore(), m118.verifyAll(), m118.timingViolations(), m118.powerNetwork(), designOf(m118), m118.cpuMismatchCount());
+  }
+
+  void m119() {
+    SLX86Circuit m119 = new SLX86Circuit(); m119.build(); m119.linkCpu(); m119.runCycles(16);
+    tally(m119.name(), "x86", m119.circuitGrade(), m119.circuitScore(), m119.verifyAll(), m119.timingViolations(), m119.powerNetwork(), designOf(m119), m119.cpuMismatchCount());
+  }
+
+  void m120() {
+    SLXboxCircuit m120 = new SLXboxCircuit(); m120.build(); m120.linkCpu(); m120.runCycles(16);
+    tally(m120.name(), "xbox", m120.circuitGrade(), m120.circuitScore(), m120.verifyAll(), m120.timingViolations(), m120.powerNetwork(), designOf(m120), m120.cpuMismatchCount());
+  }
+
+  void m121() {
+    SLXbox360Circuit m121 = new SLXbox360Circuit(); m121.build(); m121.linkCpu(); m121.runCycles(16);
+    tally(m121.name(), "xbox-360", m121.circuitGrade(), m121.circuitScore(), m121.verifyAll(), m121.timingViolations(), m121.powerNetwork(), designOf(m121), m121.cpuMismatchCount());
+  }
+
+  void m122() {
+    SLXboxOneCircuit m122 = new SLXboxOneCircuit(); m122.build(); m122.linkCpu(); m122.runCycles(16);
+    tally(m122.name(), "xbox-one", m122.circuitGrade(), m122.circuitScore(), m122.verifyAll(), m122.timingViolations(), m122.powerNetwork(), designOf(m122), m122.cpuMismatchCount());
+  }
+
+  void m123() {
+    SLXboxOneSCircuit m123 = new SLXboxOneSCircuit(); m123.build(); m123.linkCpu(); m123.runCycles(16);
+    tally(m123.name(), "xbox-one-s", m123.circuitGrade(), m123.circuitScore(), m123.verifyAll(), m123.timingViolations(), m123.powerNetwork(), designOf(m123), m123.cpuMismatchCount());
+  }
+
+  void m124() {
+    SLXboxOneXCircuit m124 = new SLXboxOneXCircuit(); m124.build(); m124.linkCpu(); m124.runCycles(16);
+    tally(m124.name(), "xbox-one-x", m124.circuitGrade(), m124.circuitScore(), m124.verifyAll(), m124.timingViolations(), m124.powerNetwork(), designOf(m124), m124.cpuMismatchCount());
+  }
+
+  void m125() {
+    SLXboxSeriesSCircuit m125 = new SLXboxSeriesSCircuit(); m125.build(); m125.linkCpu(); m125.runCycles(16);
+    tally(m125.name(), "xbox-series-s", m125.circuitGrade(), m125.circuitScore(), m125.verifyAll(), m125.timingViolations(), m125.powerNetwork(), designOf(m125), m125.cpuMismatchCount());
+  }
+
+  void m126() {
+    SLXboxSeriesXCircuit m126 = new SLXboxSeriesXCircuit(); m126.build(); m126.linkCpu(); m126.runCycles(16);
+    tally(m126.name(), "xbox-series-x", m126.circuitGrade(), m126.circuitScore(), m126.verifyAll(), m126.timingViolations(), m126.powerNetwork(), designOf(m126), m126.cpuMismatchCount());
+  }
+
+  void m127() {
+    SLXtensaCircuit m127 = new SLXtensaCircuit(); m127.build(); m127.linkCpu(); m127.runCycles(16);
+    tally(m127.name(), "xtensa", m127.circuitGrade(), m127.circuitScore(), m127.verifyAll(), m127.timingViolations(), m127.powerNetwork(), designOf(m127), m127.cpuMismatchCount());
+  }
+
+  void m128() {
+    SLZArchitectureCircuit m128 = new SLZArchitectureCircuit(); m128.build(); m128.linkCpu(); m128.runCycles(16);
+    tally(m128.name(), "z-architecture", m128.circuitGrade(), m128.circuitScore(), m128.verifyAll(), m128.timingViolations(), m128.powerNetwork(), designOf(m128), m128.cpuMismatchCount());
+  }
+
+  void m129() {
+    SLZ80Circuit m129 = new SLZ80Circuit(); m129.build(); m129.linkCpu(); m129.runCycles(16);
+    tally(m129.name(), "z80", m129.circuitGrade(), m129.circuitScore(), m129.verifyAll(), m129.timingViolations(), m129.powerNetwork(), designOf(m129), m129.cpuMismatchCount());
+  }
+
+  void m130() {
+    SLZ8000Circuit m130 = new SLZ8000Circuit(); m130.build(); m130.linkCpu(); m130.runCycles(16);
+    tally(m130.name(), "z8000", m130.circuitGrade(), m130.circuitScore(), m130.verifyAll(), m130.timingViolations(), m130.powerNetwork(), designOf(m130), m130.cpuMismatchCount());
+  }
+
+  void m131() {
+    SLeZ80Circuit m131 = new SLeZ80Circuit(); m131.build(); m131.linkCpu(); m131.runCycles(16);
+    tally(m131.name(), "zilog-ez80", m131.circuitGrade(), m131.circuitScore(), m131.verifyAll(), m131.timingViolations(), m131.powerNetwork(), designOf(m131), m131.cpuMismatchCount());
+  }
+
+  void m132() {
+    SLAMDEPYC9965Circuit m132 = new SLAMDEPYC9965Circuit(); m132.build(); m132.linkCpu(); m132.runCycles(16);
+    tally(m132.name(), "amd-epyc/EPYC9965", m132.circuitGrade(), m132.circuitScore(), m132.verifyAll(), m132.timingViolations(), m132.powerNetwork(), designOf(m132), m132.cpuMismatchCount());
+  }
+
+  void m133() {
+    SLAMDEPYC9755Circuit m133 = new SLAMDEPYC9755Circuit(); m133.build(); m133.linkCpu(); m133.runCycles(16);
+    tally(m133.name(), "amd-epyc/EPYC9755", m133.circuitGrade(), m133.circuitScore(), m133.verifyAll(), m133.timingViolations(), m133.powerNetwork(), designOf(m133), m133.cpuMismatchCount());
+  }
+
+  void m134() {
+    SLAMDEPYC9645Circuit m134 = new SLAMDEPYC9645Circuit(); m134.build(); m134.linkCpu(); m134.runCycles(16);
+    tally(m134.name(), "amd-epyc/EPYC9645", m134.circuitGrade(), m134.circuitScore(), m134.verifyAll(), m134.timingViolations(), m134.powerNetwork(), designOf(m134), m134.cpuMismatchCount());
+  }
+
+  void m135() {
+    SLAMDEPYC9575FCircuit m135 = new SLAMDEPYC9575FCircuit(); m135.build(); m135.linkCpu(); m135.runCycles(16);
+    tally(m135.name(), "amd-epyc/EPYC9575F", m135.circuitGrade(), m135.circuitScore(), m135.verifyAll(), m135.timingViolations(), m135.powerNetwork(), designOf(m135), m135.cpuMismatchCount());
+  }
+
+  void m136() {
+    SLAMDEPYC9475FCircuit m136 = new SLAMDEPYC9475FCircuit(); m136.build(); m136.linkCpu(); m136.runCycles(16);
+    tally(m136.name(), "amd-epyc/EPYC9475F", m136.circuitGrade(), m136.circuitScore(), m136.verifyAll(), m136.timingViolations(), m136.powerNetwork(), designOf(m136), m136.cpuMismatchCount());
+  }
+
+  void m137() {
+    SLAMDEPYC9355Circuit m137 = new SLAMDEPYC9355Circuit(); m137.build(); m137.linkCpu(); m137.runCycles(16);
+    tally(m137.name(), "amd-epyc/EPYC9355", m137.circuitGrade(), m137.circuitScore(), m137.verifyAll(), m137.timingViolations(), m137.powerNetwork(), designOf(m137), m137.cpuMismatchCount());
+  }
+
+  void m138() {
+    SLAMDEPYC9175FCircuit m138 = new SLAMDEPYC9175FCircuit(); m138.build(); m138.linkCpu(); m138.runCycles(16);
+    tally(m138.name(), "amd-epyc/EPYC9175F", m138.circuitGrade(), m138.circuitScore(), m138.verifyAll(), m138.timingViolations(), m138.powerNetwork(), designOf(m138), m138.cpuMismatchCount());
+  }
+
+  void m139() {
+    SLAMDThreadripper9960XCircuit m139 = new SLAMDThreadripper9960XCircuit(); m139.build(); m139.linkCpu(); m139.runCycles(16);
+    tally(m139.name(), "amd-threadripper/Threadripper9960X", m139.circuitGrade(), m139.circuitScore(), m139.verifyAll(), m139.timingViolations(), m139.powerNetwork(), designOf(m139), m139.cpuMismatchCount());
+  }
+
+  void m140() {
+    SLAMDThreadripper9970XCircuit m140 = new SLAMDThreadripper9970XCircuit(); m140.build(); m140.linkCpu(); m140.runCycles(16);
+    tally(m140.name(), "amd-threadripper/Threadripper9970X", m140.circuitGrade(), m140.circuitScore(), m140.verifyAll(), m140.timingViolations(), m140.powerNetwork(), designOf(m140), m140.cpuMismatchCount());
+  }
+
+  void m141() {
+    SLAMDThreadripper9980XCircuit m141 = new SLAMDThreadripper9980XCircuit(); m141.build(); m141.linkCpu(); m141.runCycles(16);
+    tally(m141.name(), "amd-threadripper/Threadripper9980X", m141.circuitGrade(), m141.circuitScore(), m141.verifyAll(), m141.timingViolations(), m141.powerNetwork(), designOf(m141), m141.cpuMismatchCount());
+  }
+
+  void m142() {
+    SLAMDThreadripperPro9945WXCircuit m142 = new SLAMDThreadripperPro9945WXCircuit(); m142.build(); m142.linkCpu(); m142.runCycles(16);
+    tally(m142.name(), "amd-threadripper/ThreadripperPro9945WX", m142.circuitGrade(), m142.circuitScore(), m142.verifyAll(), m142.timingViolations(), m142.powerNetwork(), designOf(m142), m142.cpuMismatchCount());
+  }
+
+  void m143() {
+    SLAMDThreadripperPro9955WXCircuit m143 = new SLAMDThreadripperPro9955WXCircuit(); m143.build(); m143.linkCpu(); m143.runCycles(16);
+    tally(m143.name(), "amd-threadripper/ThreadripperPro9955WX", m143.circuitGrade(), m143.circuitScore(), m143.verifyAll(), m143.timingViolations(), m143.powerNetwork(), designOf(m143), m143.cpuMismatchCount());
+  }
+
+  void m144() {
+    SLAMDThreadripperPro9965WXCircuit m144 = new SLAMDThreadripperPro9965WXCircuit(); m144.build(); m144.linkCpu(); m144.runCycles(16);
+    tally(m144.name(), "amd-threadripper/ThreadripperPro9965WX", m144.circuitGrade(), m144.circuitScore(), m144.verifyAll(), m144.timingViolations(), m144.powerNetwork(), designOf(m144), m144.cpuMismatchCount());
+  }
+
+  void m145() {
+    SLAMDThreadripperPro9975WXCircuit m145 = new SLAMDThreadripperPro9975WXCircuit(); m145.build(); m145.linkCpu(); m145.runCycles(16);
+    tally(m145.name(), "amd-threadripper/ThreadripperPro9975WX", m145.circuitGrade(), m145.circuitScore(), m145.verifyAll(), m145.timingViolations(), m145.powerNetwork(), designOf(m145), m145.cpuMismatchCount());
+  }
+
+  void m146() {
+    SLAMDThreadripperPro9985WXCircuit m146 = new SLAMDThreadripperPro9985WXCircuit(); m146.build(); m146.linkCpu(); m146.runCycles(16);
+    tally(m146.name(), "amd-threadripper/ThreadripperPro9985WX", m146.circuitGrade(), m146.circuitScore(), m146.verifyAll(), m146.timingViolations(), m146.powerNetwork(), designOf(m146), m146.cpuMismatchCount());
+  }
+
+  void m147() {
+    SLAMDThreadripperPro9995WXCircuit m147 = new SLAMDThreadripperPro9995WXCircuit(); m147.build(); m147.linkCpu(); m147.runCycles(16);
+    tally(m147.name(), "amd-threadripper/ThreadripperPro9995WX", m147.circuitGrade(), m147.circuitScore(), m147.verifyAll(), m147.timingViolations(), m147.powerNetwork(), designOf(m147), m147.cpuMismatchCount());
+  }
+
+  void main() {
+    gA = 0; gB = 0; gC = 0; gD = 0; gF = 0; failing = 0; unlinked = 0;
+    m0();
+    m1();
+    m2();
+    m3();
+    m4();
+    m5();
+    m6();
+    m7();
+    m8();
+    m9();
+    m10();
+    m11();
+    m12();
+    m13();
+    m14();
+    m15();
+    m16();
+    m17();
+    m18();
+    m19();
+    m20();
+    m21();
+    m22();
+    m23();
+    m24();
+    m25();
+    m26();
+    m27();
+    m28();
+    m29();
+    m30();
+    m31();
+    m32();
+    m33();
+    m34();
+    m35();
+    m36();
+    m37();
+    m38();
+    m39();
+    m40();
+    m41();
+    m42();
+    m43();
+    m44();
+    m45();
+    m46();
+    m47();
+    m48();
+    m49();
+    m50();
+    m51();
+    m52();
+    m53();
+    m54();
+    m55();
+    m56();
+    m57();
+    m58();
+    m59();
+    m60();
+    m61();
+    m62();
+    m63();
+    m64();
+    m65();
+    m66();
+    m67();
+    m68();
+    m69();
+    m70();
+    m71();
+    m72();
+    m73();
+    m74();
+    m75();
+    m76();
+    m77();
+    m78();
+    m79();
+    m80();
+    m81();
+    m82();
+    m83();
+    m84();
+    m85();
+    m86();
+    m87();
+    m88();
+    m89();
+    m90();
+    m91();
+    m92();
+    m93();
+    m94();
+    m95();
+    m96();
+    m97();
+    m98();
+    m99();
+    m100();
+    m101();
+    m102();
+    m103();
+    m104();
+    m105();
+    m106();
+    m107();
+    m108();
+    m109();
+    m110();
+    m111();
+    m112();
+    m113();
+    m114();
+    m115();
+    m116();
+    m117();
+    m118();
+    m119();
+    m120();
+    m121();
+    m122();
+    m123();
+    m124();
+    m125();
+    m126();
+    m127();
+    m128();
+    m129();
+    m130();
+    m131();
+    m132();
+    m133();
+    m134();
+    m135();
+    m136();
+    m137();
+    m138();
+    m139();
+    m140();
+    m141();
+    m142();
+    m143();
+    m144();
+    m145();
+    m146();
+    m147();
+    print("grades: A=" + gA + " B=" + gB + " C=" + gC + " D=" + gD + " F=" + gF + "  models with violations=" + failing + "  cpu link mismatches=" + unlinked);
+  }
+}

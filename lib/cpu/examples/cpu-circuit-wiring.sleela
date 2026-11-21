@@ -1,0 +1,65 @@
+<< lib/cpu/examples/cpu-circuit-wiring.sleela
+   SLeeLa example: the link between each CPU class and its circuit model, in
+   both directions. From the CPU side, SL<Name>CPU.circuitModel() builds the
+   circuit and tells it the CPU name, rated clock and data width. From the
+   circuit side, SL<Name>Circuit.cpuModel() builds the CPU and linkCpu()
+   checks the same three facts. SKU entries carry their own circuit, because
+   calls bind to the declared type. Every check prints PASS or FAIL and the
+   program ends with the failure count, which must be 0. >>
+#sleela 2.5
+import cpu;
+class SLCpuCircuitWiringExample {
+  int fails;
+
+  void check(String what, boolean ok) {
+    if (ok) { print("PASS " + what); } else { print("FAIL " + what); fails = fails + 1; }
+  }
+
+  void main() {
+    fails = 0;
+
+    SL6502CPU mos = new SL6502CPU();
+    mos.configure();
+    SL6502Circuit c = mos.circuitModel();
+    check("6502 CPU to circuit: linked, no mismatch", c.linkedToCpu() && c.cpuMismatchCount() == 0);
+    check("6502 circuit grade read through the CPU", mos.circuitGrade() == "A");
+    SL6502Circuit c2 = new SL6502Circuit();
+    c2.build();
+    check("6502 circuit to CPU: linkCpu agrees", c2.linkCpu() == 0);
+    SL6502CPU back = c2.cpuModel();
+    check("6502 circuit builds its CPU", back.architecture() == "MOS 6502" && back.dataWidth() == 8);
+
+    SLZ80CPU z = new SLZ80CPU();
+    z.configure();
+    SLZ80Circuit zc = z.circuitModel();
+    check("Z80 circuit runs at the CPU 4 MHz", zc.cpuMismatchCount() == 0 && zc.clock() == 4000);
+    check("Z80 circuit verifies clean at 4 MHz", zc.verifyAll() == 0);
+
+    SLAMDEPYC9965 e = new SLAMDEPYC9965();
+    e.configure();
+    SLAMDEPYC9965Circuit ec = e.circuitModel();
+    check("EPYC 9965 SKU gets its own circuit", ec.cores == 192 && ec.cpuMismatchCount() == 0);
+    check("EPYC 9965 power network carries its 500 W", ec.powerNetwork().loadMa() > 400000 && ec.powerViolations() == 0);
+    SLAMDThreadripperPro9995WX t = new SLAMDThreadripperPro9995WX();
+    t.configure();
+    SLAMDThreadripperPro9995WXCircuit tc = t.circuitModel();
+    check("Threadripper PRO 9995WX circuit: 96 cores, linked", tc.cores == 96 && tc.cpuMismatchCount() == 0);
+
+    SLPDP8CPU p8 = new SLPDP8CPU();
+    p8.configure();
+    p8.writePdpWord(7, 5000);
+    check("PDP-8 stores 12-bit words", p8.readPdpWord(7) == 5000 % 4096);
+    p8.readPdpWord(9999);
+    check("PDP-8 out-of-range read is recorded, not thrown", p8.getErrorCount() == 1);
+    SLPDP8Circuit pc = p8.circuitModel();
+    check("PDP-8 circuit linked", pc.cpuMismatchCount() == 0);
+
+    < A circuit told the wrong facts counts every mismatch. >
+    SL6502Circuit wrong = new SL6502Circuit();
+    wrong.build();
+    check("wrong name, clock and width give 3 mismatches", wrong.agreeWithCpu("Not a 6502", 7, 16) == 3);
+    check("mismatches fail verifyAll", wrong.verifyAll() >= 3);
+
+    print("failures: " + fails);
+  }
+}

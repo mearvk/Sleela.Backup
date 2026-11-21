@@ -1,24 +1,114 @@
-/*
- * lib/cpu/SLControlUnit.sleela
- * SLeeLa Standard Library Definition.
- * Definition: Defines SLControlUnit — the conductor of a CPU core. It drives
- *   the fetch-decode-execute cycle for the full SLInstructionSet: fetch the
- *   instruction at the program counter, decode it, route operands through the
- *   register file, ALU, and the hardware stack (SLStack), write results back,
- *   update the program counter (sequential, branch, call, or return), and set
- *   the status flags.
- *
- * This models a classic single-cycle control unit with a real call/stack
- * protocol: CALL pushes the return address and jumps; RET pops it; PUSH/POP
- * move words to and from the stack. That protocol is what makes the ISA a
- * viable lowering target for compiled C/C++/Java/Sleela (function calls,
- * locals, spills). Pipelining/out-of-order are described in CPU.md; the
- * observable semantics here are the same.
- *
- * Family: cpu. Composes decoder, register file, ALU, PC, status, RAM, and stack.
- */
-#sleela 1.3
+<< lib/cpu/SLControlUnit.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLControlUnit — the conductor of a CPU core. It drives
+     the fetch-decode-execute cycle for the full SLInstructionSet: fetch the
+     instruction at the program counter, decode it, route operands through the
+     register file, ALU, and the hardware stack (SLStack), write results back,
+     update the program counter (sequential, branch, call, or return), and set
+     the status flags.
+   
+   This models a classic single-cycle control unit with a real call/stack
+   protocol: CALL pushes the return address and jumps; RET pops it; PUSH/POP
+   move words to and from the stack. That protocol is what makes the ISA a
+   viable lowering target for compiled C/C++/Java/Sleela (function calls,
+   locals, spills). Pipelining/out-of-order are described in CPU.md; the
+   observable semantics here are the same.
+   
+   Family: cpu. Composes decoder, register file, ALU, PC, status, RAM, and stack. >>
+#sleela 2.5
+material;
 class SLControlUnit {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 10210;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-06";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  < Local mirrors of constants owned by other classes. The checker does not >
+  < resolve cross-class statics reached transitively, so the values are repeated >
+  < here under the owner class name. Keep them equal to the owner. >
+  static final int SLALU_OP_ADD = 0;
+  static final int SLALU_OP_AND = 2;
+  static final int SLALU_OP_DIV = 11;
+  static final int SLALU_OP_MOD = 12;
+  static final int SLALU_OP_MUL = 10;
+  static final int SLALU_OP_NEG = 13;
+  static final int SLALU_OP_NOT = 5;
+  static final int SLALU_OP_OR = 3;
+  static final int SLALU_OP_PASS = 9;
+  static final int SLALU_OP_SHL = 6;
+  static final int SLALU_OP_SHR = 7;
+  static final int SLALU_OP_SUB = 1;
+  static final int SLALU_OP_XOR = 4;
+  static final int SLInstructionSet_ADD = 10;
+  static final int SLInstructionSet_AND = 16;
+  static final int SLInstructionSet_CALL = 28;
+  static final int SLInstructionSet_CMP = 22;
+  static final int SLInstructionSet_DIV = 13;
+  static final int SLInstructionSet_HALT = 1;
+  static final int SLInstructionSet_JGE = 27;
+  static final int SLInstructionSet_JLT = 26;
+  static final int SLInstructionSet_JMP = 23;
+  static final int SLInstructionSet_JNZ = 25;
+  static final int SLInstructionSet_JZ = 24;
+  static final int SLInstructionSet_LOAD = 4;
+  static final int SLInstructionSet_LOADR = 5;
+  static final int SLInstructionSet_LOADX = 6;
+  static final int SLInstructionSet_MOD = 14;
+  static final int SLInstructionSet_MOV = 2;
+  static final int SLInstructionSet_MOVR = 3;
+  static final int SLInstructionSet_MUL = 12;
+  static final int SLInstructionSet_NEG = 15;
+  static final int SLInstructionSet_NOP = 0;
+  static final int SLInstructionSet_NOT = 19;
+  static final int SLInstructionSet_OR = 17;
+  static final int SLInstructionSet_POP = 31;
+  static final int SLInstructionSet_PUSH = 30;
+  static final int SLInstructionSet_RET = 29;
+  static final int SLInstructionSet_SHL = 20;
+  static final int SLInstructionSet_SHR = 21;
+  static final int SLInstructionSet_STORE = 7;
+  static final int SLInstructionSet_STORER = 8;
+  static final int SLInstructionSet_STOREX = 9;
+  static final int SLInstructionSet_SUB = 11;
+  static final int SLInstructionSet_SYSCALL = 34;
+  static final int SLInstructionSet_TRAP = 35;
+  static final int SLInstructionSet_XOR = 18;
   SLInstructionSet isa;
   SLInstructionDecoder decoder;
   SLRegisterFile regs;
@@ -29,10 +119,14 @@ class SLControlUnit {
   SLStack stack;
   int halted;
   int executed;
-  int syscallVector;   // address the OS installed for SYSCALL
-  int trapVector;      // address installed for TRAP (faults / guest exits)
-  int lastSyscall;     // last syscall number requested (for the kernel to read)
-  int lastTrap;        // last trap number requested
+  < address the OS installed for SYSCALL >
+  int syscallVector;
+  < address installed for TRAP (faults / guest exits) >
+  int trapVector;
+  < last syscall number requested (for the kernel to read) >
+  int lastSyscall;
+  < last trap number requested >
+  int lastTrap;
 
   void configure(SLInstructionSet instructionSet, SLInstructionDecoder dec,
                  SLRegisterFile registers, SLALU unit, SLProgramCounter counter,
@@ -52,8 +146,8 @@ class SLControlUnit {
   void clearSyscall() { lastSyscall = -1; }
   void clearTrap() { lastTrap = -1; }
 
-  // Execute exactly one instruction at the current PC. Returns the opcode run,
-  // or -1 if the core is halted.
+  < Execute exactly one instruction at the current PC. Returns the opcode run, >
+  < or -1 if the core is halted. >
   int step() {
     if (halted == 1) { return -1; }
     int word = memory.readWord(pc.value());
@@ -64,20 +158,20 @@ class SLControlUnit {
     int imm = instr.immediate();
     executed = executed + 1;
 
-    if (op == isa.HALT) { halted = 1; return op; }
-    if (op == isa.NOP)  { pc.increment(); return op; }
+    if (op == SLInstructionSet_HALT) { halted = 1; return op; }
+    if (op == SLInstructionSet_NOP)  { pc.increment(); return op; }
 
-    // ---- data movement ----
-    if (op == isa.MOV)    { regs.write(rd, imm); pc.increment(); return op; }
-    if (op == isa.MOVR)   { regs.write(rd, regs.read(rs)); pc.increment(); return op; }
-    if (op == isa.LOAD)   { regs.write(rd, memory.readWord(imm)); pc.increment(); return op; }
-    if (op == isa.LOADR)  { regs.write(rd, memory.readWord(regs.read(rs))); pc.increment(); return op; }
-    if (op == isa.LOADX)  { regs.write(rd, memory.readWord(regs.read(rs) + imm)); pc.increment(); return op; }
-    if (op == isa.STORE)  { memory.writeWord(imm, regs.read(rs)); pc.increment(); return op; }
-    if (op == isa.STORER) { memory.writeWord(regs.read(rd), regs.read(rs)); pc.increment(); return op; }
-    if (op == isa.STOREX) { memory.writeWord(regs.read(rd) + imm, regs.read(rs)); pc.increment(); return op; }
+    < ---- data movement ---- >
+    if (op == SLInstructionSet_MOV)    { regs.write(rd, imm); pc.increment(); return op; }
+    if (op == SLInstructionSet_MOVR)   { regs.write(rd, regs.read(rs)); pc.increment(); return op; }
+    if (op == SLInstructionSet_LOAD)   { regs.write(rd, memory.readWord(imm)); pc.increment(); return op; }
+    if (op == SLInstructionSet_LOADR)  { regs.write(rd, memory.readWord(regs.read(rs))); pc.increment(); return op; }
+    if (op == SLInstructionSet_LOADX)  { regs.write(rd, memory.readWord(regs.read(rs) + imm)); pc.increment(); return op; }
+    if (op == SLInstructionSet_STORE)  { memory.writeWord(imm, regs.read(rs)); pc.increment(); return op; }
+    if (op == SLInstructionSet_STORER) { memory.writeWord(regs.read(rd), regs.read(rs)); pc.increment(); return op; }
+    if (op == SLInstructionSet_STOREX) { memory.writeWord(regs.read(rd) + imm, regs.read(rs)); pc.increment(); return op; }
 
-    // ---- arithmetic / logic (register-register, result in rd) ----
+    < ---- arithmetic / logic (register-register, result in rd) ---- >
     if (isa.isArithmetic(op)) {
       int a = regs.read(rd);
       int b = regs.read(rs);
@@ -88,75 +182,77 @@ class SLControlUnit {
       return op;
     }
 
-    // ---- compare (sets flags only) ----
-    if (op == isa.CMP) {
-      alu.execute(regs.read(rd), regs.read(rs), alu.OP_SUB);
+    < ---- compare (sets flags only) ---- >
+    if (op == SLInstructionSet_CMP) {
+      alu.execute(regs.read(rd), regs.read(rs), SLALU_OP_SUB);
       status.setFromALU(alu);
       pc.increment();
       return op;
     }
 
-    // ---- branches ----
-    if (op == isa.JMP) { pc.branchTo(imm); return op; }
-    if (op == isa.JZ)  { if (status.zeroFlag() == 1) { pc.branchTo(imm); } else { pc.increment(); } return op; }
-    if (op == isa.JNZ) { if (status.zeroFlag() == 0) { pc.branchTo(imm); } else { pc.increment(); } return op; }
-    if (op == isa.JLT) { if (status.negativeFlag() == 1) { pc.branchTo(imm); } else { pc.increment(); } return op; }
-    if (op == isa.JGE) { if (status.negativeFlag() == 0) { pc.branchTo(imm); } else { pc.increment(); } return op; }
+    < ---- branches ---- >
+    if (op == SLInstructionSet_JMP) { pc.branchTo(imm); return op; }
+    if (op == SLInstructionSet_JZ)  { if (status.zeroFlag() == 1) { pc.branchTo(imm); } else { pc.increment(); } return op; }
+    if (op == SLInstructionSet_JNZ) { if (status.zeroFlag() == 0) { pc.branchTo(imm); } else { pc.increment(); } return op; }
+    if (op == SLInstructionSet_JLT) { if (status.negativeFlag() == 1) { pc.branchTo(imm); } else { pc.increment(); } return op; }
+    if (op == SLInstructionSet_JGE) { if (status.negativeFlag() == 0) { pc.branchTo(imm); } else { pc.increment(); } return op; }
 
-    // ---- call / return / stack ----
-    if (op == isa.CALL) {
-      stack.push(pc.value() + 1);   // return address = instruction after CALL
+    < ---- call / return / stack ---- >
+    if (op == SLInstructionSet_CALL) {
+      < return address = instruction after CALL >
+      stack.push(pc.value() + 1);
       pc.branchTo(imm);
       return op;
     }
-    if (op == isa.RET) {
+    if (op == SLInstructionSet_RET) {
       int ret = stack.pop();
-      if (ret < 0) { raiseTrap(1); return op; } // stack underflow fault
+      < stack underflow fault >
+      if (ret < 0) { raiseTrap(1); return op; }
       pc.branchTo(ret);
       return op;
     }
-    if (op == isa.PUSH) { stack.push(regs.read(rs)); pc.increment(); return op; }
-    if (op == isa.POP)  { regs.write(rd, stack.pop()); pc.increment(); return op; }
+    if (op == SLInstructionSet_PUSH) { stack.push(regs.read(rs)); pc.increment(); return op; }
+    if (op == SLInstructionSet_POP)  { regs.write(rd, stack.pop()); pc.increment(); return op; }
 
-    // ---- system ----
-    if (op == isa.SYSCALL) {
+    < ---- system ---- >
+    if (op == SLInstructionSet_SYSCALL) {
       lastSyscall = imm;
       status.enterSupervisorMode();
       if (syscallVector != 0) { stack.push(pc.value() + 1); pc.branchTo(syscallVector); } else { pc.increment(); }
       return op;
     }
-    if (op == isa.TRAP) { raiseTrap(imm); return op; }
+    if (op == SLInstructionSet_TRAP) { raiseTrap(imm); return op; }
 
-    // Unknown opcode: fault.
+    < Unknown opcode: fault. >
     raiseTrap(2);
     return op;
   }
 
-  // Deliver a trap: record it and vector to the handler (or just advance).
+  < Deliver a trap: record it and vector to the handler (or just advance). >
   void raiseTrap(int number) {
     lastTrap = number;
     status.enterSupervisorMode();
     if (trapVector != 0) { stack.push(pc.value() + 1); pc.branchTo(trapVector); } else { pc.increment(); }
   }
 
-  // Map ISA arithmetic opcodes onto SLALU operation selectors.
+  < Map ISA arithmetic opcodes onto SLALU operation selectors. >
   int toAluOp(int op) {
-    if (op == isa.ADD) { return alu.OP_ADD; }
-    if (op == isa.SUB) { return alu.OP_SUB; }
-    if (op == isa.MUL) { return alu.OP_MUL; }
-    if (op == isa.DIV) { return alu.OP_DIV; }
-    if (op == isa.MOD) { return alu.OP_MOD; }
-    if (op == isa.NEG) { return alu.OP_NEG; }
-    if (op == isa.AND) { return alu.OP_AND; }
-    if (op == isa.OR)  { return alu.OP_OR; }
-    if (op == isa.XOR) { return alu.OP_XOR; }
-    if (op == isa.NOT) { return alu.OP_NOT; }
-    if (op == isa.SHL) { return alu.OP_SHL; }
-    if (op == isa.SHR) { return alu.OP_SHR; }
-    return alu.OP_PASS;
+    if (op == SLInstructionSet_ADD) { return SLALU_OP_ADD; }
+    if (op == SLInstructionSet_SUB) { return SLALU_OP_SUB; }
+    if (op == SLInstructionSet_MUL) { return SLALU_OP_MUL; }
+    if (op == SLInstructionSet_DIV) { return SLALU_OP_DIV; }
+    if (op == SLInstructionSet_MOD) { return SLALU_OP_MOD; }
+    if (op == SLInstructionSet_NEG) { return SLALU_OP_NEG; }
+    if (op == SLInstructionSet_AND) { return SLALU_OP_AND; }
+    if (op == SLInstructionSet_OR)  { return SLALU_OP_OR; }
+    if (op == SLInstructionSet_XOR) { return SLALU_OP_XOR; }
+    if (op == SLInstructionSet_NOT) { return SLALU_OP_NOT; }
+    if (op == SLInstructionSet_SHL) { return SLALU_OP_SHL; }
+    if (op == SLInstructionSet_SHR) { return SLALU_OP_SHR; }
+    return SLALU_OP_PASS;
   }
 
-  // Run until HALT or until the instruction budget is exhausted (safety bound).
+  < Run until HALT or until the instruction budget is exhausted (safety bound). >
   int run(int budget) {
     int ran = 0;
     while (halted == 0 && ran < budget) { step(); ran = ran + 1; }

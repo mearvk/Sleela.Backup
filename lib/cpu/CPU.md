@@ -25,6 +25,69 @@ that bottoms out at Boolean logic.
 | `SLAdder` | N-bit ripple-carry adder over a machine word. |
 | `SLALU` | Arithmetic Logic Unit: add/sub/and/or/xor/not/shift/compare with status flags. |
 
+### Layer 0.5 — Circuit physics (per-CPU circuit models)
+| Class | Role |
+|---|---|
+| `SLLogicFamily` | Process, supply, VIL/VIH/VOL/VOH thresholds, gate delay, edge time, fanout. Polarity-aware `classify()` for positive and negative supplies. |
+| `SLSignalQuality` | Per-net monitor: forbidden-zone samples, out-of-window samples, slow edges, overshoot. |
+| `SLTimedGate` | An `SLGate` with rise/fall delay, fanout loading, output voltage and inertial glitch rejection. |
+| `SLCircuitSemaphore` | Counting semaphore for latch and bus arbitration, with contention, misuse and stuck-permit counts. |
+| `SLCircuitPath` | Named stage delays summed into an `SLTiming` budget; reports slack, critical stage and maximum frequency. |
+| `SLCircuitBlock` | One functional block: width, depth, gates, transistors, derived delay and area. |
+| `SLCircuitDetails` | RLC state space: capacitor voltage, inductor current and time, advanced by the transition matrix `phi` and input vector `frankenlen`. |
+| `SLPowerNetwork` | Current, voltage and time model of the supply on `SLCircuitDetails`: series R and L, decoupling C, load; exact `phi`/`frankenlen` from expm of the augmented matrix; soft-start power-on with settled voltage, ripple, peak current and settle time checks. |
+| `SLCircuitModel` | The per-CPU circuit: family, rail, clock phases, blocks, paths, nets, semaphores, `runCycles()` and `verifyAll()`. |
+
+Every CPU folder has a circuit subclass (`SL6502Circuit`, `SLZ80Circuit`, `SLIntel4004Circuit`, and
+one generated per remaining CPU) that fills the model with that processor figures. Each figure is
+labelled published, cited, recalled or derived; unknown figures are left at zero, never invented. Every
+`SL<Name>CPU` class exposes `circuitModel()` and `circuitGrade()`.
+
+The circuit grade (`SLCircuitModel.circuitScore()`, 0 to 10, letter A to F) rewards sourced transistor
+count, feature size, supply and clock (4 points) and structure plus clean verification (6 points). It
+measures how well the model is sourced and how cleanly it verifies, not how good the processor is.
+`examples/circuit-grades.sleela` prints the grade of every CPU with its power network result.
+
+Every circuit model powers up through `SLPowerNetwork` before it clocks: `runCycles()` soft-starts the
+supply, and `verifyAll()` counts a rail that settles outside its window or rings past the family
+tolerance. The rail load line uses the same R and load, so the nets see the same DC drop.
+`examples/power-network.sleela` checks `phi` and `frankenlen` against a closed-form reference.
+
+Each circuit model also states its design character with `setDesign` (cores, threads, pipeline
+stages, issue width, execution style), `setCaches` (L1I, L1D or unified L1 per core, L2 and L3 per
+chip, local store) and `setUnits` (FPU, MMU, SIMD width). `buildDesign()` turns that into SRAM,
+FPU, TLB, SIMD, pipeline-latch, rename and extra-core blocks, a shared-cache semaphore for
+multicore parts, and a pipeline-stage timing path that must fit the clock at the process gate
+delay. `verifyAll()` fails a design whose named blocks exceed a known transistor total.
+`examples/design-character.sleela` shows both checks failing on purpose. The design figures are
+recalled and every circuit header says so.
+
+Each circuit and its CPU class address each other. `SL<Name>CPU.circuitModel()` builds the circuit
+and passes the CPU name, rated clock and data width to `agreeWithCpu()`; `SL<Name>Circuit.cpuModel()`
+builds the CPU and `linkCpu()` checks the same facts from the circuit side. `verifyAll()` counts any
+mismatch. The 16 EPYC and Threadripper SKU entries each carry their own circuit (`SL<SKU>Circuit`),
+because a call binds to the declared type and the family `circuitModel()` would return the family
+circuit. `examples/cpu-circuit-wiring.sleela` checks both directions and the SKUs;
+`examples/circuit-grades.sleela` grades all 148 circuits, one method each so the VM live-struct
+limit (4096) is not reached.
+
+Chips with the GPU on the same die (Xbox One to Series X, PS4, PS5, Atari VCS, Apple A-series and
+M1 to M4, Switch and Switch 2) also call `setGpu` and `buildGpu()`: GPU lanes, register files, local
+memory, L2 and control become blocks, a shader-stage path is checked at the GPU clock, and a
+unified-memory semaphore is shared by CPU and GPU. The Xbox One and One S carry their 32 MB ESRAM as
+local store. GPU figures are recalled; texture units, render back ends, media and neural engines and
+I/O are not modelled, so the budget shares stay well below 100 percent.
+
+Known disagreements between the design table and a `CACHE.md` (the model keeps its value):
+
+| CPU | CACHE.md | Model | Why |
+|---|---|---|---|
+| amd-athlon | L2 yes | no on-die L2 | the original K7 L2 sits on the Slot A module, off the die |
+| amd-opteron | L3 yes | no L3 | the K8 Opteron has no L3; L3 arrived with K10 |
+| atari-vcs | L3 no | 4 MB L3 | the Ryzen R1606G carries an L3 |
+| playstation-2 | L2 yes | no L2 | the Emotion Engine has no L2 |
+| sun-ultrasparc | L2 yes | no on-die L2 | the UltraSPARC III L2 is external |
+
 ### Layer 1 — Storage
 | Class | Role |
 |---|---|
@@ -80,6 +143,24 @@ that bottoms out at Boolean logic.
 | Class | Role |
 |---|---|
 | `SLStack` | The hardware call/data stack (grows downward) for PUSH/POP and CALL/RET return addresses. |
+
+### Layer 2.7 — Voltages, variable clocks, and expert timings
+| Class | Role |
+|---|---|
+| `SLVoltageRail` | One named, adjustable supply rail — **actual voltages in mV**, with load-line droop and a safe window. |
+| `SLTiming` | A named, careful timing budget (setup/hold/propagation/jitter/guardband in ps) with slack and max-frequency reporting. |
+| `SLBusTiming` | A bus's **variable clock speed** + named address/data-strobe/control budgets; voltage caps the trustworthy clock. |
+| `SLCpuTiming` | Expert CPU core timings: variable clock + Vcore + per-stage pipeline budgets; the critical stage sets the honest max clock. |
+| `SLIOTiming` | Expert timings for **control of I/O**: handshake/turnaround/recovery budgets + clock-domain-crossing synchronizer latency. |
+| `SLRamTiming` | Expert RAM timings: CL/tRCD/tRP/tRAS/tRC/command-rate with derived real-nanosecond access latency. |
+| `SLTimingClass` | The expertise tier as a **Class Object** — Novice/Basic/Advanced/Expert — carrying brand/medium and the dialing policy. |
+| `SLTimingProfile` | Gathers all rails + expert timings under one tier, dials them, checks `honored()`, seals an `SLTimingManifest`. |
+| `SLTimingManifest` | The serializable operating point a **compiled `.sleela` image carries** so the VM/loader honor **declared** timings. |
+
+> **This layer is documented in detail in [`TIMING.md`](TIMING.md).** It lets a
+> compiled `.sleela` file state the actual voltages, variable clocks, and expert
+> bus/CPU/I/O/RAM timings it was built for, so the compilers and VM operate those
+> stated numbers rather than assuming the quality of the hardware.
 
 ### Layer 5 — Programs and the multi-language toolchain
 | Class | Role |
@@ -149,3 +230,49 @@ the real structure and semantics (combinational logic, clocked state, the
 fetch-decode-execute cycle, the memory hierarchy, interrupts, DMA, drivers,
 scheduling, syscalls, and loading) at a level that stays readable as SLeeLa
 source.
+
+### What the model does and does not claim
+
+Being explicit about the guarantees, since the point of the stack is that it is
+honest about its own boundaries:
+
+1. **Running a CPU as a model models that CPU, its codes, and its features.**
+   Each `SL<ARCH>CPU` (including the AMD Threadripper 9000 SKUs) extends
+   `SLCPURuntime` and supplies the architecture's real programmer model — its
+   register set, data/address widths, flags — and a genuine `decode()` that maps
+   the architecture's own instruction encoding onto the ALU and the substrate.
+   `SLControlUnit.step()` is a real fetch-decode-execute cycle. Cache levels,
+   the MMU/TLB, the bus, and the interrupt controller are modeled as that part's
+   actual features (see each arch folder's `CPU.md`/`CACHE.md`/`BUS.md`). So the
+   **instruction semantics** — the result and observable effect of executing
+   each instruction — are faithfully represented.
+
+2. **Instruction timing is a behavioral, conservative estimate — not
+   cycle-accurate.** The model states this plainly: `instruction latency !=
+   clock period`, and per-instruction cost depends on addressing mode, operand
+   transfers, read/write sequence, branch outcome, and wait/interrupt state
+   (see [`TIMING.md`](TIMING.md)). Clock rate, the per-stage/bus/RAM/I-O timing
+   budgets (`SLCpuTiming`, `SLBusTiming`, `SLRamTiming`, `SLIOTiming`), and cycle
+   counts are **timing hints and net-result accounting**, recorded as
+   observable/derived values. They are deliberately *not* presented as a
+   cycle-accurate or transistor-level count; the model never claims an exact
+   per-cycle silicon reproduction.
+
+3. **The opcode mapping (Sleela → model CPU → native VM) is careful,
+   conservative, and verified — it invents nothing.** Every register-ISA
+   instruction and every OS syscall is lowered onto the **canonical opcode
+   substrate** (`SLSleelaOpcode`), whose codes and mnemonics mirror the native
+   enum exactly (`impl/core/sleela_core.h` `SLOp`). The native substrate
+   currently defines **156 opcodes** (codes 0..155), organized in `SLSleelaOpcode`
+   as a double shelf of three tiers — base computational/service core (0..48),
+   substrate extensions (49..97), and host-facing services (98..155) — each with
+   its own `TIER_*` flag and `*_COUNT` bound for the monitoring/storage layer.
+   All are acceptable opcodes; the CPU model lowers onto the Turing-complete base
+   core and does not fabricate a parallel instruction set.
+   Because that substrate is already executed by the native VM and is Turing
+   complete, the mapping is a **reduction**, not an invention — and it is
+   checkable: `SLTuringBridge.proveEquivalence(c, cpp, java, sleela)` lowers the
+   same computation from all four frontends to the substrate, runs each, and
+   returns true only when every one produces the identical result. That is what
+   makes "a program on the model CPU" and "a program on the native VM" 1:1 in
+   Turing effect rather than an unverified assertion.

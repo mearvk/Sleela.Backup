@@ -1,0 +1,44 @@
+<< lib/cpu/examples/circuit-details.sleela
+   SLeeLa example: exercise SLCircuitDetails, the RLC state-space circuit
+   details. Every check prints PASS or FAIL and the program ends with the
+   failure count, which must be 0. >>
+#sleela 2.5
+class SLCircuitDetailsExample {
+  int fails;
+
+  void check(String what, boolean ok) {
+    if (ok) { print("PASS " + what); } else { print("FAIL " + what); fails = fails + 1; }
+  }
+
+  boolean near(double a, double b) {
+    double d = a - b;
+    if (d < 0.0) { d = 0.0 - d; }
+    return d < 0.000001;
+  }
+
+  void main() {
+    fails = 0;
+
+    SLCircuitDetails c = new SLCircuitDetails();
+    c.configure();
+    c.setState(2.0, 0.5, 0.0);
+    c.step(10.0);
+    check("default model leaves the state unchanged", near(c.capacitorVoltage(), 2.0) && near(c.inductorCurrent(), 0.5));
+
+    c.setPhi(0.9, 0.1, -0.2, 0.8);
+    c.setFrankenlen(0.05, 0.01);
+    check("frankenlen stored", near(c.frankenlenAt(0), 0.05) && near(c.frankenlenAt(1), 0.01));
+
+    < vCap = 0.9*2 + 0.1*0.5 + 0.05*10 = 2.35 ; iInd = -0.2*2 + 0.8*0.5 + 0.01*10 = 0.1 >
+    c.stepAt(10.0, 0.001);
+    check("vCap after one step is 2.35", near(c.capacitorVoltage(), 2.35));
+    check("iInd after one step is 0.1", near(c.inductorCurrent(), 0.1));
+    check("lastTime recorded", near(c.lastEvaluation(), 0.001));
+
+    < both values come from the old state: vCap = 0.9*2.35 + 0.1*0.1 = 2.125 ; iInd = -0.2*2.35 + 0.8*0.1 = -0.39 >
+    c.step(0.0);
+    check("second step uses the old state for both values", near(c.capacitorVoltage(), 2.125) && near(c.inductorCurrent(), -0.39));
+
+    print("failures: " + fails);
+  }
+}

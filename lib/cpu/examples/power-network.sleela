@@ -1,0 +1,73 @@
+<< lib/cpu/examples/power-network.sleela
+   SLeeLa example: check SLPowerNetwork, the current, voltage and time model
+   built on SLCircuitDetails. The reference phi and frankenlen were computed
+   outside SLeeLa with the closed-form (Sylvester) 2x2 matrix exponential, so
+   they check the Taylor scaling-and-squaring code independently. Every check
+   prints PASS or FAIL and the program ends with the failure count, which
+   must be 0. >>
+#sleela 2.5
+import cpu;
+class SLPowerNetworkExample {
+  int fails;
+
+  void check(String what, boolean ok) {
+    if (ok) { print("PASS " + what); } else { print("FAIL " + what); fails = fails + 1; }
+  }
+
+  boolean near(double a, double b, double rel) {
+    double d = a - b;
+    if (d < 0.0) { d = 0.0 - d; }
+    double m = b;
+    if (m < 0.0) { m = 0.0 - m; }
+    if (m < 1.0e-12) { m = 1.0e-12; }
+    return d <= rel * m;
+  }
+
+  void main() {
+    fails = 0;
+
+    < 5 V, 0.1 ohm, 10 nH, 100 nF, 200 mA load >
+    SLPowerNetwork p = new SLPowerNetwork();
+    p.configure(5000, 4750, 5250, 250, 100000, 10000, 100, 200);
+    SLCircuitDetails d = p.stateModel();
+    check("dt is one fiftieth of the LC period", near(p.stepSeconds(), 3.973835306318441e-09, 1.0e-9));
+    check("phi[0] matches the closed form", near(d.phiAt(0), 0.9906380925127859, 1.0e-9));
+    check("phi[1] matches the closed form", near(d.phiAt(1), 0.03882561738504738, 1.0e-9));
+    check("phi[2] matches the closed form", near(d.phiAt(2), -0.3882561738504738, 1.0e-9));
+    check("phi[3] matches the closed form", near(d.phiAt(3), 0.9533654998231403, 1.0e-9));
+    check("frankenlen[0] matches the closed form", near(d.frankenlenAt(0), 0.007777771704992317, 1.0e-8));
+    check("frankenlen[1] matches the closed form", near(d.frankenlenAt(1), 0.3885672847186735, 1.0e-9));
+
+    < The DC operating point is a fixed point of the discrete model. >
+    double vt = p.targetV();
+    d.setState(vt, vt / 25.0, 0.0);
+    d.step(5.0);
+    check("operating point is a fixed point", near(d.capacitorVoltage(), vt, 1.0e-9) && near(d.inductorCurrent(), vt / 25.0, 1.0e-9));
+
+    p.powerOn(40, 40);
+    p.report();
+    check("settles to the divider voltage 4.98008 V", near(p.settledVolts(), 4.9800796812749, 1.0e-4));
+    check("settled current is the load current", near(d.inductorCurrent(), 0.19920318725099, 1.0e-3));
+    check("time advances by dt per step", near(p.simulatedSeconds(), 4000.0 * p.stepSeconds(), 1.0e-9));
+    check("soft start keeps ripple inside tolerance", p.violations() == 0);
+
+    < An abrupt start (no soft-start) rings far past the tolerance. >
+    p.powerOn(0, 80);
+    check("abrupt start overshoots and is flagged", p.violations() >= 1);
+    check("abrupt start peak current exceeds the load current", p.peakAmps() > 0.25);
+
+    < Too much series resistance drops the rail below its floor. >
+    SLPowerNetwork weak = new SLPowerNetwork();
+    weak.configure(5000, 4750, 5250, 250, 2000000, 10000, 100, 200);
+    weak.powerOn(40, 40);
+    check("2 ohm series resistance browns the rail out", weak.violations() >= 1 && weak.settledVolts() < 4.75);
+
+    < Negative supply, as on the 4004. >
+    SLPowerNetwork pm = new SLPowerNetwork();
+    pm.configure(-15000, -15750, -14250, 750, 100000, 10000, 100, 30);
+    pm.powerOn(40, 40);
+    check("negative supply settles inside its window", pm.violations() == 0 && pm.settledVolts() < -14.9);
+
+    print("failures: " + fails);
+  }
+}

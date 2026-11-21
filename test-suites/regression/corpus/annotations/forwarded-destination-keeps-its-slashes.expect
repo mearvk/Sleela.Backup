@@ -1,0 +1,7 @@
+id: ANN-NEXT-SPELLING
+family: annotations
+expect: accept
+command: run
+output: Nexter Colony: system/net
+reference: impl/frontend/parser.cpp (parseAnnotation)
+note: The parser joins annotation tokens with spaces; the forwarder now closes the gaps around '/', '.' and '-', so the destination is reported as written.

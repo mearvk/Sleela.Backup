@@ -1,0 +1,175 @@
+<< lib/ballum/host-demo.sleela
+   SLeeLa runnable -- put a program inside the Ballum environment.
+
+   Lists the starter profiles and the entry and exit transitions, then starts
+   one: the screen turns white, the program enters with the chosen effect, and
+   every key and mouse event goes to it one to one. Ctrl+Alt+Esc leaves.
+
+   Like the other ballum runnables this inlines a compact driver over the
+   uiBallumHost* VM bridge that mirrors lib/ballum/SLBallumHost.sleela. On a
+   host without an X11 display, Xvfb and libXtst the host reports an honest
+   status and exits; it never fakes a session.
+
+   Run:
+     ./impl/build/sleela run lib/ballum/host-demo.sleela
+     HOST_PROFILE=xterm ENTER=slide-up LEAVE=fade ./impl/build/sleela run lib/ballum/host-demo.sleela
+     HOST_PROGRAM=/usr/bin/top HOST_ARGS="-b" ./impl/build/sleela run lib/ballum/host-demo.sleela
+
+   See and act on what the program draws (needs a live X11 session):
+     HOST_PROFILE=xterm HOST_OBSERVE=1 HOST_INTERPRET=alteration HOST_ATLAS=font.pgm \
+       HOST_RULE_POINT=weight HOST_RULE_MATCH="*" ./impl/build/sleela run lib/ballum/host-demo.sleela >>
+#sleela 2.5
+material;
+
+class HostDemo {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  < Eleven catalogued attributes with getter/setter pairs, so a GUI, loader, >
+  < or catalog can read and (where appropriate) override this record. >
+  < Values are faithful to the real origin of the subject where publicly known. >
+  String metaVersion = "1.0.0";
+  int metaId = 11802;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-11-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "Ballum";
+  String metaCorporation = "SLeeLa Project";
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-21";
+  < maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 6;
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  String param(String name, String fallback) {
+    String v = osGetEnv(name);
+    if (v == "") { return fallback; }
+    return v;
+  }
+
+  void main() {
+    print("================================================================");
+    print("  Ballum program host -- a program inside the white environment");
+    print("================================================================");
+    print("backend: " + uiBallumBackendName());
+
+    print("");
+    print("starter profiles (" + uiBallumHostProfileCount() + "):");
+    int i = 0;
+    while (i < uiBallumHostProfileCount()) {
+      print("  " + uiBallumHostProfileName(i) + "   title: " + uiBallumHostProfileTitle(i));
+      i = i + 1;
+    }
+    print("");
+    print("transitions (" + uiBallumHostTransitionCount() + "):");
+    String line = " ";
+    i = 0;
+    while (i < uiBallumHostTransitionCount()) {
+      line = line + " " + uiBallumHostTransitionName(i);
+      i = i + 1;
+    }
+    print(line);
+
+    print("");
+    print("character sets (" + uiBallumCharsetCount() + "):");
+    i = 0;
+    while (i < uiBallumCharsetCount()) {
+      print("  " + uiBallumCharsetName(i) + "  " + uiBallumCharsetSize(i) + " characters");
+      i = i + 1;
+    }
+    print("");
+    print("contact points (" + uiBallumContactCount() + "), with design confidence:");
+    i = 0;
+    while (i < uiBallumContactCount()) {
+      print("  " + uiBallumContactName(i) + "  " + uiBallumContactConfidence(i));
+      i = i + 1;
+    }
+
+    String atlas = param("HOST_ATLAS", "");
+    if (atlas != "") {
+      int ast = uiBallumCharsourceLoadPgm(atlas, 8, 16, param("HOST_CHARSET", "ascii"), 0, 0);
+      print("atlas " + atlas + " -> " + uiBallumStatusName(ast) + ", glyphs " + uiBallumCharsourceGlyphCount());
+    }
+
+    String profile = param("HOST_PROFILE", "");
+    String program = param("HOST_PROGRAM", "");
+    print("");
+    if (profile == "" && program == "") {
+      print("nothing started: set HOST_PROFILE=<name> or HOST_PROGRAM=<path> to start one.");
+      return;
+    }
+
+    int st = uiBallumEnumerate();
+    if (st != 0 || uiBallumDisplayCount() == 0) {
+      print("no display backend here (" + uiBallumStatusName(st) + "); the host failed closed.");
+      return;
+    }
+    int idx = 0;
+    i = 0;
+    while (i < uiBallumDisplayCount()) {
+      if (uiBallumDisplayPrimary(i) == 1) { idx = i; }
+      i = i + 1;
+    }
+    int display = uiBallumDisplayId(idx);
+
+    String enter = param("ENTER", "");
+    String leave = param("LEAVE", "");
+    uiBallumHostConfigure(32, 700, 0);
+    if (param("HOST_OBSERVE", "") == "1") { uiBallumHostObserve(1); }
+    String imode = param("HOST_INTERPRET", "");
+    if (imode == "notation") { uiBallumHostInterpret(1); }
+    if (imode == "alteration") { uiBallumHostInterpret(2); }
+    String rulePoint = param("HOST_RULE_POINT", "");
+    if (rulePoint != "") {
+      int rst = uiBallumHostRule(param("HOST_RULE_MATCH", "*"), rulePoint, 1, 16711680);
+      print("rule " + rulePoint + " -> " + uiBallumStatusName(rst));
+    }
+
+    if (profile != "") {
+      st = uiBallumHostStart(display, profile, enter, leave);
+    } else {
+      st = uiBallumHostStartProgram(display, program, param("HOST_ARGS", ""), enter, leave);
+    }
+    print("start -> " + uiBallumStatusName(st) + "  state=" + uiBallumHostStateName(uiBallumHostState()));
+    if (st != 0) {
+      print("the program was not started (" + uiBallumHostExitReasonName(uiBallumHostExitReason()) + ").");
+      print("Needs an X11 session, Xvfb, libXtst and the program installed.");
+      uiBallumHostStop();
+      return;
+    }
+
+    int frameStart = 0;
+    while (uiBallumHostState() != 5) {
+      frameStart = timeMonotonicNanos();
+      uiBallumHostStep();
+      while (timeMonotonicNanos() - frameStart < 16000000) { }
+    }
+    print("session ended: " + uiBallumHostExitReasonName(uiBallumHostExitReason()));
+    print("saw " + uiBallumHostElementCount() + " elements in the last frame; observing="
+          + uiBallumHostStat(5) + " glyphs=" + uiBallumHostStat(6) + " known=" + uiBallumHostStat(7)
+          + " applied=" + uiBallumHostStat(2));
+    uiBallumHostStop();
+    print("done");
+  }
+}

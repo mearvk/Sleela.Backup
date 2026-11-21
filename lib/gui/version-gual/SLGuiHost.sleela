@@ -1,0 +1,104 @@
+<< lib/gui/version-gual/SLGuiHost.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLGuiHost — Path 1 of gui/INTEGRATION.md: a Java host owns
+     the process and desktop lifecycle while SLeeLa owns business logic. Mirrors
+     SleelaGuiHost: show(title,w,h, actionOperation) binds the window's action to
+     a SLeeLa operation, and listen(...) ties each document change to a SLeeLa
+     operation whose result is published to the window. >>
+#sleela 2.5
+material;
+< SLeeLa gui front-end contract — Path 1 (Java host -> SLeeLa business logic). >
+< Family: gui. Java is a native desktop host for SLeeLa, not a second >
+< business-logic implementation; SLeeLa stays authoritative for meaning. >
+class SLGuiHost {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11221;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-10-16";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-16";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  SLGuiWindow window;
+  SLGuiAction action;
+  SLGuiDocumentListener listener;
+  < SLeeLa operation invoked on each doc change >
+  String changeOperation;
+  int listening;
+  void configure(SLGuiWindow w, SLGuiAction a) {
+    window = w; action = a; listening = 0; changeOperation = "";
+  }
+  < Show the window and bind its action to a SLeeLa operation. >
+  void show(String title, int width, int height, String actionOperation) {
+    window.configure(title, width, height);
+    action.configure("primary", actionOperation);
+    window.show();
+  }
+  < The host raised the window's action; it maps to the SLeeLa operation whose >
+  < (non-null) result is published to the window. >
+  boolean onAction(String result) {
+    action.raise();
+    if (!action.take()) { return false; }
+    if (result != null) { window.setText(result); }
+    return true;
+  }
+  < Enable the document-change listener option on the Java host path: SLeeLa >
+  < stays authoritative for what a change means. >
+  boolean listen(SLGuiDocumentListener l, String operation) {
+    listener = l; changeOperation = operation;
+    if (!listener.watch()) { listening = 0; return false; }
+    listening = 1;
+    return true;
+  }
+  boolean isListening() { return listening == 1 && listener != null && listener.isRunning(); }
+  < On a change the host calls `changeOperation`; its result is published, or >
+  < the window's default refresh is used when the operation returns null. >
+  int onDocumentChange(String documentId, String revision, int realChanges, String operationResult) {
+    if (!isListening()) { return 0; }
+    int emitted = listener.onOsCall(realChanges);
+    if (emitted > 0) {
+      if (operationResult != null) { window.setText(operationResult); }
+      else { window.refresh(documentId, revision); }
+    }
+    return emitted;
+  }
+  int refreshNow(int realChanges) {
+    if (listener == null) { return 0; }
+    return listener.refreshNow(realChanges);
+  }
+  void stopListening() { if (listener != null) { listener.close(); } listening = 0; }
+  void close() { stopListening(); }
+}

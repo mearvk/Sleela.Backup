@@ -59,3 +59,39 @@ Gate-level or transistor-level work should be added only from sufficiently relia
 Sources:
 - https://tinymachines.ai/6502/archive/wiki/6502_datapath.html
 - https://github.com/mamedev/mame/blob/master/docs/source/techspecs/m6502.rst
+
+## Executable circuit model
+
+`SL6502Circuit.sleela` carries this circuit in source: NMOS depletion-load, 8 um, 5 V, two-phase 1 MHz. It states the
+logic family and voltage thresholds, the supply rail, the functional blocks with
+width, depth, gate and transistor counts and derived area, the timing paths with
+stage delays, the monitored nets with signal-quality checks, and the semaphores
+that arbitrate the shared latch and buses. Every figure is marked published,
+cited, recalled or derived in the class header. `circuit-demo.sleela` builds
+the model, clocks it, verifies it and injects faults to show each check fails
+when it should.
+
+The model stays at functional-block level. It is not a transistor netlist.
+
+Circuit grade: **A** (10/10), from `circuitScore()` in `SLCircuitModel`. `SL6502CPU.circuitModel()` returns this circuit. Checking the recalled figures named in the class header against a primary source raises the grade.
+
+## Power delivery
+
+The circuit model carries an `SLPowerNetwork` (series R and L, decoupling C, load) on
+`SLCircuitDetails`. Its values are derived planning figures named in the class. On a soft-started
+power-on the die rail settles at 4980 mV with 14799 uV ripple after the ramp, a 261 mA peak
+supply current and a 8209 ns settle time, with 0 power violations.
+
+## Design character
+
+Recalled, not checked against a source: fetch overlaps execute; no caches. 1 core(s), 1 thread(s) per core,
+sequential, 2 pipeline stage(s), issue width 1. Caches: L1I 0, L1D 0,
+L1 unified 0 per core; L2 0, L3 0 per chip; local store 0.
+FPU none, MMU none on chip, SIMD 0 bits.
+`buildDesign()` turns these into blocks with derived transistor counts. Result: no pipeline-stage check (sequential or microcoded, or feature size unknown); named blocks explain 29.5 percent of the known transistor total.
+
+## CPU link
+
+The circuit and its CPU class address each other: `circuitModel()` on the CPU builds this circuit and
+passes the CPU name, rated clock and data width; `cpuModel()` and `linkCpu()` on the circuit build the
+CPU and check the same three facts. Mismatches: 0.
