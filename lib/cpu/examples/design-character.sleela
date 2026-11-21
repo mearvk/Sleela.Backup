@@ -1,0 +1,73 @@
+<< lib/cpu/examples/design-character.sleela
+   SLeeLa example: check the design character of the circuit models. Builds
+   real CPU circuits, confirms their design fits the clock and the known
+   transistor total, then injects three faults: a pipeline too shallow for the
+   clock at its process, a cache too large for the transistor total, and a
+   GPU clocked past its shader stage. It also checks the Series X on-die GPU.
+   Every check prints PASS or FAIL and the program ends with the failure
+   count, which must be 0. >>
+#sleela 2.5
+import cpu;
+class SLDesignCharacterExample {
+  int fails;
+
+  void check(String what, boolean ok) {
+    if (ok) { print("PASS " + what); } else { print("FAIL " + what); fails = fails + 1; }
+  }
+
+  void main() {
+    fails = 0;
+
+    SLIntelPentiumCircuit p = new SLIntelPentiumCircuit();
+    p.build();
+    p.runCycles(8);
+    check("Pentium is superscalar in order", p.styleName() == "superscalar in order");
+    check("Pentium has 16 KB of L1", p.cacheBytes() == 16384);
+    check("Pentium pipeline stage fits 100 MHz", p.hasStagePath() && p.stageSlackPs() > 0);
+    check("Pentium design fits its 3.3 million transistors", p.designViolations() == 0);
+    check("Pentium verifies clean", p.verifyAll() == 0);
+
+    SLAMDOpteronCircuit o = new SLAMDOpteronCircuit();
+    o.build();
+    o.runCycles(8);
+    check("Opteron 12-stage pipeline fits 2.4 GHz at 130 nm", o.stageSlackPs() > 0 && o.timingViolations() == 0);
+
+    < Fault 1: the same Opteron with a 2-stage pipeline cannot reach 2.4 GHz. >
+    SLAMDOpteronCircuit shallow = new SLAMDOpteronCircuit();
+    shallow.build();
+    shallow.setDesign(1, 1, 2, 3, 4);
+    shallow.buildDesign();
+    check("2-stage pipeline at 2.4 GHz violates timing", shallow.timingViolations() >= 1);
+
+    < Fault 2: a 4 MB L2 does not fit in 3.3 million transistors. >
+    SLIntelPentiumCircuit big = new SLIntelPentiumCircuit();
+    big.build();
+    big.setCaches(0, 0, 0, 4194304, 0, 0);
+    big.buildDesign();
+    check("4 MB L2 exceeds the Pentium transistor total", big.designViolations() == 1);
+
+    SLPlayStation3Circuit cell = new SLPlayStation3Circuit();
+    cell.build();
+    cell.runCycles(4);
+    check("Cell has nine cores sharing the cache", cell.cores == 9 && cell.coreHandoffs == 4 * 9);
+    check("Cell local stores modelled", cell.localBytes == 2097152);
+
+    < On-die GPU: the Xbox Series X APU carries 52 compute units at 1825 MHz. >
+    SLXboxSeriesXCircuit x = new SLXboxSeriesXCircuit();
+    x.build();
+    x.runCycles(4);
+    check("Series X GPU has 52 units of 64 lanes", x.hasGpu() && x.gpuUnits() == 52 && x.gpuLanes() == 64);
+    check("Series X GPU shader stage fits 1825 MHz", x.timingViolations() == 0);
+    check("CPU and GPU share memory through the semaphore", x.unifiedHandoffs() == 8);
+    check("Series X design with GPU fits 15.3 billion transistors", x.designViolations() == 0 && x.gpuTransistorCount() > 1000000000);
+
+    < Fault 3: the same GPU clocked at 50 GHz cannot meet its shader stage. >
+    SLXboxSeriesXCircuit fast = new SLXboxSeriesXCircuit();
+    fast.build();
+    fast.setGpu(52, 64, 262144, 65536, 5242880, 50000000);
+    fast.buildGpu();
+    check("50 GHz GPU violates its shader stage", fast.timingViolations() >= 1);
+
+    print("failures: " + fails);
+  }
+}

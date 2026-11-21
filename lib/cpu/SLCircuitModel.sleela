@@ -1,0 +1,707 @@
+<< lib/cpu/SLCircuitModel.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLCircuitModel, the physical circuit description a CPU
+     carries inside its source. It gathers, for one processor: the logic family
+     and its voltage thresholds, the supply rail, the clock and its phases, the
+     functional blocks with their width, depth, gate and transistor counts, the
+     timing paths with stage delays, the monitored nets with signal-quality
+     checks, and the semaphores that arbitrate shared buses and latches.
+
+   verifyAll() checks every part and returns the number of violations found:
+     timing paths against the clock period, nets against the logic thresholds,
+     the supply rail against its window, and semaphores for misuse or a
+     permit held too long. runCycles(n) clocks the circuit, hands the shared
+     latch to each clock phase in turn through its semaphore, samples every net
+     at the level the loaded rail actually delivers, and ticks the semaphores.
+
+   A per-CPU subclass overrides build() and fills the model with that
+   processor figures. Every figure carries a provenance of published, derived
+   or unknown. Unknown figures stay at zero or are omitted; they are never
+   invented. This base class is generic and carries no CPU data of its own.
+
+   Family: cpu. Pure Sleela circuit model; consumed by per-CPU circuit classes. >>
+#sleela 2.5
+material;
+class SLCircuitModel {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 39540;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-11-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 7;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  String cpuName;
+  SLLogicFamily family;
+  SLVoltageRail rail;
+  < clock frequency in kilohertz, so sub-megahertz parts stay exact >
+  int clockKHz;
+  < non-overlapping clock phases per cycle >
+  int phases;
+  int dataBits;
+  int addrBits;
+  < total transistors as published; 0 means unknown >
+  int transistors;
+  String provenance;
+  SLCircuitBlock[] blocks;
+  int blockCount;
+  SLCircuitPath[] paths;
+  int pathCount;
+  SLSignalQuality[] nets;
+  int netCount;
+  SLCircuitSemaphore[] sems;
+  int semCount;
+  int cyclesRun;
+  int phaseHandoffs;
+  int phaseRefusals;
+  < 2 when the figure was checked against a source, 1 when recalled but not checked, >
+  < 0 when derived or unknown >
+  int knownTransistors;
+  int knownNode;
+  int knownSupply;
+  int knownClock;
+  < current, voltage and time model of the supply (SLPowerNetwork on SLCircuitDetails) >
+  SLPowerNetwork power;
+  < ---- design character (setDesign / setCaches / setUnits, then buildDesign) ---- >
+  int designSet;
+  int cores;
+  int threadsPerCore;
+  int stages;
+  int issueWidth;
+  < 0 sequential, 1 microcoded, 2 pipelined, 3 superscalar in order, 4 out of order >
+  int style;
+  < cache and local store sizes in bytes; L1 sizes are per core, L2 and L3 are chip totals >
+  int l1iBytes;
+  int l1dBytes;
+  int l1uBytes;
+  int l2Bytes;
+  int l3Bytes;
+  int localBytes;
+  < 0 none, 1 on chip, 2 external coprocessor >
+  int fpu;
+  < 0 none on chip, 1 segmented or base and bound, 2 paged with a TLB >
+  int mmu;
+  int simdBits;
+  String designProvenance;
+  int coreHandoffs;
+  < 1 when the L3 is embedded DRAM (one transistor and a capacitor per bit) >
+  int l3Edram;
+  < ---- on-die GPU (setGpu, then buildGpu) ---- >
+  < packed in one array to stay under the 64-field class limit: 0 units, 1 lanes per >
+  < unit, 2 register bytes per unit, 3 local bytes per unit, 4 GPU L2 bytes, 5 GPU kHz, >
+  < 6 GPU transistors, 7 unified-memory handoffs >
+  int[] gpu;
+  String gpuProvenance;
+  < ---- link to the CPU class this circuit models ---- >
+  int cpuLinked;
+  int cpuMismatches;
+  String cpuArch;
+  int cpuSpecMHz;
+  int cpuWidth;
+
+  void configure(String name, SLLogicFamily fam, SLVoltageRail supply, int kHz, int phaseCount) {
+    cpuName = name; family = fam; rail = supply;
+    clockKHz = kHz; phases = phaseCount;
+    dataBits = 0; addrBits = 0; transistors = 0; provenance = "unknown";
+    blocks = new SLCircuitBlock[32]; blockCount = 0;
+    paths = new SLCircuitPath[12]; pathCount = 0;
+    nets = new SLSignalQuality[16]; netCount = 0;
+    sems = new SLCircuitSemaphore[8]; semCount = 0;
+    cyclesRun = 0; phaseHandoffs = 0; phaseRefusals = 0;
+    knownTransistors = 0; knownNode = 0; knownSupply = 0; knownClock = 0;
+    power = null;
+    designSet = 0; cores = 1; threadsPerCore = 1; stages = 1; issueWidth = 1; style = 0;
+    l1iBytes = 0; l1dBytes = 0; l1uBytes = 0; l2Bytes = 0; l3Bytes = 0; localBytes = 0;
+    fpu = 0; mmu = 0; simdBits = 0; designProvenance = "unknown"; coreHandoffs = 0;
+    l3Edram = 0;
+    gpu = new int[8];
+    gpuProvenance = "none";
+    cpuLinked = 0; cpuMismatches = 0; cpuArch = ""; cpuSpecMHz = 0; cpuWidth = 0;
+  }
+
+  void setDesign(int coreCount, int threads, int pipelineStages, int issue, int executionStyle) {
+    designSet = 1; cores = coreCount; threadsPerCore = threads;
+    stages = pipelineStages; issueWidth = issue; style = executionStyle;
+  }
+
+  void setCaches(int l1i, int l1d, int l1u, int l2, int l3, int local) {
+    l1iBytes = l1i; l1dBytes = l1d; l1uBytes = l1u; l2Bytes = l2; l3Bytes = l3; localBytes = local;
+  }
+
+  void setUnits(int fpuKind, int mmuKind, int simdWidthBits) { fpu = fpuKind; mmu = mmuKind; simdBits = simdWidthBits; }
+  void setEdramL3(int on) { l3Edram = on; }
+
+  << Declare an on-die GPU: compute units (or cores or SMs), 32-bit lanes per
+     unit, register file and local or shared memory bytes per unit, GPU L2
+     bytes, and the GPU clock in kilohertz. >>
+  void setGpu(int units, int lanesPerUnit, int regBytesPerUnit, int localBytesPerUnit, int l2Bytes, int clockKHz) {
+    gpu[0] = units; gpu[1] = lanesPerUnit; gpu[2] = regBytesPerUnit;
+    gpu[3] = localBytesPerUnit; gpu[4] = l2Bytes; gpu[5] = clockKHz;
+  }
+  int gpuUnits() { return gpu[0]; }
+  int gpuLanes() { return gpu[1]; }
+  int gpuKHz() { return gpu[5]; }
+  int unifiedHandoffs() { return gpu[7]; }
+  void setGpuProvenance(String p) { gpuProvenance = p; }
+  boolean hasGpu() { return gpu[0] > 0; }
+  int gpuPeriodPs() { if (gpu[5] <= 0) { return 0; } return 1000000000 / gpu[5]; }
+
+  << Turn the GPU into blocks, a shader timing path and the unified-memory
+     semaphore. Sizes are derived planning figures:
+       lanes        25000 transistors per 32-bit FMA lane
+       registers    6T SRAM per unit, plus local memory and the GPU L2
+       control      2 million transistors per unit for scheduling, texture
+                    and load-store
+       shader path  a 4-stage FMA pipeline holding 25 FO4 plus 3 FO4 of latch
+                    overhead per stage, at the GPU clock; skipped when the
+                    feature size is unknown (it would be circular)
+     Call it after buildDesign and before addRemainder. >>
+  void buildGpu() {
+    if (gpu[0] <= 0) { return; }
+    int before = blocksTransistors();
+    SLCircuitBlock lanes = addBlock("gpu-lanes", "alu", gpu[1] * 32, 2 * log2ceil(32) + 6, 0, gpu[0] * gpu[1] * 25000);
+    lanes.setProvenance("derived: " + gpu[0] + " units x " + gpu[1] + " lanes x 25000 transistors");
+    addSram("gpu-registers", gpu[0] * gpu[2]);
+    addSram("gpu-local", gpu[0] * gpu[3]);
+    addSram("gpu-l2", gpu[4]);
+    SLCircuitBlock ctl = addBlock("gpu-control", "control", 32, 6, 0, gpu[0] * 2000000);
+    ctl.setProvenance("derived: 2 million transistors per unit");
+    gpu[6] = blocksTransistors() - before;
+    addSemaphore("unified-memory", 1, 2);
+    if (family.nodeNm() > 0 && gpu[5] > 0) {
+      SLCircuitPath sh = addPath("gpu-shader-stage", gpuPeriodPs() / 20);
+      sh.setPeriod(gpuPeriodPs());
+      sh.describe("derived: 4-stage FMA, 25 FO4 over the stages plus 3 FO4 latch overhead, at the GPU clock");
+      sh.addStage("fma-stage-logic", (25 * family.delayPs()) / 4);
+      sh.addStage("latch-overhead", 3 * family.delayPs());
+      sh.constrain(0, 1, gpuPeriodPs() / 50);
+    }
+  }
+  int gpuTransistorCount() { return gpu[6]; }
+
+  << Link this circuit to the CPU class it models, from either side. The CPU
+     class passes its own architecture name, rated clock and data width
+     (SL<Name>CPU.circuitModel), or the circuit fetches them by building its
+     CPU (SL<Name>Circuit.linkCpu). A mismatch is counted when the names
+     differ, when the circuit clock rounded to whole MHz differs from the CPU
+     rated clock (the CPU stores whole MHz only), or when the data widths
+     differ. verifyAll() counts the mismatches. >>
+  int agreeWithCpu(String architecture, int specMHz, int width) {
+    cpuLinked = 1; cpuArch = architecture; cpuSpecMHz = specMHz; cpuWidth = width;
+    int bad = 0;
+    if (architecture != cpuName) { bad = bad + 1; }
+    if ((clockKHz + 500) / 1000 != specMHz) { bad = bad + 1; }
+    if (width != dataBits) { bad = bad + 1; }
+    cpuMismatches = bad;
+    return bad;
+  }
+  boolean linkedToCpu() { return cpuLinked == 1; }
+  int cpuMismatchCount() { return cpuMismatches; }
+  void setDesignProvenance(String p) { designProvenance = p; }
+
+  String styleName() {
+    if (style == 0) { return "sequential"; }
+    if (style == 1) { return "microcoded"; }
+    if (style == 2) { return "pipelined"; }
+    if (style == 3) { return "superscalar in order"; }
+    return "out of order";
+  }
+
+  int log2ceil(int n) { int k = 0; int v = 1; while (v < n) { v = v * 2; k = k + 1; } return k; }
+
+  < Add one SRAM array: 6 transistors per bit plus 15 percent for tags and periphery. >
+  SLCircuitBlock addSram(String name, int bytes) {
+    if (bytes <= 0) { return null; }
+    int bits = bytes * 8;
+    int xt = (bits * 6 * 115) / 100;
+    int depth = log2ceil(bits) / 2 + 4;
+    SLCircuitBlock b = addBlock(name, "cache", 8 * dataBits, depth, 0, xt);
+    if (b != null) { b.setProvenance("derived: 6T SRAM, " + bytes + " bytes plus 15 percent tags and periphery"); }
+    return b;
+  }
+
+  < Add one embedded DRAM array: 1 transistor per bit plus 15 percent for periphery. >
+  SLCircuitBlock addEdram(String name, int bytes) {
+    if (bytes <= 0) { return null; }
+    int bits = bytes * 8;
+    int xt = (bits * 115) / 100;
+    SLCircuitBlock b = addBlock(name, "cache", 8 * dataBits, log2ceil(bits) / 2 + 6, 0, xt);
+    if (b != null) { b.setProvenance("derived: eDRAM, 1 transistor and 1 capacitor per bit, " + bytes + " bytes plus 15 percent periphery"); }
+    return b;
+  }
+
+  << Turn the design character into blocks, a pipeline timing path and a
+     shared-cache semaphore. Every size below is a derived planning figure:
+       FPU          50 * dataBits^2 transistors
+       paged MMU    a 64-entry TLB of 2 * addrBits bits per entry at 10
+                    transistors per CAM bit; segmented: 16 descriptors of 64
+                    bits at 6 transistors per bit
+       SIMD         2000 transistors per bit of vector width
+       pipeline     stages * issue * 4 * dataBits flip-flops at 20 transistors
+       out of order issue^2 * dataBits * 400 transistors for rename and reorder
+       more cores   the per-core logic above, replicated for each extra core
+     Call it after the base blocks and before addRemainder. >>
+  void buildDesign() {
+    if (designSet == 0) { return; }
+    int before = blocksTransistors();
+    addSram("l1-instruction", l1iBytes * cores);
+    addSram("l1-data", l1dBytes * cores);
+    addSram("l1-unified", l1uBytes * cores);
+    addSram("l2", l2Bytes);
+    if (l3Edram == 1) { addEdram("l3", l3Bytes); } else { addSram("l3", l3Bytes); }
+    addSram("local-store", localBytes);
+    int perCore = 0;
+    if (fpu == 1) {
+      SLCircuitBlock f = addBlock("fpu", "alu", dataBits, 2 * log2ceil(dataBits) + 6, 0, 50 * dataBits * dataBits);
+      f.setProvenance("derived: 50 transistors per squared data bit");
+      perCore = perCore + f.transistorCount();
+    }
+    if (mmu == 2) {
+      SLCircuitBlock m = addBlock("mmu-tlb", "control", addrBits, 4, 0, 64 * 2 * addrBits * 10);
+      m.setProvenance("derived: 64-entry TLB CAM, 10 transistors per bit");
+      perCore = perCore + m.transistorCount();
+    }
+    if (mmu == 1) {
+      SLCircuitBlock m = addBlock("segment-unit", "control", addrBits, 3, 0, 16 * 64 * 6);
+      m.setProvenance("derived: 16 descriptors of 64 bits");
+      perCore = perCore + m.transistorCount();
+    }
+    if (simdBits > 0) {
+      SLCircuitBlock v = addBlock("simd", "alu", simdBits, log2ceil(simdBits) + 4, 0, simdBits * 2000);
+      v.setProvenance("derived: 2000 transistors per vector bit");
+      perCore = perCore + v.transistorCount();
+    }
+    if (style >= 2 && stages > 1) {
+      SLCircuitBlock pl = addBlock("pipeline-latches", "latch", dataBits * 4, 1, 0, stages * issueWidth * 4 * dataBits * 20);
+      pl.setProvenance("derived: " + stages + " stages x " + issueWidth + " issue x 4 x data width flip-flops");
+      perCore = perCore + pl.transistorCount();
+    }
+    if (style == 4) {
+      SLCircuitBlock oo = addBlock("rename-reorder", "control", dataBits, 6, 0, issueWidth * issueWidth * dataBits * 400);
+      oo.setProvenance("derived: issue squared x data width x 400");
+      perCore = perCore + oo.transistorCount();
+    }
+    if (cores > 1) {
+      int base = 0;
+      int i = 0;
+      while (i < blockCount) {
+        SLCircuitBlock b = blocks[i];
+        if (b.blockKind() == "alu" || b.blockKind() == "regfile" || b.blockKind() == "decode") { base = base + b.transistorCount(); }
+        i = i + 1;
+      }
+      SLCircuitBlock more = addBlock("additional-cores", "other", dataBits, 0, 0, (base + perCore) * (cores - 1));
+      more.setProvenance("derived: " + (cores - 1) + " more copies of the per-core logic");
+      addSemaphore("shared-cache", 1, 2);
+    }
+    << The pipeline-stage check needs a known feature size. Without one the gate
+       delay is itself derived from the clock, so checking the pipeline against
+       it would be circular and is skipped. >>
+    if (style >= 2 && stages > 1 && family.nodeNm() > 0) {
+      < A pipeline stage holds about 100 FO4 of logic per instruction split over the >
+      < stages, plus 3 FO4 of latch overhead that already includes setup and clock-to-q >
+      < (derived planning rule). >
+      SLCircuitPath st = addPath("pipeline-stage", periodPs() / 20);
+      st.setPeriod(periodPs());
+      st.describe("derived: 100 FO4 per instruction over " + stages + " stages plus 3 FO4 latch overhead");
+      st.addStage("stage-logic", (100 * family.delayPs()) / stages);
+      st.addStage("latch-overhead", 3 * family.delayPs());
+      st.constrain(0, 1, periodPs() / 50);
+    }
+    designDelta = blocksTransistors() - before;
+  }
+  int designDelta;
+
+  < The modelled design may not exceed a known transistor total. >
+  int designViolations() {
+    if (designSet == 0 || transistors <= 0) { return 0; }
+    if (blocksTransistors() > transistors) { return 1; }
+    return 0;
+  }
+
+  int cacheBytes() { return (l1iBytes + l1dBytes + l1uBytes) * cores + l2Bytes + l3Bytes; }
+  int designTransistors() { return designDelta; }
+
+  < Slack of the pipeline-stage path in picoseconds, or 0 when it was not built. >
+  int stageSlackPs() {
+    int i = 0;
+    while (i < pathCount) {
+      SLCircuitPath p = paths[i];
+      if (p.pathName() == "pipeline-stage") { return p.slackPs(); }
+      i = i + 1;
+    }
+    return 0;
+  }
+
+  boolean hasStagePath() {
+    int i = 0;
+    while (i < pathCount) { SLCircuitPath p = paths[i]; if (p.pathName() == "pipeline-stage") { return true; } i = i + 1; }
+    return false;
+  }
+
+  < Modelled transistors as per-mille of the known total, or 0 when the total is unknown. >
+  int budgetPerMille() {
+    if (transistors <= 0) { return 0; }
+    return (blocksTransistors() - remainderTransistors()) * 1000 / transistors;
+  }
+
+  int remainderTransistors() {
+    int i = 0;
+    while (i < blockCount) { SLCircuitBlock b = blocks[i]; if (b.blockName() == "other") { return b.transistorCount(); } i = i + 1; }
+    return 0;
+  }
+
+  << Attach the power delivery network: series R (micro-ohms) and L
+     (picohenries), decoupling C (nanofarads) and the load current
+     (milliamps). The supply, window and tolerance come from the rail and the
+     logic family. The rail gets the same R as its load line and the same
+     load, so the net samples taken by runCycles see the same DC drop the RLC
+     model settles to. >>
+  SLPowerNetwork setPowerNetwork(int rMicroOhm, int lPicoHenry, int cNanoFarad, int loadMilliAmp) {
+    power = new SLPowerNetwork();
+    int lo = rail.floor();
+    int hi = rail.ceiling();
+    power.configure(rail.nominal(), lo, hi, family.toleranceMv(), rMicroOhm, lPicoHenry, cNanoFarad, loadMilliAmp);
+    rail.setLoadLine(rMicroOhm);
+    rail.setLoad(loadMilliAmp);
+    return power;
+  }
+
+  < Soft-start the supply and let it settle: 40 natural periods of ramp, 40 of hold. >
+  void powerUp() { if (power != null) { power.powerOn(40, 40); } }
+
+  boolean powered() { return power != null && power.ran == 1; }
+
+  int powerViolations() { if (power == null) { return 0; } return power.violations(); }
+  SLPowerNetwork powerNetwork() { return power; }
+
+  < Declare how each of the four headline figures is backed: 2 checked, 1 recalled, 0 derived. >
+  void setKnown(int transistorsKnown, int nodeKnown, int supplyKnown, int clockKnown) {
+    knownTransistors = transistorsKnown; knownNode = nodeKnown;
+    knownSupply = supplyKnown; knownClock = clockKnown;
+  }
+
+  < Override in each CPU circuit class to populate blocks, paths, nets and semaphores. >
+  void build() { }
+
+  void setWidths(int data, int addr) { dataBits = data; addrBits = addr; }
+  void setTransistors(int count) { if (count >= 0) { transistors = count; } }
+  void setProvenance(String p) { provenance = p; }
+
+  < Clock period in picoseconds: 1e9 divided by kilohertz. >
+  int periodPs() { if (clockKHz <= 0) { return 0; } return 1000000000 / clockKHz; }
+
+  < Length of one clock phase in picoseconds. >
+  int phasePs() { if (phases <= 0) { return periodPs(); } return periodPs() / phases; }
+
+  SLCircuitBlock addBlock(String name, String kind, int bits, int depth, int gates, int xtors) {
+    if (blockCount >= 32) { return null; }
+    SLCircuitBlock b = new SLCircuitBlock();
+    b.configure(name, kind, bits, depth, gates, xtors);
+    blocks[blockCount] = b; blockCount = blockCount + 1;
+    return b;
+  }
+
+  < Account for transistors the named blocks do not cover: the published total >
+  < minus the modelled blocks. Does nothing when the total is unknown. >
+  SLCircuitBlock addRemainder(String name) {
+    if (transistors <= 0) { return null; }
+    int left = transistors - blocksTransistors();
+    if (left <= 0) { return null; }
+    SLCircuitBlock b = addBlock(name, "other", 0, 0, 0, left);
+    if (b != null) { b.setProvenance("derived: published total minus modelled blocks"); }
+    return b;
+  }
+
+  < Add a timing path whose period defaults to one full clock period. >
+  SLCircuitPath addPath(String name, int guardbandPs) {
+    if (pathCount >= 12) { return null; }
+    SLCircuitPath p = new SLCircuitPath();
+    p.configure(name, periodPs(), guardbandPs);
+    paths[pathCount] = p; pathCount = pathCount + 1;
+    return p;
+  }
+
+  SLSignalQuality addNet(String name) {
+    if (netCount >= 16) { return null; }
+    SLSignalQuality n = new SLSignalQuality();
+    n.configure(name, family);
+    nets[netCount] = n; netCount = netCount + 1;
+    return n;
+  }
+
+  SLCircuitSemaphore addSemaphore(String name, int permits, int holdLimitTicks) {
+    if (semCount >= 8) { return null; }
+    SLCircuitSemaphore s = new SLCircuitSemaphore();
+    s.configure(name, permits, holdLimitTicks);
+    sems[semCount] = s; semCount = semCount + 1;
+    return s;
+  }
+
+  < Find a semaphore by name, or null. >
+  SLCircuitSemaphore semaphore(String name) {
+    int i = 0;
+    while (i < semCount) {
+      SLCircuitSemaphore s = sems[i];
+      if (s.semName() == name) { return s; }
+      i = i + 1;
+    }
+    return null;
+  }
+
+  int blocksTransistors() {
+    int sum = 0; int i = 0;
+    while (i < blockCount) { SLCircuitBlock b = blocks[i]; sum = sum + b.transistorCount(); i = i + 1; }
+    return sum;
+  }
+
+  < Total modelled area in square micrometres across all blocks. >
+  int areaUm2() {
+    int sum = 0; int i = 0;
+    while (i < blockCount) { SLCircuitBlock b = blocks[i]; sum = sum + b.areaUm2(family); i = i + 1; }
+    return sum;
+  }
+
+  < The deepest block delay: the stage that bounds the clock. >
+  int slowestBlockPs() {
+    int worst = 0; int i = 0;
+    while (i < blockCount) {
+      SLCircuitBlock b = blocks[i];
+      int d = b.delayThrough(family);
+      if (d > worst) { worst = d; }
+      i = i + 1;
+    }
+    return worst;
+  }
+
+  int timingViolations() {
+    int bad = 0; int i = 0;
+    while (i < pathCount) {
+      SLCircuitPath p = paths[i];
+      if (!p.honored()) { bad = bad + 1; }
+      i = i + 1;
+    }
+    return bad;
+  }
+
+  int signalViolations() {
+    int bad = 0; int i = 0;
+    while (i < netCount) { SLSignalQuality n = nets[i]; bad = bad + n.violations(); i = i + 1; }
+    return bad;
+  }
+
+  int semaphoreViolations() {
+    int bad = 0; int i = 0;
+    while (i < semCount) { SLCircuitSemaphore s = sems[i]; bad = bad + s.violations(); i = i + 1; }
+    return bad;
+  }
+
+  int railViolations() { if (rail.withinLimits()) { return 0; } return 1; }
+
+  < Check that the family itself has positive noise margins. >
+  int familyViolations() { if (family.sound()) { return 0; } return 1; }
+
+  < Run every check and return the total number of violations. >
+  int verifyAll() {
+    return familyViolations() + railViolations() + timingViolations()
+         + signalViolations() + semaphoreViolations() + powerViolations() + designViolations()
+         + cpuMismatches;
+  }
+
+  < Clock the circuit for n cycles. In each phase the shared latch semaphore is >
+  < taken by that phase, every net is sampled at the level the loaded rail >
+  < delivers, the phase gives the latch back, and the semaphores tick. >
+  void runCycles(int n) {
+    if (power != null && power.ran == 0) { powerUp(); }
+    SLCircuitSemaphore latch = semaphore("latch");
+    int droop = rail.droopMv();
+    int c = 0;
+    while (c < n) {
+      int ph = 0;
+      while (ph < phases) {
+        String who = "phase" + ph;
+        boolean got = true;
+        if (latch != null) {
+          got = latch.tryAcquire(who);
+          if (got) { phaseHandoffs = phaseHandoffs + 1; } else { phaseRefusals = phaseRefusals + 1; }
+        }
+        int k = 0;
+        while (k < netCount) {
+          SLSignalQuality probe = nets[k];
+          int level = family.vohMv;
+          if ((c + ph + k) % 2 == 1) { level = family.volMv; }
+          if (level == family.vohMv) {
+            if (family.vddMv >= 0) { level = level - droop; } else { level = level + droop; }
+          }
+          probe.sample(level);
+          k = k + 1;
+        }
+        if (latch != null && got) { latch.release(who); }
+        SLCircuitSemaphore um = semaphore("unified-memory");
+        if (um != null) {
+          if (um.tryAcquire("cpu")) { gpu[7] = gpu[7] + 1; um.release("cpu"); }
+          if (um.tryAcquire("gpu")) { gpu[7] = gpu[7] + 1; um.release("gpu"); }
+        }
+        SLCircuitSemaphore shared = semaphore("shared-cache");
+        if (shared != null) {
+          int core = 0;
+          while (core < cores) {
+            String owner = "core" + core;
+            if (shared.tryAcquire(owner)) { coreHandoffs = coreHandoffs + 1; shared.release(owner); }
+            core = core + 1;
+          }
+        }
+        int s = 0;
+        while (s < semCount) { SLCircuitSemaphore sm = sems[s]; sm.tick(); s = s + 1; }
+        ph = ph + 1;
+      }
+      c = c + 1;
+      cyclesRun = cyclesRun + 1;
+    }
+  }
+
+  << Circuit grade. Ten points, from two sources:
+       data (4 points): one each for a transistor count, feature size, supply
+         voltage and clock that was checked against a source. A recalled
+         figure that was not checked scores 0 here and is counted by
+         recalledFigures() instead, so checking it raises the grade;
+       structure and checks (6 points): blocks present (1), at least two
+         timing paths (1), at least three monitored nets (1), at least two
+         semaphores (1), every timing path honored (1), and a clean
+         verifyAll after runCycles, meaning no signal, rail, family or
+         semaphore violation (1).
+     The clean verifyAll point includes the power network: the soft-started
+     supply must settle inside the rail window with ripple inside the family
+     tolerance (SLPowerNetwork.violations), and the design: the modelled
+     blocks may not exceed a known transistor total (designViolations), and
+     the link to the CPU class: name, clock and data width must agree
+     (agreeWithCpu).
+     The letter is A for 9 or 10, B for 7 or 8, C for 5 or 6, D for 3 or 4,
+     and F below 3. The grade measures how well the model is sourced and how
+     cleanly it verifies. It does not rank the processor itself. >>
+  int sourced(int level) { if (level == 2) { return 1; } return 0; }
+
+  < How many of the four headline figures are recalled but not yet checked. >
+  int recalledFigures() {
+    int n = 0;
+    if (knownTransistors == 1) { n = n + 1; }
+    if (knownNode == 1) { n = n + 1; }
+    if (knownSupply == 1) { n = n + 1; }
+    if (knownClock == 1) { n = n + 1; }
+    return n;
+  }
+
+  int circuitScore() {
+    int score = sourced(knownTransistors) + sourced(knownNode) + sourced(knownSupply) + sourced(knownClock);
+    if (blockCount > 0) { score = score + 1; }
+    if (pathCount >= 2) { score = score + 1; }
+    if (netCount >= 3) { score = score + 1; }
+    if (semCount >= 2) { score = score + 1; }
+    if (timingViolations() == 0) { score = score + 1; }
+    if (cyclesRun > 0 && verifyAll() == 0) { score = score + 1; }
+    return score;
+  }
+
+  String circuitGrade() {
+    int s = circuitScore();
+    if (s >= 9) { return "A"; }
+    if (s >= 7) { return "B"; }
+    if (s >= 5) { return "C"; }
+    if (s >= 3) { return "D"; }
+    return "F";
+  }
+
+  String name() { return cpuName; }
+  SLLogicFamily logicFamily() { return family; }
+  SLVoltageRail supplyRail() { return rail; }
+  int clock() { return clockKHz; }
+  int phaseCount() { return phases; }
+  int widthData() { return dataBits; }
+  int widthAddr() { return addrBits; }
+  int publishedTransistors() { return transistors; }
+  String source() { return provenance; }
+  int blockTotal() { return blockCount; }
+  int pathTotal() { return pathCount; }
+  int netTotal() { return netCount; }
+  int semaphoreTotal() { return semCount; }
+  int cycles() { return cyclesRun; }
+
+  < Print a plain report of the whole circuit and its verification result. >
+  void report() {
+    print("circuit: " + cpuName + "  family=" + family.familyName() + " (" + family.source() + ")");
+    print("  node=" + family.nodeNm() + "nm  supply=" + rail.effectiveMv() + "mV  clock=" + clockKHz + "kHz  phases=" + phases + "  period=" + periodPs() + "ps  data/addr=" + dataBits + "/" + addrBits);
+    print("  noise margin high/low = " + family.noiseMarginHighMv() + "/" + family.noiseMarginLowMv() + " mV  gate delay=" + family.delayPs() + "ps  fanout=" + family.fanout());
+    print("  transistors published=" + transistors + "  modelled=" + blocksTransistors() + "  area=" + areaUm2() + "um2  slowest block=" + slowestBlockPs() + "ps");
+    int i = 0;
+    while (i < blockCount) {
+      SLCircuitBlock b = blocks[i];
+      print("  block " + b.blockName() + " [" + b.blockKind() + "] " + b.width() + "b x " + b.depth() + " deep, " + b.gates() + " gates, " + b.transistorCount() + " xtors, " + b.delayThrough(family) + "ps (" + b.source() + ")");
+      i = i + 1;
+    }
+    i = 0;
+    while (i < pathCount) {
+      SLCircuitPath p = paths[i];
+      print("  path " + p.pathName() + " delay=" + p.totalDelayPs() + "ps slack=" + p.slackPs() + "ps critical=" + p.criticalStage() + " max=" + p.maxMHz() + "MHz");
+      i = i + 1;
+    }
+    i = 0;
+    while (i < netCount) {
+      SLSignalQuality n = nets[i];
+      print("  net " + n.netName() + " samples=" + n.sampleCount() + " violations=" + n.violations());
+      i = i + 1;
+    }
+    i = 0;
+    while (i < semCount) {
+      SLCircuitSemaphore s = sems[i];
+      print("  semaphore " + s.semName() + " acquires=" + s.acquires + " contended=" + s.contention() + " violations=" + s.violations());
+      i = i + 1;
+    }
+    if (designSet == 1) {
+      print("  design: cores=" + cores + " threads/core=" + threadsPerCore + " " + styleName() + " stages=" + stages + " issue=" + issueWidth
+        + " L1I=" + l1iBytes + "B L1D=" + l1dBytes + "B L1U=" + l1uBytes + "B L2=" + l2Bytes + "B L3=" + l3Bytes + "B local=" + localBytes
+        + "B fpu=" + fpu + " mmu=" + mmu + " simd=" + simdBits + " design transistors=" + designDelta + " (" + designProvenance + ")");
+    }
+    if (gpu[0] > 0) {
+      print("  gpu: units=" + gpu[0] + " lanes/unit=" + gpu[1] + " clock=" + gpu[5] + "kHz registers/unit=" + gpu[2] + "B local/unit=" + gpu[3] + "B L2=" + gpu[4] + "B transistors=" + gpu[6] + " (" + gpuProvenance + ")");
+    }
+    if (power != null) { power.report(); }
+    if (cpuLinked == 1) {
+      print("  cpu link: " + cpuArch + " rated " + cpuSpecMHz + " MHz, " + cpuWidth + "-bit; mismatches=" + cpuMismatches);
+    }
+    print("  verifyAll violations = " + verifyAll());
+    print("  circuit grade = " + circuitGrade() + " (" + circuitScore() + "/10), recalled figures awaiting a check = " + recalledFigures());
+  }
+}

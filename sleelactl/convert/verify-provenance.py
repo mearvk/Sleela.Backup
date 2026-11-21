@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Independently verify CONVERSION-PROVENANCE.json from sleelactl java-convert."""
+import hashlib
+import json
+import pathlib
+import sys
+
+def fail(message):
+    print(f"javaconv provenance: FAIL: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def file_sha(path):
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+def safe(rel):
+    p = pathlib.PurePosixPath(rel)
+    return bool(rel) and not p.is_absolute() and all(x not in ("", ".", "..") for x in p.parts)
+
+if len(sys.argv) not in (5, 6):
+    fail("usage: verify-provenance.py MANIFEST REPO_ROOT SOURCE_ROOT OUTPUT_ROOT [MODEL_PATH]")
+manifest, repo, src, out = map(pathlib.Path, sys.argv[1:5])
+model_override = pathlib.Path(sys.argv[5]) if len(sys.argv) == 6 else None
+try:
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+except Exception as exc:
+    fail(f"cannot parse manifest: {exc}")
+if data.get("schema") != "sleelactl.javaconv.provenance.v1":
+    fail("unsupported manifest schema")
+
+def verify_list(label, entries, root, require_sorted=True):
+    if not isinstance(entries, list):
+        fail(f"{label} is not an array")
+    names = [x.get("path") for x in entries]
+    if len(names) != len(set(names)) or (require_sorted and names != sorted(names)):
+        fail(f"{label} paths are not unique and sorted")
+    fingerprint = bytearray()
+    for item in entries:
+        rel, expected = item.get("path"), item.get("sha256")
+        if not isinstance(rel, str) or not safe(rel):
+            fail(f"unsafe {label} path: {rel!r}")
+        path = root.joinpath(*pathlib.PurePosixPath(rel).parts)
+        if path.is_symlink() or not path.is_file():
+            fail(f"missing or unsafe {label} file: {rel}")
+        actual = file_sha(path)
+        if actual != expected:
+            fail(f"SHA-256 mismatch: {label}/{rel}")
+        fingerprint.extend(rel.encode()); fingerprint.append(0)
+        fingerprint.extend(actual.encode()); fingerprint.append(10)
+    return sha(bytes(fingerprint))
+
+model = data.get("model", {})
+if not isinstance(model, dict) or not isinstance(model.get("sha256"), str):
+    fail("model digest missing")
+# The converter records the exact model digest; its configured path may be outside
+# the repository, so the default shared model is the verifiable repository contract.
+model_path = model_override or (repo / "impl/subjects/conversion/conversion.model")
+if file_sha(model_path) != model["sha256"]:
+    fail("shared conversion model digest mismatch")
+if data.get("converterSourceComplete") is not True:
+    fail("converter source inventory is incomplete; full provenance cannot be verified")
+converter_fp = verify_list("converterSources", data.get("converterSources"), repo, False)
+if converter_fp != data.get("converterSourceSha256"):
+    fail("converter source aggregate mismatch")
+input_fp = verify_list("inputs", data.get("inputs"), src)
+if input_fp != data.get("inputSnapshotSha256"):
+    fail("input snapshot aggregate mismatch")
+output_fp = verify_list("outputs", data.get("outputs"), out)
+if output_fp != data.get("outputSnapshotSha256"):
+    fail("output snapshot aggregate mismatch")
+lib_units = data.get("libraryUnits")
+if not isinstance(lib_units, dict) or not isinstance(lib_units.get("sha256"), str):
+    fail("library unit vocabulary digest missing")
+java_root = repo / "lib" / "java"
+files = [p for p in java_root.rglob("*.sleela") if p.is_file()] if java_root.is_dir() else []
+stems = sorted({p.stem for p in files})
+order = ["/java/lang/", "/java/util/", "/java/io/", "/java/nio/", "/java/net/", "/java/time/", "/java/math/", "/java/text/"]
+def rank(rel):
+    module = 0 if rel.startswith("java.base/") else 1 if rel.startswith("java.") else 2
+    slash = rel.find("/")
+    pkg = rel if slash < 0 else rel[slash:]
+    package = 8
+    for i, o in enumerate(order):
+        if pkg.startswith(o) and pkg.rfind("/") + 1 == len(o):
+            package = i
+            break
+    return (module, package, rel.count("/"), rel.encode())
+best = {}
+for p in files:
+    rel = p.relative_to(java_root).as_posix()
+    if not rel.startswith("jdk-28/"):
+        continue
+    key = rank(rel[7:])
+    if p.stem not in best or key < best[p.stem][0]:
+        best[p.stem] = (key, rel)
+fp = "".join(x + "\n" for x in stems) + "".join(best[k][1] + "\n" for k in sorted(best))
+if len(stems) != lib_units.get("count") or sha(fp.encode()) != lib_units["sha256"]:
+    fail("library unit vocabulary mismatch")
+print("javaconv provenance: PASS")

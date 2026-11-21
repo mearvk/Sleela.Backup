@@ -1,0 +1,291 @@
+<< lib/cpu/SLPowerNetwork.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLPowerNetwork, the current, voltage and time model of
+     a CPU supply. It is the power delivery network between the regulator and
+     the die: a series resistance R and inductance L (board, socket, package),
+     a decoupling capacitance C at the die, and the chip load drawn as a
+     resistance Rload = V / I. It runs on SLCircuitDetails, whose state is the
+     capacitor voltage (the die rail) and the inductor current (the supply
+     current), advanced by phi and frankenlen.
+
+   Continuous model, with x = (vCap, iInd) and input vIn:
+     dvCap/dt = iInd / C - vCap / (Rload * C)
+     diInd/dt = (vIn - R * iInd - vCap) / L
+     so A = [ -1/(Rload C)  1/C ; -1/L  -R/L ] and B = [ 0 ; 1/L ].
+   Discrete model for a fixed step dt: phi = expm(A dt) and
+     frankenlen = integral of expm(A s) B over [0, dt]. Both come from one
+     matrix exponential of the augmented 3x3 matrix [ A B ; 0 0 ] times dt,
+     whose top-left block is phi and whose top-right column is frankenlen.
+     That avoids inverting A. expm uses scaling and squaring with a 16-term
+     Taylor series.
+
+   Time: dt is one fiftieth of the LC natural period 2 pi sqrt(L C), so the
+   ringing is resolved. powerOn() ramps vIn from 0 to the supply over a
+   soft-start of 40 natural periods (regulators soft-start), then holds it,
+   stepping SLCircuitDetails with stepAt so lastTime carries the simulated
+   time. It records the peak supply current, the worst deviation of the die
+   rail from its settled value after the ramp, and the settle time.
+
+   Checks: the settled die voltage must lie inside the rail window, the
+   post-ramp ripple must stay inside the family tolerance, and the rail must
+   settle within the simulated window. Inputs are in integer engineering units
+   (micro-ohms, picohenries, nanofarads, milliamps, millivolts) so the per-CPU
+   tables stay exact; all of them are derived planning figures unless a
+   circuit class says otherwise.
+
+   Family: cpu. Pure Sleela; composes SLCircuitDetails. >>
+#sleela 2.5
+material;
+class SLPowerNetwork {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 39761;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-11-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 6;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  SLCircuitDetails details;
+  < supply and window, millivolts >
+  int supplyMv;
+  int floorMv;
+  int ceilingMv;
+  int toleranceMv;
+  < network values in engineering units >
+  int rMicroOhm;
+  int lPicoHenry;
+  int cNanoFarad;
+  int loadMilliAmp;
+  < derived SI values >
+  double r;
+  double l;
+  double c;
+  double rLoad;
+  double dt;
+  < results of powerOn() >
+  double settledV;
+  double peakCurrentA;
+  double rippleV;
+  double settleTimeS;
+  int settled;
+  int steps;
+  int ran;
+  String provenance;
+
+  void configure(int vddMv, int floor, int ceiling, int tolMv, int rUohm, int lPh, int cNf, int loadMa) {
+    supplyMv = vddMv; floorMv = floor; ceilingMv = ceiling; toleranceMv = tolMv;
+    rMicroOhm = rUohm; lPicoHenry = lPh; cNanoFarad = cNf; loadMilliAmp = loadMa;
+    r = rUohm * 1.0e-6;
+    l = lPh * 1.0e-12;
+    c = cNf * 1.0e-9;
+    double v = vddMv * 0.001;
+    if (v < 0.0) { v = 0.0 - v; }
+    double i = loadMa * 0.001;
+    rLoad = 1.0e9;
+    if (i > 0.0) { rLoad = v / i; }
+    dt = 2.0 * 3.141592653589793 * sqroot(l * c) / 50.0;
+    details = new SLCircuitDetails();
+    details.configure();
+    settledV = 0.0; peakCurrentA = 0.0; rippleV = 0.0; settleTimeS = 0.0;
+    settled = 0; steps = 0; ran = 0; provenance = "derived";
+    discretize();
+  }
+
+  void setProvenance(String p) { provenance = p; }
+
+  < Newton square root; x must be non-negative. >
+  double sqroot(double x) {
+    if (x <= 0.0) { return 0.0; }
+    double g = x;
+    if (g < 1.0) { g = 1.0; }
+    int k = 0;
+    while (k < 200) {
+      double n = 0.5 * (g + x / g);
+      double d = n - g;
+      if (d < 0.0) { d = 0.0 - d; }
+      g = n;
+      if (d <= g * 1.0e-15) { k = 200; }
+      k = k + 1;
+    }
+    return g;
+  }
+
+  < out = a * b for 3x3 row-major matrices. >
+  void mul3(double[] a, double[] b, double[] out) {
+    int i = 0;
+    while (i < 3) {
+      int j = 0;
+      while (j < 3) {
+        out[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+        j = j + 1;
+      }
+      i = i + 1;
+    }
+  }
+
+  double absd(double x) { if (x < 0.0) { return 0.0 - x; } return x; }
+
+  < Compute phi and frankenlen from expm of the augmented matrix times dt. >
+  void discretize() {
+    double[] m = new double[9];
+    m[0] = (0.0 - 1.0 / (rLoad * c)) * dt;
+    m[1] = (1.0 / c) * dt;
+    m[2] = 0.0;
+    m[3] = (0.0 - 1.0 / l) * dt;
+    m[4] = (0.0 - r / l) * dt;
+    m[5] = (1.0 / l) * dt;
+    m[6] = 0.0; m[7] = 0.0; m[8] = 0.0;
+
+    < scale so the max row sum is below 0.5 >
+    double norm = 0.0;
+    int i = 0;
+    while (i < 3) {
+      double s = absd(m[i * 3]) + absd(m[i * 3 + 1]) + absd(m[i * 3 + 2]);
+      if (s > norm) { norm = s; }
+      i = i + 1;
+    }
+    int squarings = 0;
+    while (norm > 0.5) { norm = norm / 2.0; squarings = squarings + 1; }
+    double scale = 1.0;
+    int q = 0;
+    while (q < squarings) { scale = scale * 2.0; q = q + 1; }
+    i = 0;
+    while (i < 9) { m[i] = m[i] / scale; i = i + 1; }
+
+    < Taylor: e = I + m + m^2/2! + ... + m^16/16! >
+    double[] e = new double[9];
+    double[] term = new double[9];
+    double[] tmp = new double[9];
+    i = 0;
+    while (i < 9) { e[i] = 0.0; term[i] = 0.0; i = i + 1; }
+    e[0] = 1.0; e[4] = 1.0; e[8] = 1.0;
+    term[0] = 1.0; term[4] = 1.0; term[8] = 1.0;
+    int k = 1;
+    while (k <= 16) {
+      mul3(term, m, tmp);
+      i = 0;
+      while (i < 9) { term[i] = tmp[i] / (k * 1.0); e[i] = e[i] + term[i]; i = i + 1; }
+      k = k + 1;
+    }
+    < undo the scaling by repeated squaring >
+    q = 0;
+    while (q < squarings) {
+      mul3(e, e, tmp);
+      i = 0;
+      while (i < 9) { e[i] = tmp[i]; i = i + 1; }
+      q = q + 1;
+    }
+    details.setPhi(e[0], e[1], e[3], e[4]);
+    details.setFrankenlen(e[2], e[5]);
+  }
+
+  < The DC operating point: divider of R and Rload. >
+  double targetV() {
+    double v = supplyMv * 0.001;
+    return v * rLoad / (r + rLoad);
+  }
+
+  < Soft-start ramp over rampPeriods natural periods, then hold for holdPeriods. >
+  void powerOn(int rampPeriods, int holdPeriods) {
+    details.setState(0.0, 0.0, 0.0);
+    int rampSteps = rampPeriods * 50;
+    int total = rampSteps + holdPeriods * 50;
+    double vFull = supplyMv * 0.001;
+    double target = targetV();
+    double band = absd(toleranceMv * 0.001);
+    double settleBand = absd(target) * 0.001;
+    if (settleBand <= 0.0) { settleBand = 1.0e-6; }
+    peakCurrentA = 0.0; rippleV = 0.0; settled = 0; settleTimeS = 0.0;
+    int lastOutside = 0;
+    int n = 1;
+    while (n <= total) {
+      double vin = vFull;
+      if (n < rampSteps) { vin = vFull * (n * 1.0) / (rampSteps * 1.0); }
+      details.stepAt(vin, n * dt);
+      double i = absd(details.inductorCurrent());
+      if (i > peakCurrentA) { peakCurrentA = i; }
+      double dev = absd(details.capacitorVoltage() - target);
+      if (n > rampSteps && dev > rippleV) { rippleV = dev; }
+      if (dev > settleBand) { lastOutside = n; }
+      n = n + 1;
+    }
+    steps = total;
+    settledV = details.capacitorVoltage();
+    if (lastOutside < total) { settled = 1; settleTimeS = lastOutside * dt; }
+    ran = 1;
+  }
+
+  < Number of failed checks; 0 when powerOn() has not run. >
+  int violations() {
+    if (ran == 0) { return 0; }
+    int bad = 0;
+    double mv = settledV * 1000.0;
+    double lo = floorMv * 1.0;
+    double hi = ceilingMv * 1.0;
+    if (mv < lo || mv > hi) { bad = bad + 1; }
+    if (rippleV * 1000.0 > absd(toleranceMv * 1.0)) { bad = bad + 1; }
+    if (settled == 0) { bad = bad + 1; }
+    return bad;
+  }
+
+  < Quality factor: natural frequency 1/sqrt(LC) over the damping R/L + 1/(Rload C). >
+  double qualityFactor() {
+    double damping = r / l + 1.0 / (rLoad * c);
+    if (damping <= 0.0) { return 0.0; }
+    return 1.0 / (damping * sqroot(l * c));
+  }
+
+  SLCircuitDetails stateModel() { return details; }
+  double stepSeconds() { return dt; }
+  double settledVolts() { return settledV; }
+  double peakAmps() { return peakCurrentA; }
+  double rippleVolts() { return rippleV; }
+  double settleSeconds() { return settleTimeS; }
+  double simulatedSeconds() { return details.lastEvaluation(); }
+  boolean isSettled() { return settled == 1; }
+  int dcDropMv() { return (int) ((supplyMv * 0.001 - targetV()) * 1000.0); }
+  int resistanceMicroOhm() { return rMicroOhm; }
+  int inductancePicoHenry() { return lPicoHenry; }
+  int capacitanceNanoFarad() { return cNanoFarad; }
+  int loadMa() { return loadMilliAmp; }
+  String source() { return provenance; }
+
+  void report() {
+    print("  power network R=" + rMicroOhm + "uOhm L=" + lPicoHenry + "pH C=" + cNanoFarad + "nF load=" + loadMilliAmp + "mA (" + provenance + ")");
+    print("    dt=" + dt + "s Q=" + qualityFactor() + " settled=" + settledV + "V target=" + targetV() + "V peak current=" + peakCurrentA + "A ripple=" + rippleV + "V settle time=" + settleTimeS + "s simulated=" + simulatedSeconds() + "s violations=" + violations());
+  }
+}

@@ -1,0 +1,137 @@
+<< lib/cpu/SLCircuitDetails.sleela
+   SLeeLa Standard Library Definition.
+   Definition: Defines SLCircuitDetails, the circuit details of a second-order
+     (RLC) state-space circuit: its state and the discrete transition model
+     that advances that state by one fixed time step.
+
+   State (x):  vCap   capacitor voltage   (state x1)
+               iInd   inductor current    (state x2)
+               lastTime  timestamp of the last evaluation
+   Model:      phi        2x2 state transition matrix, row-major
+                          phi[0] phi[1] / phi[2] phi[3]
+               frankenlen 2-element input vector (the input term)
+
+   One step is a pure, on-demand state transition, O(1), no threads:
+     vCap' = phi[0] * vCap + phi[1] * iInd + frankenlen[0] * vIn
+     iInd' = phi[2] * vCap + phi[3] * iInd + frankenlen[1] * vIn
+
+   phi and frankenlen are precomputed for a fixed dt (for example via expm(A * dt))
+   and set with setPhi and setFrankenlen. Until they are set the model is the
+   identity with a zero input term, so step() leaves the state unchanged.
+
+   Family: cpu. Pure Sleela circuit model. >>
+#sleela 2.5
+material;
+class SLCircuitDetails {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the real origin of the subject where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 39760;
+  String metaAuthor = "Kiro Agent";
+  String metaDate = "2026-11-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-11-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 6;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+
+  < ---- state ---- >
+  < capacitor voltage, state x1 >
+  double vCap;
+  < inductor current, state x2 >
+  double iInd;
+  < timestamp of the last evaluation >
+  double lastTime;
+
+  < ---- transition model ---- >
+  < 2x2 state transition matrix, row-major >
+  double[] phi;
+  < 2-element input vector >
+  double[] frankenlen;
+
+  < Identity model, zero input term, zero state. >
+  void configure() {
+    phi = new double[4];
+    frankenlen = new double[2];
+    phi[0] = 1.0;
+    phi[1] = 0.0;
+    phi[2] = 0.0;
+    phi[3] = 1.0;
+    frankenlen[0] = 0.0;
+    frankenlen[1] = 0.0;
+    vCap = 0.0;
+    iInd = 0.0;
+    lastTime = 0.0;
+  }
+
+  < Set the transition matrix, row-major: a b / c d. >
+  void setPhi(double a, double b, double c, double d) {
+    phi[0] = a;
+    phi[1] = b;
+    phi[2] = c;
+    phi[3] = d;
+  }
+
+  < Set the input vector. >
+  void setFrankenlen(double f0, double f1) {
+    frankenlen[0] = f0;
+    frankenlen[1] = f1;
+  }
+
+  void setState(double v, double i, double t) {
+    vCap = v;
+    iInd = i;
+    lastTime = t;
+  }
+
+  << Advance one step with input vIn. Pure in the state: both new values are
+     computed from the old state before either is stored. >>
+  void step(double vIn) {
+    double nextV = phi[0] * vCap + phi[1] * iInd + frankenlen[0] * vIn;
+    double nextI = phi[2] * vCap + phi[3] * iInd + frankenlen[1] * vIn;
+    vCap = nextV;
+    iInd = nextI;
+  }
+
+  < Advance one step and record the evaluation time. >
+  void stepAt(double vIn, double time) {
+    step(vIn);
+    lastTime = time;
+  }
+
+  double capacitorVoltage() { return vCap; }
+  double inductorCurrent() { return iInd; }
+  double lastEvaluation() { return lastTime; }
+  double phiAt(int index) { return phi[index]; }
+  double frankenlenAt(int index) { return frankenlen[index]; }
+}
