@@ -1,0 +1,7 @@
+#sleela 2.1
+class TypedArrayWrongValueRegression {
+  void main() {
+    String[] values = new String[0];
+    arrayPush(values, 42);
+  }
+}

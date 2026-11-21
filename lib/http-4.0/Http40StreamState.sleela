@@ -1,0 +1,83 @@
+#sleela 2.5
+material;
+< Per-stream model; native transport must enforce concurrency and ordering. >
+class Http40StreamState {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11499;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-21";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-21";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  String sessionId = "";
+  long streamId = 0;
+  long nextReceiveSequence = 0;
+  long nextSendSequence = 0;
+  long receivedBytes = 0;
+  long sentBytes = 0;
+  boolean opened = false;
+  boolean receiveClosed = false;
+  boolean sendClosed = false;
+  boolean reset = false;
+  void open(String session, long id) {
+    sessionId = session; streamId = id; opened = session != "" && id >= 0;
+  }
+  boolean acceptReceiveSequence(long sequence) {
+    if (!opened || reset || receiveClosed || sequence != nextReceiveSequence ||
+        nextReceiveSequence == 9223372036854775807) return false;
+    nextReceiveSequence = nextReceiveSequence + 1; return true;
+  }
+  boolean acceptSendSequence(long sequence) {
+    if (!opened || reset || sendClosed || sequence != nextSendSequence ||
+        nextSendSequence == 9223372036854775807) return false;
+    nextSendSequence = nextSendSequence + 1; return true;
+  }
+  boolean addReceivedBytes(long count) {
+    if (!opened || reset || receiveClosed || count < 0 ||
+        count > 9223372036854775807 - receivedBytes) return false;
+    receivedBytes = receivedBytes + count; return true;
+  }
+  boolean addSentBytes(long count) {
+    if (!opened || reset || sendClosed || count < 0 ||
+        count > 9223372036854775807 - sentBytes) return false;
+    sentBytes = sentBytes + count; return true;
+  }
+  void closeReceive() { receiveClosed = true; }
+  void closeSend() { sendClosed = true; }
+  void resetStream() { reset = true; receiveClosed = true; sendClosed = true; }
+  boolean isClosed() { return reset || (receiveClosed && sendClosed); }
+}

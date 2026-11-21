@@ -1,0 +1,93 @@
+<< lib/wifi/SLWifiSecurity.sleela
+   Security identifiers match wifi_security_t in wifi_manager.h. >>
+#sleela 2.5
+material;
+class SLWifiSecurity {
+  < ---- Descriptive metadata (version 1.11 nested-friendly accessors) ---- >
+  << Eleven catalogued attributes with getter/setter pairs, so a GUI, loader,
+     or catalog can read and (where appropriate) override this record.
+     Values are faithful to the subject's real origin where publicly known. >>
+  String metaVersion = "1.0.0";
+  int metaId = 11442;
+  String metaAuthor = "Max Rupplin vs. Dr. Mrs. Elisabeth Harkins";
+  String metaDate = "2026-10-20";
+  String metaCopyright = "SLeeLa project";
+  String metaTrademark = "none";
+  String metaCorporation = "none";
+  < metaOrigin: National | <nation> | International | Galactic >
+  String metaOrigin = "International";
+  String metaBirthDate = "2026-10-20";
+  < metaScienceRating: maturity/robustness on a 1..10 scale >
+  int metaScienceRating = 9;
+  < metaNationalSchedule: a real, citable instrument or "none" >
+  String metaNationalSchedule = "none";
+
+  String getMetaVersion() { return metaVersion; }
+  void setMetaVersion(String v) { metaVersion = v; }
+  int getMetaId() { return metaId; }
+  void setMetaId(int v) { metaId = v; }
+  String getAuthor() { return metaAuthor; }
+  void setAuthor(String v) { metaAuthor = v; }
+  String getDate() { return metaDate; }
+  void setDate(String v) { metaDate = v; }
+  String getCopyright() { return metaCopyright; }
+  void setCopyright(String v) { metaCopyright = v; }
+  String getTrademark() { return metaTrademark; }
+  void setTrademark(String v) { metaTrademark = v; }
+  String getCorporation() { return metaCorporation; }
+  void setCorporation(String v) { metaCorporation = v; }
+  String getOrigin() { return metaOrigin; }
+  void setOrigin(String v) { metaOrigin = v; }
+  String getBirthDate() { return metaBirthDate; }
+  void setBirthDate(String v) { metaBirthDate = v; }
+  int getScienceRating() { return metaScienceRating; }
+  void setScienceRating(int v) { metaScienceRating = v; }
+  String getNationalSchedule() { return metaNationalSchedule; }
+  void setNationalSchedule(String v) { metaNationalSchedule = v; }
+  static final int UNKNOWN = 0;
+  static final int OPEN = 1;
+  static final int WEP = 2;
+  static final int WPA_PERSONAL = 3;
+  static final int WPA2_PERSONAL = 4;
+  static final int WPA3_PERSONAL = 5;
+  static final int OWE = 6;
+  static final int WPA_ENTERPRISE = 7;
+  static final int WPA2_ENTERPRISE = 8;
+  static final int WPA3_ENTERPRISE = 9;
+
+  int rank(int security) {
+    if (security == OPEN) { return 0; }
+    if (security == WEP) { return 1; }
+    if (security == WPA_PERSONAL || security == WPA_ENTERPRISE) { return 3; }
+    if (security == WPA2_PERSONAL || security == WPA2_ENTERPRISE || security == OWE) { return 4; }
+    if (security == WPA3_PERSONAL || security == WPA3_ENTERPRISE) { return 5; }
+    return -1;
+  }
+
+  String name(int security) {
+    if (security == OPEN) { return "Open"; }
+    if (security == WEP) { return "WEP (legacy)"; }
+    if (security == WPA_PERSONAL) { return "WPA-Personal"; }
+    if (security == WPA2_PERSONAL) { return "WPA2-Personal"; }
+    if (security == WPA3_PERSONAL) { return "WPA3-Personal"; }
+    if (security == OWE) { return "Enhanced Open (OWE)"; }
+    if (security == WPA_ENTERPRISE) { return "WPA-Enterprise"; }
+    if (security == WPA2_ENTERPRISE) { return "WPA2-Enterprise"; }
+    if (security == WPA3_ENTERPRISE) { return "WPA3-Enterprise"; }
+    return "Unknown";
+  }
+
+  boolean isEnterprise(int security) {
+    return security == WPA_ENTERPRISE || security == WPA2_ENTERPRISE ||
+           security == WPA3_ENTERPRISE;
+  }
+
+  boolean isPersonal(int security) {
+    return security == WPA_PERSONAL || security == WPA2_PERSONAL ||
+           security == WPA3_PERSONAL;
+  }
+
+  boolean isLegacy(int security) {
+    return security == WEP || security == WPA_PERSONAL || security == WPA_ENTERPRISE;
+  }
+}

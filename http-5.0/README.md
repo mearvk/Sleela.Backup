@@ -1,118 +1,82 @@
-<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian-logo.png" width="75" height="75" alt="SLeeLa">
+<img align="right" src="https://github.com/mearvk/SLeeLa/blob/master/images/debian/debian-logo.png" width="75" height="75" alt="Debian logo">
 
-<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-logo-004.jpg" alt="SLeeLa">
-
-
-
-
-
+<img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela/sleela-logo-004.jpg" alt="SLeeLa logo">
 
 # SLeeLa HTTP 5.0
 
-**Status:** Experimental SLeeLa application-protocol generation; not an IETF HTTP/5 standard.
+**Status: Experimental SLeeLa application protocol; not production-ready and not an IETF HTTP/5 standard.**
 
-HTTP 5.0 extends the HTTP 4.0 frame/session model with an application-level **Friends' Packs** capability. A Friends' Pack is ordinary user-controlled application data containing a friends list, optional point values, document references, and optional bonus-offer references.
+**Platforms targeted:** Linux · macOS · Windows 10+
 
-## Purpose
+HTTP 5.0 is a SLeeLa-specific application-protocol generation. The current reference server carries HTTP 5.0 frames inside HTTP/1.x over TCP. It does **not** implement HTTP/3 or QUIC and does not provide TLS or peer authentication.
 
-Friends' Packs provide a structured way to package application relationships and optional offerings. They do not change the underlying HTTP transport semantics.
+## Build and test
 
-An FP value is an application quota or accounting value. It is not an authentication credential, a measure of trust, or an authorization to control another system.
-
-## Friends List
-
-A friend entry may contain:
-
-- **friend name**;
-- optional **point amount**;
-- optional **assigned document reference**.
-
-The initial payload form is:
-
-```text
-friend-name|points|document-reference
+```sh
+make clean all
+make syntax
+make test
+make server-test
+make proto
+make clean
 ```
 
-In the implementation, `FriendsPack::addFriend()` adds an entry and `FriendsPack::friendPayload()` serializes the corresponding payload. An invalid friend index returns an empty payload.
+The commands above describe the intended project targets; the latest source changes still require execution in CI before being called verified.
 
 ## Architecture
 
 ```text
-Application
+SLeeLa application
     |
-SLeeLa HTTP 5.0 semantic API
+HTTP 5.0 endpoint and frame envelope
     |
-Friends' Packs
+Friends' Packs application data (optional extension)
     |
-HTTP 5.0 frame + session model
+HTTP/1.x request handling
     |
-Capability / flow control / integrity
-    |
-Authenticated carrier
-    +-- HTTP/3 / QUIC
-    +-- HTTP/4-compatible application carrier
-    +-- Test / in-memory carrier
+SLeeLa portable TCP socket layer
 ```
 
-## Friends' Pack Model
+## Frame model
 
-A pack may contain:
-
-- opaque pack identifier;
-- application relationship identifier;
-- FP balance;
-- optional bonus-offer references;
-- optional expiration;
-- negotiated application policy.
-
-Bonus offers are references. They do not force downloads, redirects, or access.
-
-## Zero-FP Behavior
-
-When FP reaches zero:
-
-1. Normal HTTP 5.0 operation continues.
-2. New optional Friends' Pack bonuses are declined.
-3. Ordinary requests remain unaffected.
-4. FP exhaustion does not authorize blocking, degrading, rerouting, or interfering with unrelated traffic.
-5. Replenishment occurs only through explicit application policy.
-
-## Defensive Audit Kits
-
-The repository's audit-kit concept is limited to authorized conformance and testing. Test bundles may validate parser boundaries, replay handling, rate limits, capability negotiation, and router-facing interoperability.
-
-They are not network-attack mechanisms and do not authorize interference with infrastructure or communications.
-
-## Extensions
-
-- `FRIENDS_PACK` — pack metadata and optional offer references.
-- `BONUS_OFFER` — optional offering reference.
-- `FP_UPDATE` — application-level balance update.
-- `AUDIT` — defensive conformance/audit event.
-
-## Shared Download Contract
-
-Files larger than 50 MB use:
+The frame header is 32 bytes, big-endian:
 
 ```text
-SESSION-ID | DATETIME | FILE-ID | FILE-NAME | INDEX | OFFSET | TOTAL-SIZE
+VERSION | TYPE | FLAGS | STREAM-ID | REQUEST-ID | SEQUENCE | PAYLOAD-LENGTH | PAYLOAD
+  1B      1B     2B       8B          8B           8B          4B             N bytes
 ```
 
-## Build
+The implementation enumerates 13 frame types: OPEN, DATA, END, RESET, WINDOW, PING, PONG, RESUME, CAPSULE, FRIENDS_PACK, BONUS_OFFER, FP_UPDATE, and AUDIT. See [SPEC.md](SPEC.md) for the current wire contract and known gaps.
 
-```sh
-make -C http-5.0
-make -C http-5.0 test
-```
+## Friends' Packs
 
-## Unified Route Data
+Friends' Packs are ordinary application data for user-managed friend entries, points, document references, and optional bonus-offer references. FP is an application quota only; it is not an identity, trust score, authentication token, or authorization grant. Bonus references do not grant access on their own.
 
-This implementation consumes the SLeeLa unified route-data contract in
-route/ROUTE.DATA.json and route/ROUTE.DATA.md. Route records carry protocol,
-server surface, HTTP generation, VM generation/formal VM name, canonical
-configuration root, route identifier, target/resolution mode, capability,
-transport, port, and status. VM names are architectural metadata only and do
-not grant capabilities. Dynamic targets must use the shared resolver before
-acceptance. The VM identity is: /impl Core, /1 Foundation, /2 Operator,
-/3 Specialist, /4 Supervisor, /5 Manager, /6 Director, /7 Administrator,
-/8 Executive, /9 Authority, /10 Principal, /11 Sovereign.
+## DOWNLOAD metadata
+
+The current metadata contract for transfers above the 50 MiB threshold is:
+
+`SESSION-ID | DATETIME | FILE-ID | FILE-NAME | INDEX | OFFSET | TOTAL-SIZE`
+
+These values are not authorization credentials. Durable resumability requires authenticated tokens, persistent atomic checkpoints, chunk verification, full-object digest validation, and crash-safe publication beyond the metadata parser.
+
+## Security
+
+Do not expose the current server directly to an untrusted network. Use an independently maintained authenticated transport and enforce application authorization. The current implementation has no native TLS/QUIC adapter, complete stream-state machine, or durable resume service.
+
+## Current status
+
+- [Core specification](SPEC.md)
+- [Canonical envelope test vectors](TEST-VECTORS.md)
+- [Security boundary](SECURITY.md)
+- [Implementation status and release gates](STATUS.md)
+- [Processing flow](FLOW.md)
+- [Negotiation notes](HTTP.NEGOTIATION.md)
+
+The repository's SHA-256 integrity gate must remain enabled. Review changed source and regenerate approved manifest entries only through the project's established verification process.
+
+---
+
+# SLeeLa
+<p align="center"><img src="images/sleela/sleela-wordmark.svg" alt="SLeeLa — The Now. The Ingredient." width="560"></p>
+<p align="center"><img src="https://github.com/mearvk/SLeeLa/blob/master/images/sleela-programming-language-002.jpg" alt="SLeeLa Marketing Logo" width="560"></p>
